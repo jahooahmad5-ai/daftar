@@ -285,3 +285,9 @@ img,svg,video{max-width:100%}
 .op-ctl{display:flex;gap:6px}
 .op-ctl select{flex:1;min-width:0}
 .op-ctl input{width:70px}
+.v-ov{position:fixed;inset:0;background:rgba(6,30,27,.72);z-index:200;display:flex;align-items:center;justify-content:center;padding:20px}
+.v-box{background:#fff;border-radius:18px;padding:24px 20px;text-align:center;max-width:380px;width:100%}
+.v-mic{font-size:48px;animation:vpulse 1s infinite}
+.v-txt{font-size:20px;font-weight:700;margin:10px 0;min-height:30px}
+.v-box small{color:var(--muted)}
+@keyframes vpulse{0%,100%{transform:scale(1)}50%{transform:scale(1.15)}}

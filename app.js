@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '2.4';
+const APP_VERSION = '2.5';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -901,7 +901,7 @@ V.invoice = (id, q, view) => {
       else inv.lines.push({ item, qty, price: toDoc(basePrice(it)), cp: it.consumerPrice ? toDoc(num(it.consumerPrice)) : '' });
     });
     payNow = r.pay || 0; showPay(); draw();
-    toast(`انضاف ${r.lines.length} مادة${r.skipped ? ` — ${r.skipped} سطر ما انضاف` : ''}`);
+    if (r.lines.length > 1 || r.skipped) toast(`انضاف ${r.lines.length} مادة${r.skipped ? ` — ${r.skipped} سطر ما انضاف` : ''}`);
   };
   const addByCode = code => { const it = findByCode(code); if (it) addItem(it); else toast('لا توجد مادة بهذا الباركود: ' + code, 1); };
 
@@ -1027,6 +1027,22 @@ V.invoice = (id, q, view) => {
     del: () => { if (!confirm('حذف الفاتورة نهائياً؟ سيتم عكس أثرها على الحسابات والمستودع.')) return; db.invoices = db.invoices.filter(x => x !== orig); save(); toast('تم الحذف'); go('#/invoices'); },
   });
   toggles(); draw();
+  // للأوامر الصوتية
+  window.InvHook = {
+    addSpoken: (t, raw) => {
+      OrderPaste.reset();
+      const line = OrderPaste.parseLine(t);
+      const m = line && line.kind !== 'pay' ? OrderPaste.best(line.kind === 'item' ? line : { ...line, t: { words: normAr(line.text).split(' '), nums: [] }, pack: null, qty: 1 }, items) : { it: null };
+      if (!m.it) { scanIn.value = raw; showSugg(); return toast('ما لقيت مادة: ' + raw, 1); }
+      fromPaste({ party: '', lines: [{ item: m.it.id, qty: line.qty || 1 }], pay: payNow });
+      toast(`🎤 ${m.it.name} × ${fmt(line.qty || 1)}${m.sure ? '' : ' (تأكد منها)'}`);
+    },
+    setParty: id => fromPaste({ party: id, lines: [], pay: payNow }),
+    setPay: n => { payNow = n; showPay(); },
+    save: () => doSave(false),
+    undo: () => { inv.lines.pop(); draw(); },
+  };
+  if (window.Voice) Voice.invReady();
 };
 
 /* ------------------------- السندات ------------------------- */

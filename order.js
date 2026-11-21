@@ -149,6 +149,6 @@ const OrderPaste = (() => {
       };
     };
   }
-  return { open, parseLine, parseMoney, best, keyOfText };
+  return { open, parseLine, parseMoney, best, keyOfText, reset: () => itemToks.clear() };
 })();
 window.OrderPaste = OrderPaste;

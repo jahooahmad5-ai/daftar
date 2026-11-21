@@ -9,7 +9,7 @@
 <link rel="manifest" href="manifest.json">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon-192.png">
-<link rel="stylesheet" href="styles.css?v=2.4">
+<link rel="stylesheet" href="styles.css?v=2.5">
 </head>
 <body>
 <div class="app">
@@ -30,6 +30,7 @@
       <a href="#/reports" data-r="reports"><i>📊</i>التقارير</a>
       <a href="#/settings" data-r="settings"><i>⚙️</i>الإعدادات</a>
     </nav>
+    <button id="voiceSide" class="install" style="margin-top:12px;background:#0f766e;color:#fff" hidden>🎤 أمر صوتي</button>
     <button id="syncPill" class="sync-pill" hidden></button>
     <button id="installBtn" class="install" hidden>⬇️ تثبيت التطبيق</button>
   </aside>
@@ -38,7 +39,7 @@
     <header class="top">
       <button id="menuBtn" class="icon-btn" aria-label="القائمة">☰</button>
       <b id="topTitle">دفتر</b>
-      <a href="#/invoice/new?type=sale" class="icon-btn" aria-label="فاتورة مبيع جديدة">＋</a>
+      <span style="display:flex;gap:6px"><button class="icon-btn" id="voiceBtn" aria-label="أمر صوتي" hidden>🎤</button><a href="#/invoice/new?type=sale" class="icon-btn" aria-label="فاتورة مبيع جديدة">＋</a></span>
     </header>
     <main id="view"></main>
   </div>
@@ -47,10 +48,12 @@
 <div id="toast"></div>
 <div id="print"></div>
 <script src="config.js"></script>
-<script src="app.js?v=2.4"></script>
-<script src="cloud.js?v=2.4"></script>
-<script src="printer.js?v=2.4"></script>
-<script src="import.js?v=2.4"></script>
-<script src="order.js?v=2.4"></script>
+<script src="app.js?v=2.5"></script>
+<script src="cloud.js?v=2.5"></script>
+<script src="printer.js?v=2.5"></script>
+<script src="import.js?v=2.5"></script>
+<script src="order.js?v=2.5"></script>
+<script src="voice.js?v=2.5"></script>
+<script>if(window.Voice&&Voice.supported){['voiceBtn','voiceSide'].forEach(id=>{const b=document.getElementById(id);b.hidden=false;b.onclick=()=>{document.body.classList.remove('menu-open');Voice.listen();};});}</script>
 </body>
 </html>
