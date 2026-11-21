@@ -1,5 +1,5 @@
 // Service Worker: يجعل التطبيق يعمل بدون إنترنت
-const CACHE = 'daftar-v5';
+const CACHE = 'daftar-v7';
 const FILES = ['./', 'index.html', 'styles.css', 'app.js', 'cloud.js', 'config.js', 'manifest.json', 'icon.svg', 'icon-192.png', 'icon-512.png'];
 
 self.addEventListener('install', e => {

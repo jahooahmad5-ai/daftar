@@ -7,7 +7,7 @@
 const Cloud = (() => {
   const SKEY = 'daftar-cloud-v1';
   const DBKEY = 'daftar-db-v1';
-  const KINDS = ['accounts', 'items', 'invoices', 'vouchers', 'entries'];
+  const KINDS = ['accounts', 'items', 'groups', 'invoices', 'vouchers', 'entries'];
   let st = (() => { try { return JSON.parse(localStorage.getItem(SKEY)) || {}; } catch (e) { return {}; } })();
   st.dirty = st.dirty || {};
   let snap = null, busy = false, lastErr = '', debounce = null;
@@ -277,7 +277,7 @@ const Cloud = (() => {
   async function openCompany(c) {
     const backup = db;
     Object.assign(st, { company: c.id, companyName: c.name, owner: c.owner === st.session.uid, lastPull: null, dirty: {} });
-    db = { ...seed(), accounts: [], items: [], invoices: [], vouchers: [], entries: [], seq: {} };
+    db = { ...seed(), accounts: [], items: [], groups: [], invoices: [], vouchers: [], entries: [], seq: {} };
     try {
       await pull();
       if (!db.accounts.length) { db = { ...seed(), settings: { ...seed().settings, ...db.settings } }; markAllDirty(); }
