@@ -85,7 +85,8 @@ const Receipt = (() => {
     gap(4);
     pair('رصيده قبل الفاتورة', fmt(B ? B.before : 0), { size: 22 });
     pair('رصيده بعد الفاتورة', fmt(B ? B.after : 0), { size: 22 });
-    pair('رصيد الحساب الحالي', fmt(B ? B.now : 0), { size: 22 });
+    pair('رصيد الحساب الحالي', fmt(B ? B.now : 0), { size: 22, bold: 1 });
+    if (oldOn() && B && B.now) pair('رصيد الحساب الحالي بالقديم', oldAmt(B.now), { size: 22, bold: 1 });
     line();
     if (s.phone) txt(`عند وجود أي استفسار يرجى التواصل مع هذا الرقم: ${s.phone}`, { size: 20, align: 'c' });
     if (s.receiptFooter) { gap(8); txt(s.receiptFooter, { size: 22, bold: 1, align: 'c' }); }
