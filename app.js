@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '1.8';
+const APP_VERSION = '1.9';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -121,7 +121,7 @@ const DEF_ACCOUNTS = [
 function seed() {
   return {
     version: 1,
-    settings: { company: 'اسم المنشأة', address: '', phone: '', currency: 'ل.س', currencyName: 'ليرة سورية', currency2: '$', currency2Name: 'دولار أمريكي', rate: '', showOld: '1', oldFactor: 100, startDate: new Date().getFullYear() + '-01-01' },
+    settings: { company: 'اسم المنشأة', address: '', phone: '', currency: 'ل.س', currencyName: 'ليرة سورية', currency2: '$', currency2Name: 'دولار أمريكي', rate: '', showOld: '1', oldFactor: 100, paperWidth: '80', receiptFooter: '', startDate: new Date().getFullYear() + '-01-01' },
     accounts: DEF_ACCOUNTS.map(([id, code, name, type, parent, group]) => ({ id, code, name, type, parent, group: !!group, sys: true })),
     items: [], groups: [], invoices: [], vouchers: [], entries: [], seq: {},
   };
@@ -783,7 +783,7 @@ V.invoice = (id, q, view) => {
   const stockOf = it => (st[it.id] ? st[it.id].qty : num(it.openQty));
 
   view.innerHTML = head(INV_TYPES[inv.type] + (orig ? ` رقم ${orig.no}` : ' جديدة'),
-    `${orig ? `${orig.party ? '<button class="btn wa" data-act="wa">واتساب</button>' : ''}<button class="btn" data-act="print">🖨 طباعة</button><button class="btn red" data-act="del">حذف</button>` : ''}<a class="btn" href="#/invoices">رجوع</a>`) + `
+    `${orig ? `${orig.party ? '<button class="btn wa" data-act="wa">واتساب</button>' : ''}<button class="btn" data-act="receipt">🧾 إيصال</button><button class="btn" data-act="print">🖨 طباعة</button><button class="btn red" data-act="del">حذف</button>` : ''}<a class="btn" href="#/invoices">رجوع</a>`) + `
   <div class="card">
     <div class="grid4">
       ${field({ k: 'date', l: 'التاريخ', t: 'date', req: 1 }, inv.date)}
@@ -994,6 +994,7 @@ V.invoice = (id, q, view) => {
     saveNew: () => doSave(true),
     print: () => printDoc(invoiceHtml(orig)),
     wa: () => waSend(acc(orig.party), waInvoiceText(orig)),
+    receipt: () => window.Receipt && Receipt.open(orig),
     del: () => { if (!confirm('حذف الفاتورة نهائياً؟ سيتم عكس أثرها على الحسابات والمستودع.')) return; db.invoices = db.invoices.filter(x => x !== orig); save(); toast('تم الحذف'); go('#/invoices'); },
   });
   toggles(); draw();
@@ -1322,6 +1323,8 @@ V.settings = (id, q, view) => {
       { k: 'showOld', l: 'إظهار المبالغ بالعملة القديمة كمان (قبل حذف الصفرين)', t: 'select', opts: [['1', 'نعم'], ['0', 'لا']] },
       { k: 'oldFactor', l: 'كل ليرة جديدة = كم ليرة قديمة', t: 'number' },
       { k: 'startDate', l: 'تاريخ بداية الفترة المحاسبية', t: 'date', req: 1 },
+      { k: 'paperWidth', l: 'عرض ورق الطابعة الحرارية', t: 'select', opts: [['80', '80 مم (3 إنش)'], ['58', '58 مم (2 إنش)']] },
+      { k: 'receiptFooter', l: 'عبارة أسفل الإيصال', ph: 'شكراً لتعاملكم معنا' },
     ], s)}
     <div class="form-actions"><button class="btn pri">حفظ الإعدادات</button></div>
   </form>
