@@ -21,14 +21,16 @@ const Receipt = (() => {
     const a = acc(inv.party); if (!a) return null;
     const sign = a.type === 'asset' ? 1 : -1;
     const links = new Set(db.vouchers.filter(v => v.inv === inv.id).map(v => 'v-' + v.id));
-    let run = 0, before = null, eff = 0;
+    // الترتيب حسب التاريخ ثم وقت الإنشاء (مو حسب ترتيب القيود)
+    const cr = e => { const d = e.src === 'invoice' ? db.invoices.find(x => x.id === e.ref) : e.src === 'voucher' ? db.vouchers.find(x => x.id === e.ref) : null; return d ? num(d.created) : 0; };
+    const me = [inv.date, num(inv.created)];
+    let before = 0, eff = 0;
     for (const e of engine().entries) {
       const d = e.lines.filter(l => l.acc === a.id).reduce((s, l) => s + (l.dr - l.cr) * sign, 0);
-      if (e.id === 'inv-' + inv.id) { before = run; eff += d; continue; }
-      if (links.has(e.id)) { eff += d; continue; }
-      run += d;
+      if (!d) continue;
+      if (e.id === 'inv-' + inv.id || links.has(e.id)) { eff += d; continue; }
+      if (e.date < me[0] || (e.date === me[0] && cr(e) < me[1])) before += d;
     }
-    if (before === null) before = run;
     return { before: r2(before), after: r2(before + eff), now: r2(partyBal(a)) };
   }
   const paidFor = inv => db.vouchers.filter(v => v.inv === inv.id).reduce((s, v) => s + num(v.amount), 0);
@@ -75,6 +77,8 @@ const Receipt = (() => {
     txt(`مجموع الفاتورة ${fmt(t.gross)}`, { size: 24, bold: 1 });
     const paid = paidFor(inv);
     pair(`دفعة نقدية ${fmt(inv.pay === 'cash' ? t.net : paid)}`, `الخصم/الإضافة ${fmt(t.add - t.disc)}`, { size: 21, swap: 1 });
+    const paidShown = inv.pay === 'cash' ? t.net : paid;
+    if (oldOn() && paidShown) txt(`الدفعة بالقديم: ${oldAmt(paidShown)}`, { size: 22, bold: 1 });
     if (inv.addNote && (t.add || t.disc)) txt(`(${inv.addNote})`, { size: 20 });
     gap(4);
     txt('المبلغ المستحق', { size: 24, bold: 1, align: 'c' });

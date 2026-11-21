@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '3.6';
+const APP_VERSION = '3.7';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -895,6 +895,7 @@ V.invoice = (id, q, view) => {
         <small class="muted" id="tWords"></small>
         <div id="payRow"><span>💵 دفعة</span><input name="payment" type="number" step="any" inputmode="decimal" placeholder="0" value=""></div>
         <div id="tRest" class="old-eq"></div>
+        <div id="tBal" class="old-eq"></div>
       </div>
     </div>
   </div>
@@ -922,6 +923,22 @@ V.invoice = (id, q, view) => {
     $('#barOld', view).textContent = oldTxt(nb);
     const pv = num(val('payment')), tr = $('#tRest', view);
     if (tr) tr.textContent = pv ? `الباقي على الحساب: ${fmt(n - pv)} ${sym}${oldOn() ? ` — الدفعة بالقديم: ${oldAmt(pv)}` : ''}` : '';
+    // رصيد الزبون الحالي وبعد الفاتورة (بالجديد والقديم)
+    const tb = $('#tBal', view), pa = acc(val('party'));
+    if (tb) {
+      if (!pa) tb.innerHTML = '';
+      else {
+        const sg = ['sale', 'purchase'].includes(inv.type) ? 1 : -1;
+        let cb = partyBal(pa);
+        if (orig && orig.party === pa.id) {
+          const op = db.vouchers.filter(v => v.inv === orig.id).reduce((x, v) => x + num(v.amount), 0);
+          cb -= ((orig.pay === 'credit' ? invTotals(orig).net * docRate(orig) : 0) - op) * sg;
+        }
+        const after = cb + ((val('pay') === 'credit' ? nb : 0) - pv) * sg;
+        const o = x => (oldOn() ? ` <small>(بالقديم ${oldAmt(x)})</small>` : '');
+        tb.innerHTML = `رصيد الحساب الحالي: <b>${fmt(cb)}</b>${o(cb)}<br>رصيده بعد الفاتورة: <b>${fmt(after)}</b>${o(after)}`;
+      }
+    }
     const cnt = inv.lines.reduce((s, l) => s + num(l.qty), 0);
     $('#barNet', view).textContent = fmt(n) + ' ' + sym;
     $('#barInfo', view).textContent = `${inv.lines.length} مادة — ${fmt(cnt)} قطعة${val('pay') === 'credit' ? ' — آجل' : ' — نقدي'}`;
@@ -1073,6 +1090,7 @@ V.invoice = (id, q, view) => {
       $('[data-tot]', card).textContent = fmt(num(l.qty) * num(l.price)); $('[data-old]', card).textContent = lineOld(l); totals();
     } else if (e.target.name === 'payment') { payNow = num(e.target.value); totals(); }
     else if (['discount', 'addition', 'rate'].includes(e.target.name)) totals();
+    else if (e.target.name === 'party') totals();
   };
   view.onchange = e => {
     if (e.target.name === 'pay') { toggles(); totals(); }
