@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '2.9';
+const APP_VERSION = '3.0';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -663,6 +663,46 @@ V.groups = (id, q, view) => {
   });
 };
 
+/* حذف صفرين (أو أكتر) من أسعار المواد — للي دخّل الأسعار بالعملة القديمة */
+function zerosForm(gf) {
+  const F = [['buyPrice', 'سعر الشراء'], ['sellPrice', 'سعر المبيع'], ['consumerPrice', 'سعر المستهلك'], ['openCost', 'كلفة أول المدة']];
+  const UNDO = 'daftar-zeros-undo';
+  let undo = null; try { undo = JSON.parse(localStorage.getItem(UNDO) || 'null'); } catch (e) {}
+  const scope = () => { const g = $('#zG').value; if (!g) return db.items; const ids = new Set(grpDesc(g)); return db.items.filter(i => ids.has(i.group)); };
+  modal('✂️ حذف صفرين من الأسعار', `
+    <p class="muted" style="margin-top:0">بيقسم الأسعار على الرقم اللي بتختاره (100 = حذف صفرين). مثلاً 250,000 بتصير 2,500.</p>
+    <div class="grid2">
+      <label class="fld"><span>اقسم على</span><select id="zF"><option value="100">100 (حذف صفرين)</option><option value="10">10 (حذف صفر)</option><option value="1000">1000 (حذف 3 أصفار)</option></select></label>
+      <label class="fld"><span>المواد</span><select id="zG">${optsHtml(grpOpts('— كل المواد —'), gf && gf !== 'none' ? gf : '')}</select></label>
+    </div>
+    <div style="margin:10px 0">${F.map(([k, l]) => `<label style="display:inline-flex;gap:6px;align-items:center;margin-left:14px"><input type="checkbox" data-zk="${k}" ${k !== 'openCost' ? 'checked' : ''}> ${l}</label>`).join('')}</div>
+    <label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="zOnlyBig" checked> بس الأسعار الكبيرة (≥ 1000) — مشان ما يقسم شي انصلح قبل</label>
+    <div id="zPrev" class="card" style="margin-top:10px;padding:10px"></div>
+    ${undo ? `<p class="muted" style="font-size:13px">آخر تعديل: ${esc(undo.when)} (${undo.items.length} مادة) <button type="button" class="mini" id="zUndo">↩️ تراجع عنه</button></p>` : ''}`,
+    { onSave: () => {
+      const f = num($('#zF').value), ks = $$('[data-zk]').filter(x => x.checked).map(x => x.dataset.zk), big = $('#zOnlyBig').checked;
+      if (!ks.length) { toast('اختار سعر واحد على الأقل', 1); return false; }
+      const list = scope();
+      if (!confirm(`رح تنقسم أسعار ${list.length} مادة على ${f}. متأكد؟`)) return false;
+      const backup = { when: new Date().toLocaleString('ar-SY'), items: list.map(i => ({ id: i.id, ...Object.fromEntries(F.map(([k]) => [k, i[k]])) })) };
+      try { localStorage.setItem(UNDO, JSON.stringify(backup)); } catch (e) {}
+      let n = 0;
+      list.forEach(i => { let ch = 0; ks.forEach(k => { const v = num(i[k]); if (v && (!big || v >= 1000)) { i[k] = r2(v / f); ch = 1; } }); n += ch; });
+      save(); toast(`تعدّلت أسعار ${n} مادة`); route();
+    }, saveText: '✂️ نفّذ' });
+  const prev = () => {
+    const f = num($('#zF').value), ks = $$('[data-zk]').filter(x => x.checked).map(x => x.dataset.zk), big = $('#zOnlyBig').checked, list = scope();
+    const ex = list.filter(i => ks.some(k => num(i[k]) && (!big || num(i[k]) >= 1000)));
+    $('#zPrev').innerHTML = `<b>${ex.length}</b> مادة رح تتعدّل${ex.length ? ':' : ''}<br>` + ex.slice(0, 4).map(i => `<small>${esc(i.name)}: ${ks.filter(k => num(i[k])).map(k => `${fmt(i[k])} ← <b>${fmt((!big || num(i[k]) >= 1000) ? num(i[k]) / f : i[k])}</b>`).join(' ، ')}</small>`).join('<br>') + (ex.length > 4 ? '<br><small class="muted">…</small>' : '');
+  };
+  $$('#dlg select, #dlg input[type=checkbox]').forEach(x => (x.onchange = prev)); prev();
+  const u = $('#zUndo');
+  if (u) u.onclick = () => {
+    if (!confirm('ترجيع الأسعار متل ما كانت قبل آخر تعديل؟')) return;
+    undo.items.forEach(b => { const i = db.items.find(x => x.id === b.id); if (i) F.forEach(([k]) => (i[k] = b[k])); });
+    localStorage.removeItem(UNDO); save(); $('#dlg').close(); toast('رجعت الأسعار'); route();
+  };
+}
 function itemForm(it, defGroup) {
   const fl = [
     { k: 'code', l: 'رمز المادة' }, { k: 'name', l: 'اسم المادة', req: 1 },
@@ -715,7 +755,7 @@ V.items = (id, q, view) => {
   }).join('');
   const gOpts = [['', '📂 كل المجموعات'], ...grpOpts().slice(1), ['none', '— مواد بدون مجموعة —']];
   view.innerHTML = head(gf && gf !== 'none' && grp(gf) ? `المواد: ${esc(grpPath(gf))}` : 'المواد والمستودع',
-    `<a class="btn" href="#/groups">📂 المجموعات</a><button class="btn" data-act="import">📥 استيراد Excel</button><button class="btn pri" data-act="add">+ مادة جديدة</button>`) + `
+    `<a class="btn" href="#/groups">📂 المجموعات</a><button class="btn" data-act="import">📥 استيراد Excel</button><button class="btn" data-act="zeros">✂️ حذف صفرين</button><button class="btn pri" data-act="add">+ مادة جديدة</button>`) + `
     <div class="card"><div class="filters" style="margin-bottom:10px"><select id="gf" style="flex:1;min-width:160px">${optsHtml(gOpts, gf)}</select>
     <input class="search" id="q" placeholder="🔎 بحث بالاسم أو الرمز أو الباركود" style="flex:2;min-width:180px"></div>
     ${table(['الرمز', 'المادة', 'الوحدة', 'الكمية', 'متوسط الكلفة', 'قيمة المخزون', 'سعر المبيع', 'سعر المستهلك', ''], rows,
@@ -725,6 +765,7 @@ V.items = (id, q, view) => {
   onAct(view, {
     add: () => itemForm(null, gf),
     import: () => window.ItemImport && ItemImport.open(),
+    zeros: () => zerosForm(gf),
     edit: id => itemForm(db.items.find(i => i.id === id)),
     del: id => {
       if (db.invoices.some(inv => inv.lines.some(l => l.item === id))) return toast('لا يمكن حذف مادة مستخدمة في فواتير', 1);
