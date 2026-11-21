@@ -145,14 +145,38 @@ const Receipt = (() => {
     }
   }
 
+  /* ---------- RawBT (تطبيق أندرويد وسيط للطابعات الحرارية) ---------- */
+  function b64(u8) { let s = ''; for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000)); return btoa(s); }
+  function rawbt(canvas) {
+    const data = b64(escpos(canvas));
+    location.href = 'intent:base64,' + data + '#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;end;';
+  }
+  /* ---------- طباعة النظام (خدمة طباعة أندرويد) بمقاس الإيصال ---------- */
+  function sysPrint(canvas) {
+    const mm = String(db.settings.paperWidth) === '58' ? 58 : 80;
+    const st = document.createElement('style');
+    st.textContent = `@media print{@page{size:${mm}mm auto;margin:0}.pdoc-rc{width:${mm}mm}.pdoc-rc img{width:100%;display:block}}`;
+    document.head.appendChild(st);
+    $('#print').innerHTML = `<div class="pdoc-rc"><img src="${canvas.toDataURL('image/png')}"></div>`;
+    const done = () => { st.remove(); window.removeEventListener('afterprint', done); };
+    window.addEventListener('afterprint', done);
+    setTimeout(() => window.print(), 150);
+  }
+
   /* ---------- الواجهة ---------- */
   function open(inv) {
     const canvas = build(inv);
     const hasBT = !!(navigator.bluetooth);
     modal('🧾 إيصال حراري', `
       <div class="rc-prev"></div>
-      <p class="muted" id="rcMsg" style="margin:8px 0 0">${hasBT ? 'شغّل الطابعة والبلوتوث، واضغط «طباعة بلوتوث». أول مرة اختار الطابعة من القائمة.' : 'المتصفح ما بيدعم البلوتوث (استخدم Chrome على أندرويد). فيك تشارك الإيصال كصورة.'}</p>`,
-      { extra: `${hasBT ? '<button type="button" class="btn pri" id="rcBt">🖨 طباعة بلوتوث</button><button type="button" class="btn" id="rcPick">🔄 طابعة تانية</button>' : ''}<button type="button" class="btn" id="rcShare">📤 مشاركة صورة</button>` });
+      <div class="rc-ways">
+        <button type="button" class="btn pri" id="rcRaw">📲 طباعة عبر تطبيق RawBT <small>(الأضمن)</small></button>
+        ${hasBT ? '<button type="button" class="btn" id="rcBt">🔵 بلوتوث مباشر من المتصفح</button>' : ''}
+        <button type="button" class="btn" id="rcSys">🖨 طباعة أندرويد</button>
+        <button type="button" class="btn" id="rcShare">📤 مشاركة كصورة</button>
+        ${hasBT ? '<button type="button" class="btn" id="rcPick" style="font-size:13px">🔄 اختيار طابعة بلوتوث تانية</button>' : ''}
+      </div>
+      <p class="muted" id="rcMsg" style="margin:8px 0 0">أول مرة: نزّل تطبيق <b>RawBT</b> من Play Store، افتحه واختار طابعتك من الإعدادات، بعدها ارجع واضغط «طباعة عبر RawBT».</p>`);
     const d = $('#dlg'), msg = $('#rcMsg', d);
     canvas.style.cssText = 'width:100%;max-width:320px;display:block;margin:auto;border:1px solid #ddd';
     $('.rc-prev', d).appendChild(canvas);
@@ -170,6 +194,8 @@ const Receipt = (() => {
       }
       btns.forEach(b => (b.disabled = false));
     };
+    $('#rcRaw', d).onclick = () => { msg.textContent = 'عم يفتح RawBT… إذا ما انفتح، تأكد إنه منزّل.'; rawbt(canvas); };
+    $('#rcSys', d).onclick = () => sysPrint(canvas);
     const bt = $('#rcBt', d); if (bt) bt.onclick = () => go(false);
     const pk = $('#rcPick', d); if (pk) pk.onclick = () => { dev = null; ch = null; go(true); };
     $('#rcShare', d).onclick = () => canvas.toBlob(async blob => {

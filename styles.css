@@ -274,3 +274,6 @@ img,svg,video{max-width:100%}
   body.menu-open .side{visibility:visible;transition:transform .2s}
 }
 .btn.wa,.mini.wa{background:#25d366;color:#fff;border-color:#25d366}
+.rc-ways{display:grid;gap:8px;margin-top:12px}
+.rc-ways .btn{width:100%;justify-content:center}
+@media print{.pdoc-rc{margin:0 auto}}
