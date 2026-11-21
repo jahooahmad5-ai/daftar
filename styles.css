@@ -291,3 +291,6 @@ img,svg,video{max-width:100%}
 .v-txt{font-size:20px;font-weight:700;margin:10px 0;min-height:30px}
 .v-box small{color:var(--muted)}
 @keyframes vpulse{0%,100%{transform:scale(1)}50%{transform:scale(1.15)}}
+.pk-list{display:grid;gap:6px;max-height:50vh;overflow:auto}
+.pk-row{text-align:right;background:#fff;border:1px solid var(--line);border-radius:10px;padding:10px 12px;font:inherit;cursor:pointer}
+.pk-row:active{background:var(--pri-soft)}

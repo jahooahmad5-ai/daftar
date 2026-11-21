@@ -76,6 +76,16 @@ const OrderPaste = (() => {
     return s1 > 0 ? { it: top, sure: s1 - s2 >= 2 } : { it: null, sure: false };
   }
 
+  // حفظ كتابة السطر كاسم تاني للمادة (للمرة الجاية)
+  function learn(l, id) {
+    const k = keyOf(l), it = db.items.find(x => x.id === id);
+    if (!k || !it) return;
+    db.items.forEach(x => { if (x.aliasKeys && x !== it) x.aliasKeys = x.aliasKeys.filter(y => y !== k); });
+    it.aliasKeys = [...new Set([...(it.aliasKeys || []), k])];
+    it.aliases = [...new Set([...(it.aliases || []), (l.text + (l.pack ? ' ' + l.pack + 'ق' : '')).trim()])];
+    itemToks.delete(it.id);
+  }
+
   function open({ sideSale, onDone }) {
     modal('📋 لصق طلبية', `
       <p class="muted" style="margin-top:0">الصق نص الطلبية متل ما هو (من واتساب مثلاً). أول سطر اسم ${sideSale ? 'الزبون' : 'المورد'}، وكل سطر مادة مع «عدد…»، وسطر «دفعة…» للمبلغ المدفوع.</p>
@@ -134,11 +144,7 @@ const OrderPaste = (() => {
           if (id && q > 0) out.push({ item: id, qty: q });
           // تعلّم: إذا اخترت المادة بإيدك أو أكدت سطر مشكوك فيه، منحفظ الكتابة كاسم تاني للمادة
           if (id && !(l.m.learned) && (!l.m.it || l.m.it.id !== id || !l.m.sure)) {
-            const k = keyOf(l), it = db.items.find(x => x.id === id);
-            db.items.forEach(x => { if (x.aliasKeys && x !== it) x.aliasKeys = x.aliasKeys.filter(y => y !== k); });
-            it.aliasKeys = [...new Set([...(it.aliasKeys || []), k])];
-            it.aliases = [...new Set([...(it.aliases || []), l.text + (l.pack ? ' ' + l.pack + 'ق' : '')])];
-            learned++;
+            learn(l, id); learned++;
           }
         });
         if (learned) { save(); toast(`تعلّمت ${learned} تسمية جديدة 👍`); }
@@ -149,6 +155,6 @@ const OrderPaste = (() => {
       };
     };
   }
-  return { open, parseLine, parseMoney, best, keyOfText, reset: () => itemToks.clear() };
+  return { open, parseLine, parseMoney, best, keyOfText, reset: () => itemToks.clear(), learn, asItem: l => (l.kind === 'item' ? l : { ...l, kind: 'item', t: toks(l.text), pack: null, qty: 1 }) };
 })();
 window.OrderPaste = OrderPaste;

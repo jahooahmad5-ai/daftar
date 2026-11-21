@@ -48,6 +48,8 @@ const Voice = (() => {
     const n = N(name).replace(/^(ل|لل|الى|ل)\s*/, '').replace(/^ل(?=[^ا])/, '');
     if (!n) return null;
     pool = pool || [...customers(), ...suppliers()];
+    const al = pool.find(a => (a.aliases || []).some(x => N(x) === n));
+    if (al) return al;
     let best = null, bs = 0;
     for (const a of pool) {
       const an = N(a.name);
@@ -92,13 +94,13 @@ const Voice = (() => {
     }
     // كشف حساب
     let name = after(n, /^(?:كشف\s*حساب|كشف)\s*/);
-    if (name !== null) { const a = findParty(name); if (!a) return say('ما لقيت حساب باسم ' + name, 1); go('#/report/statement?acc=' + a.id); return say('كشف حساب ' + a.name); }
+    if (name !== null) { const a = findParty(name); const f = a => { go('#/report/statement?acc=' + a.id); say('كشف حساب ' + a.name); }; return a ? f(a) : askParty(name, f); }
     // إرسال رصيد واتساب
     name = after(n, /^(?:ابعت|ابعث|ارسل|بعت)\s*(?:ل)?\s*(?:رصيد|حساب)\s*/);
-    if (name !== null) { name = name.replace(/(ع|على|عال|عل)\s*(ال)?واتس.*$/, '').replace(/واتس.*$/, ''); const a = findParty(name); if (!a) return say('ما لقيت حساب باسم ' + name, 1); waSend(a, waBalanceText(a)); return say('رصيد ' + a.name + ' على واتساب'); }
+    if (name !== null) { name = name.replace(/(ع|على|عال|عل)\s*(ال)?واتس.*$/, '').replace(/واتس.*$/, ''); const a = findParty(name); const f = a => { waSend(a, waBalanceText(a)); say('رصيد ' + a.name + ' على واتساب'); }; return a ? f(a) : askParty(name, f); }
     // رصيد
     name = after(n, /^(?:رصيد|قديش\s*(?:عليه|عليها|له|لها)|قديش\s*رصيد|حساب)\s*/);
-    if (name !== null && name) { const a = findParty(name); if (!a) return say('ما لقيت حساب باسم ' + name, 1); showBal(a); return; }
+    if (name !== null && name) { const a = findParty(name); return a ? showBal(a) : askParty(name, showBal); }
 
     // أوامر داخل الفاتورة
     if (onInv) {
@@ -106,7 +108,7 @@ const Voice = (() => {
       if (/^(امسح|احذف|شيل)\s*(اخر|آخر)/.test(n)) { InvHook.undo(); return say('شلت آخر مادة'); }
       if (/^(دفعه|دفعة|دفع|واصل|مقبوض)/.test(n)) { const v = /\d/.test(raw) && /مليون|الف|ألف/.test(raw) ? OrderPaste.parseMoney(raw) : (firstNum(t) || OrderPaste.parseMoney(raw)); const old = oldOn() && (v >= 100000 || /قديم/.test(n)); const base = old ? v / oldF() : v; InvHook.setPay(r2(base)); return say(`دفعة ${fmt(base)}${old ? ` (بالقديم ${fmt(v)})` : ''}`); }
       name = after(n, /^(?:الزبون|العميل|الزبونه|المورد|لل|ل)\s+/);
-      if (name) { const a = findParty(name); if (a) { InvHook.setParty(a.id); return say('الزبون: ' + a.name); } }
+      if (name) { const a = findParty(name); const f = a => { InvHook.setParty(a.id); say('الزبون: ' + a.name); }; return a ? f(a) : askParty(name, f); }
       return InvHook.addSpoken(t, raw);
     }
     // أي شي تاني: إذا شكله مادة بنفتح فاتورة مبيع ومنضيفه
@@ -115,6 +117,41 @@ const Voice = (() => {
     const a = findParty(n);
     if (a) { showBal(a); return; }
     say('ما فهمت: «' + raw + '»', 1);
+  }
+
+  /* ---------- لما ما يعرف الاسم: بيسألك شو هو وبيحفظه ---------- */
+  function pick(title, list, label, sub) {
+    return new Promise(done => {
+      let chosen = null;
+      modal(title, `<input class="search" id="pkQ" placeholder="🔎 دوّر…" style="width:100%;margin-bottom:8px">
+        <div id="pkL" class="pk-list"></div>
+        <p class="muted" style="font-size:13px;margin:8px 0 0">${sub || 'اختار الصح، والبرنامج بيحفظ هالتسمية للمرة الجاية.'}</p>`);
+      const d = $('#dlg'), L = $('#pkL', d), Q = $('#pkQ', d);
+      const draw = () => {
+        const q = N(Q.value);
+        const rows = list.filter(x => !q || N(label(x)).includes(q)).slice(0, 60);
+        L.innerHTML = rows.map(x => `<button type="button" class="pk-row" data-id="${x.id}">${esc(label(x))}</button>`).join('') || '<p class="muted">ما في نتائج</p>';
+      };
+      L.onclick = e => { const b = e.target.closest('[data-id]'); if (!b) return; chosen = list.find(x => x.id === b.dataset.id); d.close(); };
+      Q.oninput = draw; draw();
+      d.addEventListener('close', () => done(chosen), { once: true });
+    });
+  }
+  async function askItem(line, raw) {
+    const items = [...db.items].sort(byCode);
+    const it = await pick(`❓ شو يعني «${raw}»؟`, items, i => i.code + ' - ' + i.name);
+    if (!it) return null;
+    OrderPaste.learn(line, it.id); save();
+    toast(`👍 حفظت: «${line.text}» = ${it.name}`);
+    return it;
+  }
+  async function askParty(name, then) {
+    const pool = [...customers(), ...suppliers()];
+    const a = await pick(`❓ مين «${name}»؟`, pool, x => x.name);
+    if (!a) return;
+    a.aliases = [...new Set([...(a.aliases || []), name.trim()])]; save();
+    toast(`👍 حفظت: «${name}» = ${a.name}`);
+    then(a);
   }
 
   function showBal(a) {
@@ -131,7 +168,7 @@ const Voice = (() => {
     if (!pending) return;
     const p = pending; pending = null;
     setTimeout(() => {
-      if (p.party) { const a = findParty(p.party); if (a) InvHook.setParty(a.id); else toast('ما لقيت زبون باسم ' + p.party, 1); }
+      if (p.party) { const a = findParty(p.party); if (a) InvHook.setParty(a.id); else askParty(p.party, a => InvHook.setParty(a.id)); }
       if (p.line) InvHook.addSpoken(p.line, p.raw);
     }, 50);
   }
@@ -152,6 +189,6 @@ const Voice = (() => {
     ov.onclick = () => rec && rec.stop();
     rec.start();
   }
-  return { listen, exec, spokenNums, findParty, invReady, supported: !!SR };
+  return { listen, exec, spokenNums, findParty, invReady, askItem, supported: !!SR };
 })();
 window.Voice = Voice;

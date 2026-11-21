@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '2.5';
+const APP_VERSION = '2.6';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -492,15 +492,17 @@ function partyForm(a, kind) {
     { k: 'address', l: 'العنوان' }, { k: 'code', l: 'الرمز' },
   ];
   if (!a) fl.push({ k: 'openBal', l: kind === 'c' ? 'رصيد افتتاحي (له علينا ← اكتب بالسالب)' : 'رصيد افتتاحي (لنا عليه ← اكتب بالسالب)', t: 'number', full: 1 });
+  fl.push({ k: 'aliases', l: 'أسماء تانية (متل ما بتحكيه أو بتكتبه — كل اسم بسطر)', t: 'textarea', full: 1 });
   fl.push({ k: 'notes', l: 'ملاحظات', t: 'textarea', full: 1 });
-  const vals = a || { code: nextCode(acc(parent)) };
+  const vals = a ? { ...a, aliases: (a.aliases || []).join('\n') } : { code: nextCode(acc(parent)) };
   modal(a ? 'تعديل' : (kind === 'c' ? 'عميل جديد' : 'مورد جديد'), fields(fl, vals), {
     onSave: d => {
       const code = (d.code || '').trim() || nextCode(acc(parent));
       if (db.accounts.some(x => x.code === code && x !== a)) { toast('الرمز مستخدم مسبقاً', 1); return false; }
-      if (a) Object.assign(a, { name: d.name.trim(), phone: d.phone, address: d.address, notes: d.notes, code });
+      const aliases = String(d.aliases || '').split(/\n+/).map(x => x.trim()).filter(Boolean);
+      if (a) Object.assign(a, { name: d.name.trim(), phone: d.phone, address: d.address, notes: d.notes, code, aliases });
       else {
-        const na = { id: uid(), code, name: d.name.trim(), type: acc(parent).type, parent, group: false, phone: d.phone, address: d.address, notes: d.notes };
+        const na = { id: uid(), code, name: d.name.trim(), type: acc(parent).type, parent, group: false, phone: d.phone, address: d.address, notes: d.notes, aliases };
         db.accounts.push(na);
         const ob = r2(num(d.openBal));
         if (ob) {
@@ -1032,10 +1034,12 @@ V.invoice = (id, q, view) => {
     addSpoken: (t, raw) => {
       OrderPaste.reset();
       const line = OrderPaste.parseLine(t);
-      const m = line && line.kind !== 'pay' ? OrderPaste.best(line.kind === 'item' ? line : { ...line, t: { words: normAr(line.text).split(' '), nums: [] }, pack: null, qty: 1 }, items) : { it: null };
-      if (!m.it) { scanIn.value = raw; showSugg(); return toast('ما لقيت مادة: ' + raw, 1); }
-      fromPaste({ party: '', lines: [{ item: m.it.id, qty: line.qty || 1 }], pay: payNow });
-      toast(`🎤 ${m.it.name} × ${fmt(line.qty || 1)}${m.sure ? '' : ' (تأكد منها)'}`);
+      if (!line || line.kind === 'pay') return toast('ما فهمت: ' + raw, 1);
+      const ln = OrderPaste.asItem(line);
+      const m = OrderPaste.best(ln, items);
+      const add = it => { fromPaste({ party: '', lines: [{ item: it.id, qty: line.qty || 1 }], pay: payNow }); toast(`🎤 ${it.name} × ${fmt(line.qty || 1)}${m.it && !m.sure ? ' (تأكد منها)' : ''}`); };
+      if (m.it) return add(m.it);
+      Voice.askItem(ln, raw.replace(/\s*عدد.*$/, '')).then(it => it && add(it));
     },
     setParty: id => fromPaste({ party: id, lines: [], pay: payNow }),
     setPay: n => { payNow = n; showPay(); },
