@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '3.9';
+const APP_VERSION = '4.0';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -261,7 +261,7 @@ const balLabel = (a, b) => (DEBIT_NATURE.includes(a.type) ? (b >= 0 ? 'مدين'
 const waPhone = raw => {
   let d = String(raw || '').replace(/[٠-٩]/g, c => '٠١٢٣٤٥٦٧٨٩'.indexOf(c)).replace(/\D/g, '');
   if (d.startsWith('00')) d = d.slice(2);
-  if (d.length === 10 && d.startsWith('09')) d = '963' + d.slice(1);
+  if (d.startsWith('0') && d.length >= 9 && d.length <= 11) d = '963' + d.slice(1);   // رقم محلي سوري
   else if (d.length === 9 && d.startsWith('9')) d = '963' + d;
   return d.length >= 9 ? d : '';
 };
@@ -277,15 +277,31 @@ const balWords = (a, b) => {
   return t;
 };
 function waSend(a, text) {
-  let ph = waPhone(a && a.phone);
-  if (!ph) {
-    const n = prompt(`لا يوجد رقم واتساب صحيح لـ «${a ? a.name : ''}».\nاكتب الرقم (مثال 0991234567):`, (a && a.phone) || '');
-    if (n === null) return;
-    ph = waPhone(n);
-    if (!ph) return toast('الرقم غير صحيح', 1);
-    if (a) { a.phone = n.trim(); save(); }
-  }
-  window.open(`https://wa.me/${ph}?text=${encodeURIComponent(text)}`, '_blank');
+  // شاشة تأكيد: لمين رح تنبعت، والرقم قابل للتعديل، أو اختيار المحادثة من واتساب نفسه
+  const canPick = 'contacts' in navigator && 'ContactsManager' in window;
+  modal('📤 إرسال على واتساب', `
+    ${a ? `<p style="margin-top:0">إلى: <b>${esc(a.name)}</b></p>` : ''}
+    <label class="fld"><span>رقم الواتساب${a ? ' (بينحفظ مع الحساب)' : ''}</span>
+      <div style="display:flex;gap:6px"><input id="waPh" type="tel" inputmode="tel" dir="ltr" placeholder="09xxxxxxxx" value="${esc((a && a.phone) || '')}" style="flex:1">
+      ${canPick ? '<button type="button" class="btn" id="waC" title="من جهات الاتصال">📇</button>' : ''}</div></label>
+    <p class="muted" id="waHint" style="font-size:13px;margin:6px 0"></p>
+    <div class="rc-ways">
+      <button type="button" class="btn wa" id="waGo">✅ ابعت لهالرقم</button>
+      <button type="button" class="btn" id="waAny">💬 اختار المحادثة من واتساب</button>
+    </div>
+    <details style="margin-top:10px"><summary class="muted" style="font-size:13px">شوف الرسالة</summary><pre style="white-space:pre-wrap;font:inherit;font-size:13px;background:#f7faf9;padding:8px;border-radius:8px">${esc(text)}</pre></details>`);
+  const d = $('#dlg'), inp = $('#waPh', d), hint = $('#waHint', d);
+  const upd = () => { const p = waPhone(inp.value); hint.textContent = inp.value.trim() ? (p ? '✓ الرقم: +' + p : '⚠️ الرقم مو صحيح') : 'ما في رقم — فيك تختار المحادثة من واتساب'; };
+  inp.oninput = upd; upd();
+  const c = $('#waC', d);
+  if (c) c.onclick = async () => { try { const [r] = await navigator.contacts.select(['tel', 'name'], { multiple: false }); if (r && r.tel && r.tel[0]) { inp.value = r.tel[0]; upd(); } } catch (e) {} };
+  $('#waGo', d).onclick = () => {
+    const ph = waPhone(inp.value);
+    if (!ph) { toast('الرقم مو صحيح', 1); inp.focus(); return; }
+    if (a && inp.value.trim() !== (a.phone || '')) { a.phone = inp.value.trim(); save(); }
+    d.close(); window.open(`https://wa.me/${ph}?text=${encodeURIComponent(text)}`, '_blank');
+  };
+  $('#waAny', d).onclick = () => { d.close(); window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank'); };
 }
 const waHead = () => `*${db.settings.company}*`;
 function waBalanceText(a) {
@@ -868,7 +884,7 @@ V.invoice = (id, q, view) => {
   const stockOf = it => (st[it.id] ? st[it.id].qty : num(it.openQty));
 
   view.innerHTML = head(INV_TYPES[inv.type] + (orig ? ` رقم ${orig.no}` : ' جديدة'),
-    `${!orig ? '<button class="btn" data-act="paste">📋 لصق طلبية</button>' : ''}${orig ? `${orig.party ? '<button class="btn wa" data-act="wa">واتساب</button>' : ''}<button class="btn" data-act="receipt">🧾 إيصال</button><button class="btn" data-act="print">🖨 طباعة</button><button class="btn red" data-act="del">حذف</button>` : ''}<a class="btn" href="#/invoices">رجوع</a>`) + `
+    `${!orig ? '<button class="btn" data-act="paste">📋 لصق طلبية</button>' : ''}${orig ? `<button class="btn wa" data-act="wa">واتساب</button><button class="btn" data-act="receipt">🧾 إيصال</button><button class="btn" data-act="print">🖨 طباعة</button><button class="btn red" data-act="del">حذف</button>` : ''}<a class="btn" href="#/invoices">رجوع</a>`) + `
   <div class="search-wrap">
     <div class="scan-row">
       ${canScan() ? '<button class="sq-btn" data-act="cam" title="مسح بالكاميرا">▮▯▮</button>' : ''}
