@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '3.7';
+const APP_VERSION = '3.8';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -310,7 +310,15 @@ function waInvoiceText(inv) {
   if (inv.cur === 'fx') s += `(المعادل: ${fmt(t.net * num(inv.rate))} ${cur()})\n`;
   else if (oldOn()) s += `(بالقديم: ${oldAmt(t.net)})\n`;
   s += `الدفع: ${inv.pay === 'cash' ? 'نقدي' : 'آجل'}\n`;
-  if (a && inv.pay !== 'cash') s += `————————\nرصيد حسابكم الآن:\n${balWords(a, partyBal(a))}\n`;
+  if (a) {
+    const B = window.Receipt ? Receipt.balances(inv) : null;
+    if (B) {
+      const k = docRate(inv), netB = r2(t.net * k), sgn = ['sale', 'purchase'].includes(inv.type) ? 1 : -1;
+      const paidB = inv.pay === 'cash' ? netB : db.vouchers.filter(v => v.inv === inv.id).reduce((x, v) => x + num(v.amount), 0);
+      const o = x => (oldOn() ? ` (قديم ${oldAmt(x)})` : '');
+      s += `————————\nالحساب القديم: ${fmt(B.before)}${o(B.before)}\nكامل الفاتورة: ${fmt(B.after + paidB * sgn)}${o(B.after + paidB * sgn)}\nالدفعة: ${fmt(paidB)}${o(paidB)}\n*رصيد الحساب الحالي: ${fmt(B.after)}*${o(B.after)}\n`;
+    }
+  }
   return s + 'شكراً لتعاملكم معنا 🌹';
 }
 
@@ -934,9 +942,11 @@ V.invoice = (id, q, view) => {
           const op = db.vouchers.filter(v => v.inv === orig.id).reduce((x, v) => x + num(v.amount), 0);
           cb -= ((orig.pay === 'credit' ? invTotals(orig).net * docRate(orig) : 0) - op) * sg;
         }
-        const after = cb + ((val('pay') === 'credit' ? nb : 0) - pv) * sg;
+        const paidS = val('pay') === 'credit' ? pv : nb, kamel = cb + nb * sg, after = kamel - paidS * sg;
         const o = x => (oldOn() ? ` <small>(بالقديم ${oldAmt(x)})</small>` : '');
-        tb.innerHTML = `رصيد الحساب الحالي: <b>${fmt(cb)}</b>${o(cb)}<br>رصيده بعد الفاتورة: <b>${fmt(after)}</b>${o(after)}`;
+        tb.innerHTML = `<table class="acc-sum">${oldOn() ? '<tr><th></th><th>جديد</th><th>قديم</th></tr>' : ''}` +
+          [['مجموع الفاتورة', nb], ['الحساب القديم', cb], ['كامل الفاتورة', kamel], ['الدفعة', paidS], ['رصيد الحساب الحالي', after]]
+            .map(([l, v], i) => `<tr class="${i === 4 ? 'last' : i === 2 ? 'mid' : ''}"><td>${l}</td><td class="n">${fmt(v)}</td>${oldOn() ? `<td class="n">${oldAmt(v)}</td>` : ''}</tr>`).join('') + '</table>';
       }
     }
     const cnt = inv.lines.reduce((s, l) => s + num(l.qty), 0);

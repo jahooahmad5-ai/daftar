@@ -74,24 +74,27 @@ const Receipt = (() => {
     ops.push({ k: 'table', cols, rows, size: hasCp ? 20 : 22 });
     txt(`مجموع الكميات ${fmt(inv.lines.reduce((x, l) => x + num(l.qty), 0))}`, { size: 22 });
     line();
-    txt(`مجموع الفاتورة ${fmt(t.gross)}`, { size: 24, bold: 1 });
-    const paid = paidFor(inv);
-    pair(`دفعة نقدية ${fmt(inv.pay === 'cash' ? t.net : paid)}`, `الخصم/الإضافة ${fmt(t.add - t.disc)}`, { size: 21, swap: 1 });
-    const paidShown = inv.pay === 'cash' ? t.net : paid;
-    if (oldOn() && paidShown) txt(`الدفعة بالقديم: ${oldAmt(paidShown)}`, { size: 22, bold: 1 });
-    if (inv.addNote && (t.add || t.disc)) txt(`(${inv.addNote})`, { size: 20 });
-    gap(4);
-    txt('المبلغ المستحق', { size: 24, bold: 1, align: 'c' });
-    ops.push({ k: 'box', text: `${fmt(t.net)} ${inv.cur === 'fx' ? FX().name : (s.currencyName || cur())}`, size: 28 });
-    if (paid && inv.pay !== 'cash') txt(`الباقي بعد الدفعة: ${fmt(t.net - paid)}${oldOn() ? `  (بالقديم ${oldAmt(t.net - paid)})` : ''}`, { size: 22, bold: 1, align: 'c' });
-    if (inv.cur === 'fx') txt(`المعادل: ${fmt(t.net * num(inv.rate))} ${cur()}`, { size: 20, align: 'c' });
-    else if (oldOn()) txt(`بالقديم: ${oldAmt(t.net)}`, { size: 20, align: 'c' });
+    // الحسابات بالترتيب: مجموع الفاتورة ← الحساب القديم ← كامل الفاتورة ← الدفعة ← رصيد الحساب الحالي
+    const k = docRate(inv), netB = r2(t.net * k), sgn = ['sale', 'purchase'].includes(inv.type) ? 1 : -1;
+    const paidB = inv.pay === 'cash' ? netB : paidFor(inv);
     const B = balances(inv);
-    gap(4);
-    pair('رصيده قبل الفاتورة', fmt(B ? B.before : 0), { size: 22 });
-    pair('رصيده بعد الفاتورة', fmt(B ? B.after : 0), { size: 22 });
-    pair('رصيد الحساب الحالي', fmt(B ? B.now : 0), { size: 22, bold: 1 });
-    if (oldOn() && B && B.now) pair('رصيد الحساب الحالي بالقديم', oldAmt(B.now), { size: 22, bold: 1 });
+    const row = (label, v, o = {}) => ops.push({ k: 'tri', l: label, m: fmt(v), r: oldOn() ? oldAmt(v) : '', ...o });
+    if (t.disc || t.add) {
+      txt(`الإجمالي ${fmt(t.gross)}${t.disc ? ` — حسم ${fmt(t.disc)}` : ''}${t.add ? ` — إضافة ${fmt(t.add)}` : ''}${inv.addNote ? ` (${inv.addNote})` : ''}`, { size: 20 });
+    }
+    if (oldOn()) ops.push({ k: 'tri', l: '', m: 'جديد', r: 'قديم', size: 20, head: 1 });
+    row('مجموع الفاتورة', netB, { size: 24, bold: 1 });
+    if (inv.cur === 'fx') txt(`(${fmt(t.net)} ${FX().sym} × ${fmt(inv.rate)})`, { size: 20 });
+    if (B) {
+      const kamel = r2(B.after + paidB * sgn);
+      row('الحساب القديم', B.before, { size: 23 });
+      row('كامل الفاتورة', kamel, { size: 24, bold: 1 });
+      row('الدفعة', paidB, { size: 23 });
+      ops.push({ k: 'hr' });
+      row('رصيد الحساب الحالي', B.after, { size: 26, bold: 1, box: 1 });
+    } else {
+      row('الدفعة', paidB, { size: 23 });
+    }
     line();
     if (s.phone) txt(`عند وجود أي استفسار يرجى التواصل مع هذا الرقم: ${s.phone}`, { size: 20, align: 'c' });
     if (s.receiptFooter) { gap(8); txt(s.receiptFooter, { size: 22, bold: 1, align: 'c' }); }
@@ -126,8 +129,17 @@ const Receipt = (() => {
       const sz = (o.size || 24) * (W < 576 ? 0.82 : 1), lh = Math.round(sz * 1.45);
       if (o.k === 't') { const ls = wrap(o.text, o, W - 2 * P); plan.push({ o, ls, y: H, lh }); H += ls.length * lh; }
       else if (o.k === 'p') { plan.push({ o, y: H, lh }); H += lh; }
+      else if (o.k === 'tri') { plan.push({ o, y: H, lh }); H += lh + (o.box ? 14 : 2); }
       else if (o.k === 'hr') { plan.push({ o, y: H }); H += 18; }
       else if (o.k === 'img') { const h = Math.round(o.h * scale), w = Math.round(o.img.width * h / o.img.height); plan.push({ o, y: H, h, w: Math.min(w, W - 2 * P) }); H += h + 8; }
+      else if (o.k === 'tri') {
+        const yy = y + (o.box ? 6 : 0);
+        if (o.box) { x.lineWidth = 2; x.strokeRect(P, y, W - 2 * P, lh + 10); }
+        x.textAlign = 'right'; x.fillText(o.l, W - P - (o.box ? 6 : 0), yy);
+        if (o.r) { x.textAlign = 'center'; x.fillText(o.m, W * 0.36, yy); x.fillText(o.r, W * 0.13, yy); }
+        else { x.textAlign = 'left'; x.fillText(o.m, P + (o.box ? 6 : 0), yy); }
+        if (o.head) { x.fillRect(P, yy + lh - 4, W - 2 * P, 1); }
+      }
       else if (o.k === 'box') { plan.push({ o, y: H, lh }); H += lh + 16; }
       else if (o.k === 'table') {
         const tw = W - 2 * P, cw = o.cols.map(cl => cl.w * tw), pad = 5;
@@ -145,6 +157,14 @@ const Receipt = (() => {
       x.font = font(o); x.direction = 'rtl';
       if (o.k === 't') pl.ls.forEach((s, i) => { x.textAlign = o.align === 'c' ? 'center' : 'right'; x.fillText(s, o.align === 'c' ? W / 2 : W - P, y + i * lh); });
       else if (o.k === 'p') { x.textAlign = 'right'; x.fillText(o.l, W - P, y); x.textAlign = 'left'; x.fillText(o.r, P, y); }
+      else if (o.k === 'tri') {
+        const yy = y + (o.box ? 6 : 0);
+        if (o.box) { x.lineWidth = 2; x.strokeRect(P, y, W - 2 * P, lh + 10); }
+        x.textAlign = 'right'; x.fillText(o.l, W - P - (o.box ? 6 : 0), yy);
+        if (o.r) { x.textAlign = 'center'; x.fillText(o.m, W * 0.36, yy); x.fillText(o.r, W * 0.13, yy); }
+        else { x.textAlign = 'left'; x.fillText(o.m, P + (o.box ? 6 : 0), yy); }
+        if (o.head) { x.fillRect(P, yy + lh - 4, W - 2 * P, 1); }
+      }
       else if (o.k === 'box') { x.lineWidth = 2; x.strokeRect(P, y, W - 2 * P, lh + 10); x.textAlign = 'center'; x.fillText(o.text, W / 2, y + 6); }
       else if (o.k === 'table') {
         x.lineWidth = 2; let yy = y;
@@ -288,6 +308,6 @@ const Receipt = (() => {
       else { const u = URL.createObjectURL(blob), el = document.createElement('a'); el.href = u; el.download = f.name; el.click(); setTimeout(() => URL.revokeObjectURL(u), 3000); }
     }, 'image/png');
   }
-  return { open, build: inv => build(inv), escpos, loadLogo };
+  return { open, build: inv => build(inv), escpos, loadLogo, balances };
 })();
 window.Receipt = Receipt;
