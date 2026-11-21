@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '2.3';
+const APP_VERSION = '2.4';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -670,8 +670,9 @@ function itemForm(it, defGroup) {
     { k: 'consumerPrice', l: 'سعر المستهلك', t: 'number', full: 1 },
     { k: 'openQty', l: 'كمية أول المدة', t: 'number' }, { k: 'openCost', l: 'كلفة الوحدة أول المدة', t: 'number' },
     { k: 'barcodes', l: 'الباركودات (كل باركود بسطر — يمكن إضافة أكثر من باركود)', t: 'textarea', full: 1 },
+    { k: 'aliases', l: 'أسماء تانية (متل ما بتنكتب بطلبيات الواتس — كل اسم بسطر)', t: 'textarea', full: 1 },
   ];
-  const vals = it ? { ...it, barcodes: (it.barcodes || []).join('\n') } : { code: nextItemCode(), unit: 'قطعة', group: defGroup && defGroup !== 'none' ? defGroup : '' };
+  const vals = it ? { ...it, barcodes: (it.barcodes || []).join('\n'), aliases: (it.aliases || []).join('\n') } : { code: nextItemCode(), unit: 'قطعة', group: defGroup && defGroup !== 'none' ? defGroup : '' };
   const f = modal(it ? 'تعديل مادة' : 'مادة جديدة', fields(fl, vals) +
     (canScan() ? `<button type="button" class="btn" id="bcScan" style="margin-top:8px">📷 إضافة باركود بالكاميرا</button>` : '') +
     `<p class="muted" style="font-size:13px;margin:8px 0 0">بقارئ الباركود: اضغط داخل خانة الباركودات وامسح، كل مسحة بسطر جديد.</p>`, {
@@ -683,7 +684,9 @@ function itemForm(it, defGroup) {
         const other = db.items.find(x => x !== it && itemCodes(x).includes(c));
         if (other) { toast(`الرمز/الباركود ${c} مستخدم للمادة: ${other.name}`, 1); return false; }
       }
-      const o = { code, barcodes, group: d.group || null, name: d.name.trim(), unit: d.unit.trim(), minQty: num(d.minQty), buyPrice: num(d.buyPrice), sellPrice: num(d.sellPrice), consumerPrice: num(d.consumerPrice), openQty: num(d.openQty), openCost: num(d.openCost) };
+      const aliases = String(d.aliases || '').split(/\n+/).map(x => x.trim()).filter(Boolean);
+      const aliasKeys = window.OrderPaste ? [...new Set(aliases.map(OrderPaste.keyOfText).filter(Boolean))] : [];
+      const o = { code, barcodes, aliases, aliasKeys, group: d.group || null, name: d.name.trim(), unit: d.unit.trim(), minQty: num(d.minQty), buyPrice: num(d.buyPrice), sellPrice: num(d.sellPrice), consumerPrice: num(d.consumerPrice), openQty: num(d.openQty), openCost: num(d.openCost) };
       if (it) Object.assign(it, o); else db.items.push({ id: uid(), ...o });
       save(); toast('تم الحفظ'); route();
     },

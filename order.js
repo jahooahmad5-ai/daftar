@@ -22,7 +22,7 @@ const OrderPaste = (() => {
     // الكمية: عدد8 / ص2 / رقم بالآخر
     let qty = null;
     s = s.replace(/عدد\s*(\d+(?:\.\d+)?)/g, (m, n) => { qty = +n; return ' '; });
-    if (qty === null) s = s.replace(/(?:^|\s)(?:ص|صندوق|كرتون[هة]?|كرت)\s*(\d+)\s*$/, (m, n) => { qty = +n; return ' '; });
+    if (qty === null) s = s.replace(/(^|\s|[^\d\s])(?:ص|صندوق)\s*(\d{1,3})\s*$/, (m, pre, n) => { qty = +n; return pre + ' '; });
     if (qty === null && pack !== null) s = s.replace(/\s(\d{1,3})\s*$/, (m, n) => { qty = +n; return ' '; });
     const t = toks(s);
     if (qty === null && !t.nums.length && pack === null) return { kind: 'name', raw, text: s.trim() };
@@ -42,11 +42,18 @@ const OrderPaste = (() => {
     return n;
   }
 
+  // مفتاح ثابت للسطر (بدون الكمية) لتذكّر المادة اللي اخترتها
+  const keyOf = line => [...line.t.words, ...line.t.nums.map(String), line.pack ? line.pack + 'ق' : ''].filter(Boolean).join(' ');
+  const keyOfText = txt => { const l = parseLine(txt); return l && l.kind === 'item' ? keyOf(l) : (l && l.kind === 'name' ? keyOf({ t: toks(l.text), pack: null }) : ''); };
+
   // تقييم مدى تطابق سطر مع مادة
   const itemToks = new Map();
   function score(line, it) {
-    let T = itemToks.get(it.id);
-    if (!T) { T = toks(it.name + ' ' + (it.unit || '')); itemToks.set(it.id, T); }
+    let L = itemToks.get(it.id);
+    if (!L) { L = [toks(it.name + ' ' + (it.unit || '')), ...(it.aliases || []).map(a => toks(a))]; itemToks.set(it.id, L); }
+    return Math.max(...L.map(T => score1(line, T)));
+  }
+  function score1(line, T) {
     let sc = 0;
     const lineNums = [...line.t.nums]; if (line.pack) lineNums.push(line.pack);
     for (const n of line.t.nums) sc += T.nums.includes(n) ? 4 : -5;
@@ -61,6 +68,9 @@ const OrderPaste = (() => {
     return sc;
   }
   function best(line, items) {
+    const k = keyOf(line);
+    const hit = items.find(it => (it.aliasKeys || []).includes(k));
+    if (hit) return { it: hit, sure: true, learned: true };
     let top = null, s1 = -1e9, s2 = -1e9;
     for (const it of items) { const s = score(line, it); if (s > s1) { s2 = s1; s1 = s; top = it; } else if (s > s2) s2 = s; }
     return s1 > 0 ? { it: top, sure: s1 - s2 >= 2 } : { it: null, sure: false };
@@ -91,10 +101,10 @@ const OrderPaste = (() => {
       res.innerHTML = `
         <label class="fld" style="margin-top:10px"><span>${sideSale ? 'الزبون' : 'المورد'}${nameLine ? ` (مكتوب: «${esc(nameLine.text)}»)` : ''}</span>
           <select id="opParty">${optsHtml(pOpts, party ? party.id : (nameLine ? '__new' : ''))}</select></label>
-        <p style="margin:10px 0 4px"><b>المواد:</b> لقيت ${found} من ${lines.length}. ${found < lines.length ? '<span class="bad">الأسطر الحمرا اختار مادتها بإيدك.</span>' : ''} ${lines.some(l => l.m.it && !l.m.sure) ? '<span class="muted">الأسطر الصفرا تأكد منها.</span>' : ''}</p>
+        <p style="margin:10px 0 4px"><b>المواد:</b> لقيت ${found} من ${lines.length}. ${found < lines.length ? '<span class="bad">الأسطر الحمرا اختار مادتها بإيدك.</span>' : ''} ${lines.some(l => l.m.it && !l.m.sure) ? '<span class="muted">الأسطر الصفرا تأكد منها.</span>' : ''}<br><small class="muted">أي مادة بتختارها بإيدك، البرنامج بيتذكر هالتسمية للمرة الجاية.</small></p>
         <div class="op-list">${lines.map((l, i) => `
           <div class="op-row ${!l.m.it ? 'bad-row' : !l.m.sure ? 'warn-row' : ''}">
-            <div class="op-raw">${esc(l.raw)}</div>
+            <div class="op-raw">${esc(l.raw)}${l.m.learned ? ' <small class="pos">✓ محفوظة</small>' : ''}</div>
             <div class="op-ctl"><select data-op="${i}">${optsHtml(itemOpts, l.m.it ? l.m.it.id : '')}</select>
             <input type="number" step="any" inputmode="decimal" data-oq="${i}" value="${l.qty}" title="الكمية"></div>
           </div>`).join('')}</div>
@@ -118,7 +128,20 @@ const OrderPaste = (() => {
           db.accounts.push(a); save(); pid = a.id;
         }
         const out = [];
-        lines.forEach((l, i) => { const id = $(`[data-op="${i}"]`, res).value, q = num($(`[data-oq="${i}"]`, res).value); if (id && q > 0) out.push({ item: id, qty: q }); });
+        let learned = 0;
+        lines.forEach((l, i) => {
+          const id = $(`[data-op="${i}"]`, res).value, q = num($(`[data-oq="${i}"]`, res).value);
+          if (id && q > 0) out.push({ item: id, qty: q });
+          // تعلّم: إذا اخترت المادة بإيدك أو أكدت سطر مشكوك فيه، منحفظ الكتابة كاسم تاني للمادة
+          if (id && !(l.m.learned) && (!l.m.it || l.m.it.id !== id || !l.m.sure)) {
+            const k = keyOf(l), it = db.items.find(x => x.id === id);
+            db.items.forEach(x => { if (x.aliasKeys && x !== it) x.aliasKeys = x.aliasKeys.filter(y => y !== k); });
+            it.aliasKeys = [...new Set([...(it.aliasKeys || []), k])];
+            it.aliases = [...new Set([...(it.aliases || []), l.text + (l.pack ? ' ' + l.pack + 'ق' : '')])];
+            learned++;
+          }
+        });
+        if (learned) { save(); toast(`تعلّمت ${learned} تسمية جديدة 👍`); }
         let pay = 0;
         if (pays.length) { const a = num($('#opPay', res).value); pay = r2($('#opPayCur', res).value === 'old' ? a / oldF() : a); }
         $('#dlg').close();
@@ -126,6 +149,6 @@ const OrderPaste = (() => {
       };
     };
   }
-  return { open, parseLine, parseMoney, best };
+  return { open, parseLine, parseMoney, best, keyOfText };
 })();
 window.OrderPaste = OrderPaste;
