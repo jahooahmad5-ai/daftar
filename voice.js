@@ -109,6 +109,9 @@ const Voice = (() => {
     // أوامر داخل الفاتورة
     if (onInv) {
       if (/^(احفظ|حفظ|خلص|سجل|احفظها)/.test(n)) { InvHook.save(); return; }
+      // «عدد 5» / «العدد تلاتة» / «خليه 4» ← يغيّر كمية آخر مادة
+      m = N(t).match(/^(?:عدد|العدد|الكميه|كميه|كمية|خلي العدد|خليه|خليها|خليهم|صلح العدد)\s*(\d+(?:\.\d+)?)$/) || N(t).match(/^(\d+(?:\.\d+)?)$/);
+      if (m) { const it = InvHook.setQty(+m[1]); return it ? say(`${it.name} × ${fmt(+m[1])}`) : say('ما في مادة بالفاتورة لغيّر عددها', 1); }
       if (/^(امسح|احذف|شيل)\s*(اخر|آخر)/.test(n)) { InvHook.undo(); return say('شلت آخر مادة'); }
       if (/^(دفعه|دفعة|دفع|واصل|مقبوض)/.test(n)) { const v = /\d/.test(raw) && /مليون|الف|ألف/.test(raw) ? OrderPaste.parseMoney(raw) : (firstNum(t) || OrderPaste.parseMoney(raw)); const old = oldOn() && (v >= 100000 || /قديم/.test(n)); const base = old ? v / oldF() : v; InvHook.setPay(r2(base)); return say(`دفعة ${fmt(base)}${old ? ` (بالقديم ${fmt(v)})` : ''}`); }
       m = N(t).match(/^(?:حسم|خصم|اخصم|حسملو|حسملها)\s*(?:مبلغ)?\s*(\d+(?:\.\d+)?)\s*(?:ليره|ل\.?س)?$/);

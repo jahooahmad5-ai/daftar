@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '4.0';
+const APP_VERSION = '4.1';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -1001,7 +1001,9 @@ V.invoice = (id, q, view) => {
   const toDoc = base => (inv.cur === 'fx' && rate() ? r2(base / rate()) : base);
   const basePrice = it => (sideSale ? num(it.sellPrice) : (num(it.buyPrice) || r2(st[it.id]?.avg || 0)));
   // إضافة مادة: إذا كانت موجودة بالفاتورة تزيد الكمية
+  let lastId = null;
   const addItem = it => {
+    lastId = it.id;
     const ex = inv.lines.find(l => l.item === it.id);
     if (ex) ex.qty = num(ex.qty) + 1;
     else inv.lines.push({ item: it.id, qty: 1, price: toDoc(basePrice(it)), cp: it.consumerPrice ? toDoc(num(it.consumerPrice)) : '' });
@@ -1017,6 +1019,7 @@ V.invoice = (id, q, view) => {
       sel.value = r.party; $('[name="pay"]', view).value = 'credit'; toggles();
     }
     r.lines.forEach(({ item, qty }) => {
+      lastId = item;
       const it = db.items.find(x => x.id === item); if (!it) return;
       const ex = inv.lines.find(l => l.item === item);
       if (ex) ex.qty = num(ex.qty) + qty;
@@ -1078,6 +1081,8 @@ V.invoice = (id, q, view) => {
     if (e.key !== 'Enter') return;
     e.preventDefault();
     const c = scanIn.value.trim(); if (!c) return;
+    const qm = window.Voice && normAr(Voice.spokenNums(c)).match(/^(?:عدد|العدد|كميه)\s*(\d+(?:\.\d+)?)$/);
+    if (qm) { const it = InvHook.setQty(+qm[1]); scanIn.value = ''; sugg.hidden = true; return it ? toast(`✓ ${it.name} × ${fmt(+qm[1])}`) : toast('ما في مادة بالفاتورة', 1); }
     const exact = findByCode(c);
     if (exact) pick(exact);
     else if (matches.length === 1) pick(matches[0]);
@@ -1202,6 +1207,11 @@ V.invoice = (id, q, view) => {
     },
     setParty: id => fromPaste({ party: id, lines: [], pay: payNow }),
     setPay: n => { payNow = n; showPay(); },
+    setQty: q => {
+      const l = inv.lines.find(x => x.item === lastId) || inv.lines[inv.lines.length - 1];
+      if (!l || !(q > 0)) return null;
+      l.qty = q; draw(); return db.items.find(x => x.id === l.item);
+    },
     setAdj: (k, v) => { $(`[name=${k}]`, view).value = v || ''; totals(); },
     save: () => doSave(false),
     undo: () => { inv.lines.pop(); draw(); },
