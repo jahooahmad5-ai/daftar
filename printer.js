@@ -74,7 +74,7 @@ const Receipt = (() => {
     ops.push({ k: 'table', cols, rows, size: hasCp ? 20 : 22 });
     txt(`مجموع الكميات ${fmt(inv.lines.reduce((x, l) => x + num(l.qty), 0))}`, { size: 22 });
     line();
-    // الحسابات بالترتيب: مجموع الفاتورة ← الحساب القديم ← كامل الفاتورة ← الدفعة ← رصيد الحساب الحالي
+    // الحسابات بالترتيب: مجموع الفاتورة ← الحساب القديم ← كامل الحساب ← الدفعة ← رصيد الحساب الحالي
     const k = docRate(inv), netB = r2(t.net * k), sgn = ['sale', 'purchase'].includes(inv.type) ? 1 : -1;
     const paidB = inv.pay === 'cash' ? netB : paidFor(inv);
     const B = balances(inv);
@@ -88,7 +88,7 @@ const Receipt = (() => {
     if (B) {
       const kamel = r2(B.after + paidB * sgn);
       row('الحساب القديم', B.before, { size: 23 });
-      row('كامل الفاتورة', kamel, { size: 24, bold: 1 });
+      row('كامل الحساب', kamel, { size: 24, bold: 1 });
       row('الدفعة', paidB, { size: 23 });
       ops.push({ k: 'hr' });
       row('رصيد الحساب الحالي', B.after, { size: 26, bold: 1, box: 1 });

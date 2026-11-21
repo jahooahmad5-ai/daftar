@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '3.8';
+const APP_VERSION = '3.9';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -316,7 +316,7 @@ function waInvoiceText(inv) {
       const k = docRate(inv), netB = r2(t.net * k), sgn = ['sale', 'purchase'].includes(inv.type) ? 1 : -1;
       const paidB = inv.pay === 'cash' ? netB : db.vouchers.filter(v => v.inv === inv.id).reduce((x, v) => x + num(v.amount), 0);
       const o = x => (oldOn() ? ` (قديم ${oldAmt(x)})` : '');
-      s += `————————\nالحساب القديم: ${fmt(B.before)}${o(B.before)}\nكامل الفاتورة: ${fmt(B.after + paidB * sgn)}${o(B.after + paidB * sgn)}\nالدفعة: ${fmt(paidB)}${o(paidB)}\n*رصيد الحساب الحالي: ${fmt(B.after)}*${o(B.after)}\n`;
+      s += `————————\nالحساب القديم: ${fmt(B.before)}${o(B.before)}\nكامل الحساب: ${fmt(B.after + paidB * sgn)}${o(B.after + paidB * sgn)}\nالدفعة: ${fmt(paidB)}${o(paidB)}\n*رصيد الحساب الحالي: ${fmt(B.after)}*${o(B.after)}\n`;
     }
   }
   return s + 'شكراً لتعاملكم معنا 🌹';
@@ -945,7 +945,7 @@ V.invoice = (id, q, view) => {
         const paidS = val('pay') === 'credit' ? pv : nb, kamel = cb + nb * sg, after = kamel - paidS * sg;
         const o = x => (oldOn() ? ` <small>(بالقديم ${oldAmt(x)})</small>` : '');
         tb.innerHTML = `<table class="acc-sum">${oldOn() ? '<tr><th></th><th>جديد</th><th>قديم</th></tr>' : ''}` +
-          [['مجموع الفاتورة', nb], ['الحساب القديم', cb], ['كامل الفاتورة', kamel], ['الدفعة', paidS], ['رصيد الحساب الحالي', after]]
+          [['مجموع الفاتورة', nb], ['الحساب القديم', cb], ['كامل الحساب', kamel], ['الدفعة', paidS], ['رصيد الحساب الحالي', after]]
             .map(([l, v], i) => `<tr class="${i === 4 ? 'last' : i === 2 ? 'mid' : ''}"><td>${l}</td><td class="n">${fmt(v)}</td>${oldOn() ? `<td class="n">${oldAmt(v)}</td>` : ''}</tr>`).join('') + '</table>';
       }
     }
