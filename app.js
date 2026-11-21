@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '2.8';
+const APP_VERSION = '2.9';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -799,6 +799,7 @@ V.invoice = (id, q, view) => {
     </div>
     <div id="sugg" class="sugg" hidden></div>
   </div>
+  <div id="ln" class="ln-list"></div>
   <div class="card">
     <div class="grid4">
       ${field({ k: 'date', l: 'التاريخ', t: 'date', req: 1 }, inv.date)}
@@ -810,7 +811,6 @@ V.invoice = (id, q, view) => {
     </div>
     ${!items.length ? `<p class="bad">لا توجد مواد. <a href="#/items">أضف مواد أولاً</a>.</p>` : ''}
   </div>
-  <div id="ln" class="ln-list"></div>
   <div class="card">
     <div class="inv-foot">
       ${field({ k: 'note', l: 'ملاحظات', t: 'textarea' }, inv.note)}
