@@ -480,24 +480,72 @@ V.parties = (id, q, view) => {
 };
 
 /* ------------------------- المواد والمستودع ------------------------- */
+/* ---------- الباركود ---------- */
+const parseCodes = txt => [...new Set(String(txt || '').split(/[\n,،;\s]+/).map(x => x.trim()).filter(Boolean))];
+const itemCodes = i => [i.code, ...(i.barcodes || [])].filter(Boolean);
+const findByCode = c => { c = String(c || '').trim(); return c ? db.items.find(i => itemCodes(i).includes(c)) : null; };
+const canScan = () => 'BarcodeDetector' in window && !!navigator.mediaDevices?.getUserMedia;
+/* مسح باركود بكاميرا الموبايل (Chrome على أندرويد) */
+async function scanBarcode(onCode) {
+  if (!canScan()) return toast('المسح بالكاميرا غير مدعوم على هذا المتصفح — استخدم Chrome على أندرويد أو قارئ باركود', 1);
+  let d = document.getElementById('scanDlg');
+  if (!d) { d = document.createElement('dialog'); d.id = 'scanDlg'; document.body.appendChild(d); }
+  d.innerHTML = `<div class="dlg-form"><header><h3>📷 امسح الباركود</h3><button type="button" class="x" id="scanX">✕</button></header>
+    <div class="dlg-body" style="padding:0;position:relative;background:#000"><video id="scanV" playsinline muted style="width:100%;display:block;max-height:60vh;object-fit:cover"></video>
+    <div style="position:absolute;inset:35% 10%;border:3px solid #14b8a6;border-radius:12px;pointer-events:none"></div></div>
+    <footer><span class="muted">وجّه الكاميرا على الباركود</span></footer></div>`;
+  let stream = null, timer = null, done = false;
+  const stop = () => { done = true; clearTimeout(timer); stream?.getTracks().forEach(t => t.stop()); if (d.open) d.close(); };
+  d.onclose = stop; $('#scanX', d).onclick = stop;
+  d.showModal();
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
+    const v = $('#scanV', d); v.srcObject = stream; await v.play();
+    let formats; try { formats = await BarcodeDetector.getSupportedFormats(); } catch (e) { /* */ }
+    const det = new BarcodeDetector(formats && formats.length ? { formats } : undefined);
+    const tick = async () => {
+      if (done) return;
+      try {
+        const r = await det.detect(v);
+        if (r.length && r[0].rawValue) { const code = r[0].rawValue.trim(); stop(); navigator.vibrate?.(80); onCode(code); return; }
+      } catch (e) { /* */ }
+      timer = setTimeout(tick, 250);
+    };
+    tick();
+  } catch (e) { stop(); toast('تعذّر فتح الكاميرا — اسمح للمتصفح باستخدامها', 1); }
+}
+
 function nextItemCode() { const m = db.items.reduce((x, i) => Math.max(x, parseInt(i.code, 10) || 0), 0); return String(m + 1).padStart(3, '0'); }
 function itemForm(it) {
   const fl = [
-    { k: 'code', l: 'رمز المادة / الباركود' }, { k: 'name', l: 'اسم المادة', req: 1 },
+    { k: 'code', l: 'رمز المادة' }, { k: 'name', l: 'اسم المادة', req: 1 },
     { k: 'unit', l: 'الوحدة', ph: 'قطعة، كيلو، علبة…' }, { k: 'minQty', l: 'الحد الأدنى للتنبيه', t: 'number' },
     { k: 'buyPrice', l: 'سعر الشراء', t: 'number' }, { k: 'sellPrice', l: 'سعر المبيع', t: 'number' },
     { k: 'consumerPrice', l: 'سعر المستهلك', t: 'number', full: 1 },
     { k: 'openQty', l: 'كمية أول المدة', t: 'number' }, { k: 'openCost', l: 'كلفة الوحدة أول المدة', t: 'number' },
+    { k: 'barcodes', l: 'الباركودات (كل باركود بسطر — يمكن إضافة أكثر من باركود)', t: 'textarea', full: 1 },
   ];
-  modal(it ? 'تعديل مادة' : 'مادة جديدة', fields(fl, it || { code: nextItemCode(), unit: 'قطعة' }), {
+  const vals = it ? { ...it, barcodes: (it.barcodes || []).join('\n') } : { code: nextItemCode(), unit: 'قطعة' };
+  const f = modal(it ? 'تعديل مادة' : 'مادة جديدة', fields(fl, vals) +
+    (canScan() ? `<button type="button" class="btn" id="bcScan" style="margin-top:8px">📷 إضافة باركود بالكاميرا</button>` : '') +
+    `<p class="muted" style="font-size:13px;margin:8px 0 0">بقارئ الباركود: اضغط داخل خانة الباركودات وامسح، كل مسحة بسطر جديد.</p>`, {
     onSave: d => {
       const code = (d.code || '').trim();
-      if (code && db.items.some(x => x.code === code && x !== it)) { toast('رمز المادة مستخدم مسبقاً', 1); return false; }
-      const o = { code, name: d.name.trim(), unit: d.unit.trim(), minQty: num(d.minQty), buyPrice: num(d.buyPrice), sellPrice: num(d.sellPrice), consumerPrice: num(d.consumerPrice), openQty: num(d.openQty), openCost: num(d.openCost) };
+      const barcodes = parseCodes(d.barcodes).filter(b => b !== code);
+      for (const c of [code, ...barcodes]) {
+        if (!c) continue;
+        const other = db.items.find(x => x !== it && itemCodes(x).includes(c));
+        if (other) { toast(`الرمز/الباركود ${c} مستخدم للمادة: ${other.name}`, 1); return false; }
+      }
+      const o = { code, barcodes, name: d.name.trim(), unit: d.unit.trim(), minQty: num(d.minQty), buyPrice: num(d.buyPrice), sellPrice: num(d.sellPrice), consumerPrice: num(d.consumerPrice), openQty: num(d.openQty), openCost: num(d.openCost) };
       if (it) Object.assign(it, o); else db.items.push({ id: uid(), ...o });
       save(); toast('تم الحفظ'); route();
     },
   });
+  const ta = $('[name=barcodes]', f);
+  ta.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); ta.value = ta.value.replace(/\s*$/, '') + '\n'; } });
+  const sb = $('#bcScan', f);
+  if (sb) sb.onclick = () => scanBarcode(c => { const cur = parseCodes(ta.value); if (!cur.includes(c)) ta.value = [...cur, c].join('\n'); toast('تمت إضافة الباركود ' + c); });
 }
 V.items = (id, q, view) => {
   const st = engine().stock;
@@ -505,12 +553,13 @@ V.items = (id, q, view) => {
   const rows = [...db.items].sort(byCode).map(i => {
     const s = st[i.id] || { qty: num(i.openQty), avg: num(i.openCost) }, v = s.qty * s.avg; tv += v;
     const low = num(i.minQty) > 0 && s.qty <= num(i.minQty);
-    return `<tr data-name="${esc(i.code + ' ' + i.name)}"><td class="n">${esc(i.code)}</td><td>${esc(i.name)}</td><td>${esc(i.unit || '')}</td>
+    const bcs = i.barcodes || [];
+    return `<tr data-name="${esc(itemCodes(i).join(' ') + ' ' + i.name)}"><td class="n">${esc(i.code)}</td><td>${esc(i.name)}${bcs.length ? `<br><small class="muted">▮▯▮ ${bcs.length === 1 ? esc(bcs[0]) : bcs.length + ' باركود'}</small>` : ''}</td><td>${esc(i.unit || '')}</td>
       <td class="n">${low ? `<span class="badge low">${fmt(s.qty)}</span>` : fmt(s.qty)}</td><td class="n">${fmt(s.avg)}</td><td class="n">${fmt(v)}</td><td class="n">${fmt(i.sellPrice)}</td><td class="n">${i.consumerPrice ? fmt(i.consumerPrice) : ''}</td>
       <td class="ac"><a class="mini" href="#/report/itemcard?item=${i.id}">الحركة</a><button class="mini" data-act="edit" data-id="${i.id}">تعديل</button><button class="mini red" data-act="del" data-id="${i.id}">حذف</button></td></tr>`;
   }).join('');
   view.innerHTML = head('المواد والمستودع', `<button class="btn pri" data-act="add">+ مادة جديدة</button>`) + `
-    <div class="card"><input class="search" id="q" placeholder="🔎 بحث بالاسم أو الرمز" style="margin-bottom:10px">
+    <div class="card"><input class="search" id="q" placeholder="🔎 بحث بالاسم أو الرمز أو الباركود" style="margin-bottom:10px">
     ${table(['الرمز', 'المادة', 'الوحدة', 'الكمية', 'متوسط الكلفة', 'قيمة المخزون', 'سعر المبيع', 'سعر المستهلك', ''], rows,
       `<tr><td colspan="5">إجمالي قيمة المخزون</td><td class="n">${fmt(tv)}</td><td colspan="3"></td></tr>`)}</div>`;
   $('#q', view).oninput = e => { const s = e.target.value.trim(); $$('tbody tr[data-name]', view).forEach(tr => (tr.style.display = tr.dataset.name.includes(s) ? '' : 'none')); };
@@ -586,7 +635,8 @@ V.invoice = (id, q, view) => {
       <div id="rateWrap">${field({ k: 'rate', l: `سعر الصرف (${cur()} لكل 1 ${FX().sym})`, t: 'number' }, inv.rate)}</div>
     </div>
     ${!items.length ? `<p class="bad">لا توجد مواد. <a href="#/items">أضف مواد أولاً</a>.</p>` : ''}
-    <div class="tbl" style="margin-top:14px"><table class="lines inv"><thead><tr><th>#</th><th>المادة</th><th>الكمية</th><th>السعر <span class="symH"></span></th><th>سعر المستهلك <span class="symH"></span></th><th>الإجمالي</th><th></th></tr></thead><tbody id="ln"></tbody></table></div>
+    <div class="scan-row"><input id="scanIn" type="search" enterkeyhint="done" autocomplete="off" placeholder="▮▯▮ امسح الباركود أو اكتبه ثم Enter">${canScan() ? '<button class="btn" data-act="cam" title="مسح بالكاميرا">📷</button>' : ''}</div>
+    <div class="tbl" style="margin-top:10px"><table class="lines inv"><thead><tr><th>#</th><th>المادة</th><th>الكمية</th><th>السعر <span class="symH"></span></th><th>سعر المستهلك <span class="symH"></span></th><th>الإجمالي</th><th></th></tr></thead><tbody id="ln"></tbody></table></div>
     <button class="btn" data-act="addLine" style="margin-top:8px">+ إضافة سطر</button>
     <div class="inv-foot">
       ${field({ k: 'note', l: 'ملاحظات', t: 'textarea' }, inv.note)}
@@ -630,6 +680,33 @@ V.invoice = (id, q, view) => {
   };
   // تحويل سعر من الليرة إلى عملة الفاتورة الحالية
   const toDoc = base => (inv.cur === 'fx' && rate() ? r2(base / rate()) : base);
+  const setItem = (l, it) => {
+    l.item = it.id;
+    l.price = toDoc(sideSale ? num(it.sellPrice) : (num(it.buyPrice) || r2(st[it.id]?.avg || 0)));
+    l.cp = it.consumerPrice ? toDoc(num(it.consumerPrice)) : '';
+  };
+  // إضافة مادة بالباركود: إذا كانت موجودة بالفاتورة تزيد الكمية
+  const addByCode = code => {
+    const it = findByCode(code);
+    if (!it) { toast('لا توجد مادة بهذا الباركود: ' + code, 1); return; }
+    const ex = inv.lines.find(l => l.item === it.id);
+    if (ex) ex.qty = num(ex.qty) + 1;
+    else {
+      let l = inv.lines.find(x => !x.item);
+      if (!l) { l = blank(); inv.lines.push(l); }
+      l.qty = 1; setItem(l, it);
+    }
+    if (inv.lines[inv.lines.length - 1].item) inv.lines.push(blank());
+    draw(); navigator.vibrate?.(40); toast('✓ ' + it.name);
+  };
+  const scanIn = $('#scanIn', view);
+  scanIn.addEventListener('keydown', e => {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    const c = scanIn.value.trim(); scanIn.value = '';
+    if (c) addByCode(c);
+    scanIn.focus();
+  });
   view.oninput = e => {
     const tr = e.target.closest('#ln tr');
     if (tr && e.target.dataset.f && e.target.dataset.f !== 'item') {
@@ -643,8 +720,7 @@ V.invoice = (id, q, view) => {
       const l = inv.lines[tr.dataset.i], it = items.find(x => x.id === e.target.value);
       l.item = e.target.value;
       if (it) {
-        l.price = toDoc(sideSale ? num(it.sellPrice) : (num(it.buyPrice) || r2(st[it.id]?.avg || 0)));
-        l.cp = it.consumerPrice ? toDoc(num(it.consumerPrice)) : '';
+        setItem(l, it);
       }
       if (+tr.dataset.i === inv.lines.length - 1 && l.item) inv.lines.push(blank());
       draw();
@@ -685,6 +761,7 @@ V.invoice = (id, q, view) => {
   };
   onAct(view, {
     addLine: () => { inv.lines.push(blank()); draw(); },
+    cam: () => scanBarcode(addByCode),
     rmLine: i => { inv.lines.splice(+i, 1); if (!inv.lines.length) inv.lines.push(blank()); draw(); },
     save: () => doSave(false),
     saveNew: () => doSave(true),
@@ -1067,6 +1144,7 @@ function loadDemo() {
   const inv = (type, days, pay, party, lines, discount = 0, fx = 0) => db.invoices.push({ id: uid(), type, no: nextNo(type), date: daysAgo(days), pay, cashAcc: pay === 'cash' ? 'cash' : '', party, cur: fx ? 'fx' : 'base', rate: fx || '', lines: lines.map(([item, qty, price]) => ({ item, qty, price, cp: (db.items.find(x => x.id === item)?.consumerPrice || 0) / (fx || 1) })), discount, note: '', created: ++t });
   const vch = (type, days, a, amount, note, fx = 0) => db.vouchers.push({ id: uid(), type, no: nextNo(type), date: daysAgo(days), acc: a, cashAcc: 'cash', amount, note, cur: fx ? 'fx' : 'base', rate: fx || '', created: ++t });
   db.entries.push({ id: uid(), no: nextNo('entry'), date: daysAgo(40), desc: 'إيداع رأس المال النقدي', lines: [{ acc: 'cash', dr: 50000, cr: 0, note: '' }, { acc: 'capital', dr: 0, cr: 50000, note: '' }] });
+  db.items[0].barcodes = ['6281001234567', '6281001234574']; db.items[1].barcodes = ['6223000111222'];
   inv('purchase', 35, 'credit', s1, [[sugar, 200, 88], [rice, 100, 138], [oil, 60, 205]], 500);
   inv('purchase', 30, 'cash', s2, [[tea, 40, 315], [pasta, 100, 58]]);
   inv('sale', 28, 'cash', c3, [[sugar, 20, 110], [rice, 10, 170], [tea, 3, 380]]);
