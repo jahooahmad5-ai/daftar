@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '2.0';
+const APP_VERSION = '2.1';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -709,7 +709,7 @@ V.items = (id, q, view) => {
   }).join('');
   const gOpts = [['', '📂 كل المجموعات'], ...grpOpts().slice(1), ['none', '— مواد بدون مجموعة —']];
   view.innerHTML = head(gf && gf !== 'none' && grp(gf) ? `المواد: ${esc(grpPath(gf))}` : 'المواد والمستودع',
-    `<a class="btn" href="#/groups">📂 المجموعات</a><button class="btn pri" data-act="add">+ مادة جديدة</button>`) + `
+    `<a class="btn" href="#/groups">📂 المجموعات</a><button class="btn" data-act="import">📥 استيراد Excel</button><button class="btn pri" data-act="add">+ مادة جديدة</button>`) + `
     <div class="card"><div class="filters" style="margin-bottom:10px"><select id="gf" style="flex:1;min-width:160px">${optsHtml(gOpts, gf)}</select>
     <input class="search" id="q" placeholder="🔎 بحث بالاسم أو الرمز أو الباركود" style="flex:2;min-width:180px"></div>
     ${table(['الرمز', 'المادة', 'الوحدة', 'الكمية', 'متوسط الكلفة', 'قيمة المخزون', 'سعر المبيع', 'سعر المستهلك', ''], rows,
@@ -718,6 +718,7 @@ V.items = (id, q, view) => {
   $('#gf', view).onchange = e => go('#/items' + (e.target.value ? '?g=' + e.target.value : ''));
   onAct(view, {
     add: () => itemForm(null, gf),
+    import: () => window.ItemImport && ItemImport.open(),
     edit: id => itemForm(db.items.find(i => i.id === id)),
     del: id => {
       if (db.invoices.some(inv => inv.lines.some(l => l.item === id))) return toast('لا يمكن حذف مادة مستخدمة في فواتير', 1);
