@@ -262,3 +262,14 @@ dialog::backdrop{background:rgba(10,30,26,.45)}
 .ln-card .old-eq:empty{display:none}
 .old-bar{color:#f5d38a!important}
 .old-bar:empty{display:none}
+
+/* v1.7: منع التمرير الأفقي وظهور القائمة الجانبية على الموبايل */
+html,body{overflow-x:hidden;max-width:100%}
+@supports (overflow:clip){html,body{overflow-x:clip}}
+.grid2>*,.grid4>*,.cols2>*,.card{min-width:0}
+.tbl{max-width:100%}
+img,svg,video{max-width:100%}
+@media (max-width:880px){
+  .side{visibility:hidden;transition:transform .2s,visibility 0s .2s}
+  body.menu-open .side{visibility:visible;transition:transform .2s}
+}
