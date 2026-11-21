@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>دفتر — برنامج محاسبة</title>
+<meta name="description" content="برنامج محاسبة بسيط بالعربي: فواتير، مستودع، سندات، قيود، تقارير. يعمل بدون إنترنت.">
+<meta name="theme-color" content="#0b3b37">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="app">
+  <aside class="side" id="side">
+    <div class="brand">
+      <img src="icon.svg" alt="">
+      <div><span id="appName">دفتر</span><small id="coName"></small></div>
+    </div>
+    <nav class="nav" id="nav">
+      <a href="#/" data-r="home"><i>🏠</i>الرئيسية</a>
+      <a href="#/invoices" data-r="invoices"><i>🧾</i>الفواتير</a>
+      <a href="#/vouchers" data-r="vouchers"><i>💵</i>سندات القبض والدفع</a>
+      <a href="#/parties" data-r="parties"><i>👥</i>العملاء والموردون</a>
+      <a href="#/items" data-r="items"><i>📦</i>المواد والمستودع</a>
+      <a href="#/accounts" data-r="accounts"><i>📒</i>دليل الحسابات</a>
+      <a href="#/journal" data-r="journal"><i>📝</i>القيود اليومية</a>
+      <a href="#/reports" data-r="reports"><i>📊</i>التقارير</a>
+      <a href="#/settings" data-r="settings"><i>⚙️</i>الإعدادات</a>
+    </nav>
+    <button id="syncPill" class="sync-pill" hidden></button>
+    <button id="installBtn" class="install" hidden>⬇️ تثبيت التطبيق</button>
+  </aside>
+  <div class="backdrop" id="backdrop"></div>
+  <div class="main-wrap">
+    <header class="top">
+      <button id="menuBtn" class="icon-btn" aria-label="القائمة">☰</button>
+      <b id="topTitle">دفتر</b>
+      <a href="#/invoice/new?type=sale" class="icon-btn" aria-label="فاتورة مبيع جديدة">＋</a>
+    </header>
+    <main id="view"></main>
+  </div>
+</div>
+<dialog id="dlg"></dialog>
+<div id="toast"></div>
+<div id="print"></div>
+<script src="config.js"></script>
+<script src="app.js"></script>
+<script src="cloud.js"></script>
+</body>
+</html>
