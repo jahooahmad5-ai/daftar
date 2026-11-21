@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '2.6';
+const APP_VERSION = '2.7';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -931,8 +931,26 @@ V.invoice = (id, q, view) => {
         <span class="sg-meta"><span>💰 ${fmt(toDoc(basePrice(it)))}${oldOn() ? ` <small class="muted">(${oldAmt(basePrice(it))} قديم)</small>` : ''}</span><span class="${s <= 0 ? 'bad' : ''}">📦 ${fmt(s)} ${esc(it.unit || '')}</span></span>
         ${low ? `<small class="bad">${s <= 0 ? 'نفدت المادة' : 'قاربت المادة على النفاد'}</small>` : ''}
       </button>`;
-    }).join('') : `<div class="muted" style="padding:12px">لا توجد مادة بهذا الاسم أو الباركود</div>`;
+    }).join('') : smartHtml();
   };
+  // بحث ذكي: «بسكوت الالف 12 قطعه عدد 3» ← يفهم الأرقام والتعبئة والتسميات المحفوظة
+  let smartRes = null;
+  const smart = txt => {
+    if (!window.OrderPaste || !window.Voice) return null;
+    const line = OrderPaste.parseLine(Voice.spokenNums(txt));
+    if (!line || line.kind === 'pay') return null;
+    OrderPaste.reset();
+    const ln = OrderPaste.asItem(line);
+    return { ln, qty: line.qty || 1, m: OrderPaste.best(ln, items) };
+  };
+  const smartHtml = () => {
+    smartRes = smart(scanIn.value);
+    const it = smartRes && smartRes.m.it && !smartRes.m.weak ? smartRes.m.it : null;
+    return `${it ? `<button type="button" class="sg" data-smart="1"><b>🤖 قصدك: ${esc(it.name)} × ${fmt(smartRes.qty)}</b><span class="sg-meta"><span>💰 ${fmt(toDoc(basePrice(it)))}</span><span>📦 ${fmt(stockOf(it))}</span></span></button>` : '<div class="muted" style="padding:10px 12px">ما لقيت مادة بهالاسم</div>'}
+      <button type="button" class="sg" data-teach="1"><b>❓ ${it ? 'لأ مو هي، ' : ''}علّمني شو هي</b><small class="muted">بتختارها مرة وبحفظ هالتسمية</small></button>`;
+  };
+  const addSmart = it => { const q = smartRes ? smartRes.qty : 1; const txt = scanIn.value; scanIn.value = ''; sugg.hidden = true; fromPaste({ party: '', lines: [{ item: it.id, qty: q }], pay: payNow }); toast(`✓ ${it.name} × ${fmt(q)}`); return txt; };
+  const teach = () => { const r = smartRes || smart(scanIn.value); const raw = scanIn.value.trim(); if (!r) return; sugg.hidden = true; Voice.askItem(r.ln, raw.replace(/\s*عدد.*$/, '')).then(it => { if (it) { smartRes = r; addSmart(it); } }); };
   const pick = it => { scanIn.value = ''; sugg.hidden = true; addItem(it); };
   scanIn.addEventListener('input', showSugg);
   scanIn.addEventListener('keydown', e => {
@@ -942,10 +960,21 @@ V.invoice = (id, q, view) => {
     const exact = findByCode(c);
     if (exact) pick(exact);
     else if (matches.length === 1) pick(matches[0]);
-    else if (!matches.length) { toast('لا توجد مادة بهذا الاسم أو الباركود: ' + c, 1); scanIn.value = ''; sugg.hidden = true; }
+    else if (!matches.length) {
+      smartRes = smart(c);
+      if (smartRes && smartRes.m.it && smartRes.m.sure) addSmart(smartRes.m.it);
+      else if (smartRes && smartRes.m.it && !smartRes.m.weak) showSugg();
+      else if (smartRes && !/^\d+$/.test(c)) teach();
+      else { toast('لا توجد مادة بهذا الاسم أو الباركود: ' + c, 1); scanIn.value = ''; sugg.hidden = true; }
+    }
     scanIn.focus(); // لقارئ الباركود: يبقى المؤشر جاهزاً للمسحة التالية
   });
-  sugg.addEventListener('click', e => { const b = e.target.closest('.sg'); if (b) pick(matches[+b.dataset.i]); });
+  sugg.addEventListener('click', e => {
+    const b = e.target.closest('.sg'); if (!b) return;
+    if (b.dataset.smart) return addSmart(smartRes.m.it);
+    if (b.dataset.teach) return teach();
+    pick(matches[+b.dataset.i]);
+  });
   const outside = e => { if (!view.contains(scanIn)) return document.removeEventListener('click', outside); if (!e.target.closest('.search-wrap')) sugg.hidden = true; };
   document.addEventListener('click', outside);
 
@@ -1017,7 +1046,7 @@ V.invoice = (id, q, view) => {
     cam: () => scanBarcode(addByCode),
     paste: () => window.OrderPaste && OrderPaste.open({ sideSale, onDone: fromPaste }),
     noPay: () => { payNow = 0; showPay(); },
-    mic: voice,
+    mic: () => (window.Voice ? Voice.listen() : voice()),
     inc: i => step(i, 1),
     dec: i => step(i, -1),
     rmLine: i => { inv.lines.splice(+i, 1); draw(); },
@@ -1038,7 +1067,7 @@ V.invoice = (id, q, view) => {
       const ln = OrderPaste.asItem(line);
       const m = OrderPaste.best(ln, items);
       const add = it => { fromPaste({ party: '', lines: [{ item: it.id, qty: line.qty || 1 }], pay: payNow }); toast(`🎤 ${it.name} × ${fmt(line.qty || 1)}${m.it && !m.sure ? ' (تأكد منها)' : ''}`); };
-      if (m.it) return add(m.it);
+      if (m.it && !m.weak) return add(m.it);
       Voice.askItem(ln, raw.replace(/\s*عدد.*$/, '')).then(it => it && add(it));
     },
     setParty: id => fromPaste({ party: id, lines: [], pay: payNow }),

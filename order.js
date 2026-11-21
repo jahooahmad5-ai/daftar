@@ -50,7 +50,7 @@ const OrderPaste = (() => {
   const itemToks = new Map();
   function score(line, it) {
     let L = itemToks.get(it.id);
-    if (!L) { L = [toks(it.name + ' ' + (it.unit || '')), ...(it.aliases || []).map(a => toks(a))]; itemToks.set(it.id, L); }
+    if (!L) { L = [toks(it.name), ...(it.aliases || []).map(a => toks(a))]; itemToks.set(it.id, L); }
     return Math.max(...L.map(T => score1(line, T)));
   }
   function score1(line, T) {
@@ -73,7 +73,11 @@ const OrderPaste = (() => {
     if (hit) return { it: hit, sure: true, learned: true };
     let top = null, s1 = -1e9, s2 = -1e9;
     for (const it of items) { const s = score(line, it); if (s > s1) { s2 = s1; s1 = s; top = it; } else if (s > s2) s2 = s; }
-    return s1 > 0 ? { it: top, sure: s1 - s2 >= 2 } : { it: null, sure: false };
+    if (s1 <= 0) return { it: null, sure: false };
+    // إذا ولا كلمة من السطر موجودة باسم المادة (بس الأرقام متطابقة) ← مو أكيد
+    const L = itemToks.get(top.id) || [];
+    const wordHit = !line.t.words.length || line.t.words.some(w => L.some(T => T.words.some(x => x === w || x.startsWith(w) || w.startsWith(x))));
+    return { it: top, sure: s1 - s2 >= 2 && wordHit, weak: !wordHit };
   }
 
   // حفظ كتابة السطر كاسم تاني للمادة (للمرة الجاية)
