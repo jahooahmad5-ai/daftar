@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '3.5';
+const APP_VERSION = '3.6';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -893,7 +893,8 @@ V.invoice = (id, q, view) => {
         <div id="tEq" class="muted" style="font-size:14px"></div>
         <div id="tOld" class="old-eq"></div>
         <small class="muted" id="tWords"></small>
-        <div id="tPay" class="old-eq" hidden></div>
+        <div id="payRow"><span>💵 دفعة</span><input name="payment" type="number" step="any" inputmode="decimal" placeholder="0" value=""></div>
+        <div id="tRest" class="old-eq"></div>
       </div>
     </div>
   </div>
@@ -907,6 +908,7 @@ V.invoice = (id, q, view) => {
   const rate = () => num(val('rate'));
   const toggles = () => {
     $('#cashWrap', view).style.visibility = val('pay') === 'cash' ? 'visible' : 'hidden';
+    $('#payRow', view).style.display = $('#tRest', view).style.display = val('pay') === 'credit' ? '' : 'none';
     $('#rateWrap', view).style.visibility = inv.cur === 'fx' ? 'visible' : 'hidden';
   };
   const totals = () => {
@@ -918,6 +920,8 @@ V.invoice = (id, q, view) => {
     const nb = inv.cur === 'fx' ? n * rate() : n;
     $('#tOld', view).textContent = oldOn() && nb ? `الصافي بالعملة القديمة: ${oldAmt(nb)} ${cur()}` : '';
     $('#barOld', view).textContent = oldTxt(nb);
+    const pv = num(val('payment')), tr = $('#tRest', view);
+    if (tr) tr.textContent = pv ? `الباقي على الحساب: ${fmt(n - pv)} ${sym}${oldOn() ? ` — الدفعة بالقديم: ${oldAmt(pv)}` : ''}` : '';
     const cnt = inv.lines.reduce((s, l) => s + num(l.qty), 0);
     $('#barNet', view).textContent = fmt(n) + ' ' + sym;
     $('#barInfo', view).textContent = `${inv.lines.length} مادة — ${fmt(cnt)} قطعة${val('pay') === 'credit' ? ' — آجل' : ' — نقدي'}`;
@@ -961,7 +965,8 @@ V.invoice = (id, q, view) => {
     draw(); navigator.vibrate?.(40); toast('✓ ' + it.name);
   };
   let payNow = 0;
-  const showPay = () => { const e = $('#tPay', view); e.hidden = !payNow; e.innerHTML = payNow ? `💵 دفعة مع الفاتورة: <b>${fmt(payNow)} ${esc(cur())}</b>${oldOn() ? ` (بالقديم ${oldAmt(payNow)})` : ''} <button type="button" class="mini red" data-act="noPay">إلغاء</button>` : ''; };
+  if (orig) payNow = db.vouchers.filter(v => v.inv === orig.id).reduce((x, v) => x + num(v.amount), 0);
+  const showPay = () => { $('[name=payment]', view).value = payNow || ''; if (payNow && val('pay') !== 'credit') { $('[name=pay]', view).value = 'credit'; toggles(); } totals(); };
   const fromPaste = r => {
     if (r.party) {
       const sel = $('[name="party"]', view);
@@ -1066,7 +1071,8 @@ V.invoice = (id, q, view) => {
     if (card && e.target.dataset.f) {
       const l = inv.lines[card.dataset.i]; l[e.target.dataset.f] = e.target.value;
       $('[data-tot]', card).textContent = fmt(num(l.qty) * num(l.price)); $('[data-old]', card).textContent = lineOld(l); totals();
-    } else if (['discount', 'addition', 'rate'].includes(e.target.name)) totals();
+    } else if (e.target.name === 'payment') { payNow = num(e.target.value); totals(); }
+    else if (['discount', 'addition', 'rate'].includes(e.target.name)) totals();
   };
   view.onchange = e => {
     if (e.target.name === 'pay') { toggles(); totals(); }
@@ -1100,11 +1106,18 @@ V.invoice = (id, q, view) => {
     }
     const out = { ...inv, date: val('date'), pay, party, cashAcc: pay === 'cash' ? cashAcc : '', cur: inv.cur, rate: inv.cur === 'fx' ? rate() : '', discount: num(val('discount')), addition: num(val('addition')), addNote: val('addNote').trim(), note: val('note'), lines };
     if (!orig) { out.id = uid(); out.no = nextNo(out.type); out.created = Date.now(); db.invoices.push(out); }
-    if (!orig && payNow > 0 && party) {
-      const vt = sideSale ? 'receipt' : 'payment';
-      db.vouchers.push({ id: uid(), type: vt, no: nextNo(vt), date: out.date, acc: party, cashAcc: cashAccounts()[0]?.id || 'cash', amount: payNow, note: `دفعة على ${INV_TYPES[out.type]} رقم ${out.no}`, cur: 'base', rate: '', created: Date.now() + 1, inv: out.id });
-    }
     else db.invoices[db.invoices.indexOf(orig)] = out;
+    // الدفعة مع الفاتورة = سند قبض/دفع مربوط فيها
+    const pv = pay === 'credit' && party ? r2(num(val('payment'))) : 0;
+    const linked = db.vouchers.filter(v => v.inv === out.id);
+    if (pv > 0) {
+      const vt = ['sale', 'purchaseReturn'].includes(out.type) ? 'receipt' : 'payment';
+      const o = { date: out.date, acc: party, amount: pv, note: `دفعة على ${INV_TYPES[out.type]} رقم ${out.no}`, cur: 'base', rate: '' };
+      if (linked[0]) Object.assign(linked[0], o, { type: vt });
+      else db.vouchers.push({ id: uid(), type: vt, no: nextNo(vt), cashAcc: cashAccounts()[0]?.id || 'cash', created: Date.now() + 1, inv: out.id, ...o });
+    }
+    const keep = pv > 0 ? linked[0] : null;
+    if (linked.some(v => v !== keep)) db.vouchers = db.vouchers.filter(v => v.inv !== out.id || v === keep);
     save(); toast('تم حفظ الفاتورة رقم ' + out.no);
     go(andNew ? '#/invoice/new?type=' + out.type : '#/invoice/' + out.id);
   };
@@ -1118,7 +1131,6 @@ V.invoice = (id, q, view) => {
   onAct(view, {
     cam: () => scanBarcode(addByCode),
     paste: () => window.OrderPaste && OrderPaste.open({ sideSale, onDone: fromPaste }),
-    noPay: () => { payNow = 0; showPay(); },
     mic: () => (window.Voice ? Voice.listen() : voice()),
     inc: i => step(i, 1),
     dec: i => step(i, -1),
@@ -1128,8 +1140,9 @@ V.invoice = (id, q, view) => {
     print: () => printDoc(invoiceHtml(orig)),
     wa: () => waSend(acc(orig.party), waInvoiceText(orig)),
     receipt: () => window.Receipt && Receipt.open(orig),
-    del: () => { if (!confirm('حذف الفاتورة نهائياً؟ سيتم عكس أثرها على الحسابات والمستودع.')) return; db.invoices = db.invoices.filter(x => x !== orig); save(); toast('تم الحذف'); go('#/invoices'); },
+    del: () => { if (!confirm('حذف الفاتورة نهائياً؟ سيتم عكس أثرها على الحسابات والمستودع.')) return; db.invoices = db.invoices.filter(x => x !== orig); db.vouchers = db.vouchers.filter(v => v.inv !== orig.id); save(); toast('تم الحذف'); go('#/invoices'); },
   });
+  $('[name=payment]', view).value = payNow || '';
   toggles(); draw();
   // للأوامر الصوتية
   window.InvHook = {

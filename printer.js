@@ -79,6 +79,7 @@ const Receipt = (() => {
     gap(4);
     txt('المبلغ المستحق', { size: 24, bold: 1, align: 'c' });
     ops.push({ k: 'box', text: `${fmt(t.net)} ${inv.cur === 'fx' ? FX().name : (s.currencyName || cur())}`, size: 28 });
+    if (paid && inv.pay !== 'cash') txt(`الباقي بعد الدفعة: ${fmt(t.net - paid)}${oldOn() ? `  (بالقديم ${oldAmt(t.net - paid)})` : ''}`, { size: 22, bold: 1, align: 'c' });
     if (inv.cur === 'fx') txt(`المعادل: ${fmt(t.net * num(inv.rate))} ${cur()}`, { size: 20, align: 'c' });
     else if (oldOn()) txt(`بالقديم: ${oldAmt(t.net)}`, { size: 20, align: 'c' });
     const B = balances(inv);
