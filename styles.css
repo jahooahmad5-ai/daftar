@@ -273,3 +273,4 @@ img,svg,video{max-width:100%}
   .side{visibility:hidden;transition:transform .2s,visibility 0s .2s}
   body.menu-open .side{visibility:visible;transition:transform .2s}
 }
+.btn.wa,.mini.wa{background:#25d366;color:#fff;border-color:#25d366}

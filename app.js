@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '1.7';
+const APP_VERSION = '1.8';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -256,6 +256,64 @@ function rollup(m) {
 const natural = (a, s) => { s = s || { dr: 0, cr: 0 }; return DEBIT_NATURE.includes(a.type) ? s.dr - s.cr : s.cr - s.dr; };
 const balLabel = (a, b) => (DEBIT_NATURE.includes(a.type) ? (b >= 0 ? 'مدين' : 'دائن') : (b >= 0 ? 'دائن' : 'مدين'));
 
+/* ------------------------- واتساب ------------------------- */
+/* يحوّل رقم سوري محلي (09xxxxxxxx) إلى صيغة دولية 9639xxxxxxxx */
+const waPhone = raw => {
+  let d = String(raw || '').replace(/[٠-٩]/g, c => '٠١٢٣٤٥٦٧٨٩'.indexOf(c)).replace(/\D/g, '');
+  if (d.startsWith('00')) d = d.slice(2);
+  if (d.length === 10 && d.startsWith('09')) d = '963' + d.slice(1);
+  else if (d.length === 9 && d.startsWith('9')) d = '963' + d;
+  return d.length >= 9 ? d : '';
+};
+const partyBal = a => natural(a, rollup(sums())[a.id]);
+const balWords = (a, b) => {
+  if (!r2(b)) return '*الحساب مسدّد بالكامل* ✅';
+  const isCust = a.type === 'asset';
+  const owes = isCust ? b > 0 : b < 0;
+  const m = Math.abs(b);
+  let t = `*${fmt(m)} ${cur()} ${owes ? 'مستحقة عليكم' : 'لكم لدينا'}*`;
+  if (oldOn()) t += `\n(بالقديم: ${oldAmt(m)})`;
+  if (FX().rate) t += `\n(≈ ${fmt(m / FX().rate)} ${FX().sym})`;
+  return t;
+};
+function waSend(a, text) {
+  let ph = waPhone(a && a.phone);
+  if (!ph) {
+    const n = prompt(`لا يوجد رقم واتساب صحيح لـ «${a ? a.name : ''}».\nاكتب الرقم (مثال 0991234567):`, (a && a.phone) || '');
+    if (n === null) return;
+    ph = waPhone(n);
+    if (!ph) return toast('الرقم غير صحيح', 1);
+    if (a) { a.phone = n.trim(); save(); }
+  }
+  window.open(`https://wa.me/${ph}?text=${encodeURIComponent(text)}`, '_blank');
+}
+const waHead = () => `*${db.settings.company}*`;
+function waBalanceText(a) {
+  return `${waHead()}\nمرحباً ${a.name} 👋\nرصيد حسابكم بتاريخ ${today()}:\n${balWords(a, partyBal(a))}\nشكراً لتعاملكم معنا 🌹`;
+}
+function waStatementText(a, from, to, rows, open, bal) {
+  const last = rows.slice(-15);
+  const lines = last.map(({ e, l }) => `• ${e.date} | ${SRC[e.src]} ${e.no} | ${l.dr ? 'مدين ' + fmt(l.dr) : 'دائن ' + fmt(l.cr)}`).join('\n');
+  return `${waHead()}\nكشف حساب: *${a.name}*\nمن ${from} إلى ${to}\n` +
+    `الرصيد السابق: ${fmt(Math.abs(open))}\n` +
+    (rows.length > last.length ? `(آخر ${last.length} حركة من ${rows.length})\n` : '') +
+    (lines ? lines + '\n' : 'لا توجد حركات\n') +
+    `————————\nالرصيد النهائي:\n${balWords(a, bal)}`;
+}
+function waInvoiceText(inv) {
+  const t = invTotals(inv), sym = docSym(inv);
+  const lines = inv.lines.map(l => { const it = db.items.find(x => x.id === l.item) || {}; return `• ${it.name || ''}: ${fmt(l.qty)} × ${fmt(l.price)} = ${fmt(num(l.qty) * num(l.price))}`; }).join('\n');
+  const a = acc(inv.party);
+  let s = `${waHead()}\n${INV_TYPES[inv.type]} رقم ${inv.no}\nالتاريخ: ${inv.date}\n${a ? 'السيد: ' + a.name + '\n' : ''}————————\n${lines}\n————————\n`;
+  if (t.disc) s += `الإجمالي: ${fmt(t.gross)}\nالحسم: ${fmt(t.disc)}\n`;
+  s += `*الصافي: ${fmt(t.net)} ${sym}*\n`;
+  if (inv.cur === 'fx') s += `(المعادل: ${fmt(t.net * num(inv.rate))} ${cur()})\n`;
+  else if (oldOn()) s += `(بالقديم: ${oldAmt(t.net)})\n`;
+  s += `الدفع: ${inv.pay === 'cash' ? 'نقدي' : 'آجل'}\n`;
+  if (a && inv.pay !== 'cash') s += `————————\nرصيد حسابكم الآن:\n${balWords(a, partyBal(a))}\n`;
+  return s + 'شكراً لتعاملكم معنا 🌹';
+}
+
 /* ------------------------- واجهة: أدوات ------------------------- */
 function field(f, v) {
   v = v ?? '';
@@ -465,6 +523,7 @@ V.parties = (id, q, view) => {
     return `<tr data-name="${esc(a.name + ' ' + (a.phone || ''))}"><td class="n">${esc(a.code)}</td><td>${esc(a.name)}</td><td class="n">${esc(a.phone || '')}</td>
     <td class="n ${b > 0 ? (k === 'c' ? 'pos' : 'neg') : ''}">${fmt(b)}</td>
     <td class="ac"><a class="mini" href="#/report/statement?acc=${a.id}">كشف حساب</a>
+      <button class="mini wa" data-act="wa" data-id="${a.id}">واتساب</button>
       <a class="mini" href="#/vouchers?new=${k === 'c' ? 'receipt' : 'payment'}&acc=${a.id}">${k === 'c' ? 'قبض' : 'دفع'}</a>
       <button class="mini" data-act="edit" data-id="${a.id}">تعديل</button><button class="mini red" data-act="del" data-id="${a.id}">حذف</button></td></tr>`;
   }).join('');
@@ -477,6 +536,7 @@ V.parties = (id, q, view) => {
   onAct(view, {
     add: () => partyForm(null, k),
     edit: id => partyForm(acc(id), k),
+    wa: id => { const a = acc(id); waSend(a, waBalanceText(a)); },
     del: id => {
       if (hasMoves(id)) return toast('لا يمكن الحذف: يوجد حركات على هذا الحساب', 1);
       if (!confirm('تأكيد الحذف؟')) return;
@@ -723,7 +783,7 @@ V.invoice = (id, q, view) => {
   const stockOf = it => (st[it.id] ? st[it.id].qty : num(it.openQty));
 
   view.innerHTML = head(INV_TYPES[inv.type] + (orig ? ` رقم ${orig.no}` : ' جديدة'),
-    `${orig ? `<button class="btn" data-act="print">🖨 طباعة</button><button class="btn red" data-act="del">حذف</button>` : ''}<a class="btn" href="#/invoices">رجوع</a>`) + `
+    `${orig ? `${orig.party ? '<button class="btn wa" data-act="wa">واتساب</button>' : ''}<button class="btn" data-act="print">🖨 طباعة</button><button class="btn red" data-act="del">حذف</button>` : ''}<a class="btn" href="#/invoices">رجوع</a>`) + `
   <div class="card">
     <div class="grid4">
       ${field({ k: 'date', l: 'التاريخ', t: 'date', req: 1 }, inv.date)}
@@ -933,6 +993,7 @@ V.invoice = (id, q, view) => {
     save: () => doSave(false),
     saveNew: () => doSave(true),
     print: () => printDoc(invoiceHtml(orig)),
+    wa: () => waSend(acc(orig.party), waInvoiceText(orig)),
     del: () => { if (!confirm('حذف الفاتورة نهائياً؟ سيتم عكس أثرها على الحسابات والمستودع.')) return; db.invoices = db.invoices.filter(x => x !== orig); save(); toast('تم الحذف'); go('#/invoices'); },
   });
   toggles(); draw();
@@ -1100,7 +1161,7 @@ V.report = (type, q, view) => {
   const R = REPORTS[type]; if (!R) return go('#/reports');
   const from = q.from || db.settings.startDate, to = q.to || today();
   const F = { from: { k: 'from', l: 'من تاريخ', t: 'date' }, to: { k: 'to', l: 'إلى تاريخ', t: 'date' } };
-  let filters = [], body = '';
+  let filters = [], body = '', waMsg = null, waAcc = null;
   const vals = { ...q, from, to };
 
   if (type === 'statement') {
@@ -1129,6 +1190,7 @@ V.report = (type, q, view) => {
         table(['التاريخ', 'المستند', 'البيان', 'مدين', 'دائن', 'الرصيد'],
           `<tr class="grp"><td colspan="5">رصيد سابق</td><td class="n">${fmt(Math.abs(open))} <small class="muted">${open ? balLabel(a, open) : ''}</small></td></tr>` + html,
           `<tr><td colspan="3">المجموع / الرصيد النهائي</td><td class="n">${fmt(tdr)}</td><td class="n">${fmt(tcr)}</td><td class="n">${fmt(Math.abs(bal))} ${bal ? balLabel(a, bal) : ''}</td></tr>`);
+      if ([...customers(), ...suppliers()].includes(a)) { waAcc = a; waMsg = waStatementText(a, from, to, rows, open, bal); }
       if (FX().rate && r2(bal)) body += `<p class="muted">الرصيد النهائي بالدولار حسب سعر الصرف الحالي (${fmt(FX().rate)}): <b>${fmt(Math.abs(bal) / FX().rate)} ${esc(FX().sym)}</b> ${balLabel(a, bal)}</p>`;
     }
   }
@@ -1230,7 +1292,7 @@ V.report = (type, q, view) => {
     body = `<div class="cols2"><div>${mk(customers(), 'العملاء (لنا عليهم)')}</div><div>${mk(suppliers(), 'الموردون (لهم علينا)')}</div></div>`;
   }
 
-  view.innerHTML = head(R.t, `<button class="btn" data-act="print">🖨 طباعة</button><a class="btn" href="#/reports">رجوع</a>`) +
+  view.innerHTML = head(R.t, `${waMsg ? '<button class="btn wa" data-act="wa">واتساب</button>' : ''}<button class="btn" data-act="print">🖨 طباعة</button><a class="btn" href="#/reports">رجوع</a>`) +
     (filters.length ? `<form class="card filters" id="flt">${filters.map(f => field(f, vals[f.k])).join('')}<button class="btn pri">عرض</button></form>` : '') +
     `<div class="card" id="rep">${body}</div>`;
   const flt = $('#flt', view);
@@ -1242,6 +1304,7 @@ V.report = (type, q, view) => {
     print: () => printDoc(`<h3 class="ptitle">${R.t}</h3><div class="pmeta">${filters.some(f => f.k === 'from') ? `<span>من ${from}</span>` : ''}${filters.some(f => f.k === 'to') ? `<span>إلى ${to}</span>` : ''}</div>` + $('#rep', view).innerHTML),
     inv: id => go('#/invoice/' + id),
     st: id => go('#/report/statement?acc=' + id),
+    wa: () => waSend(waAcc, waMsg),
   });
 };
 
