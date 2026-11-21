@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '3.1';
+const APP_VERSION = '3.2';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -1100,7 +1100,7 @@ V.invoice = (id, q, view) => {
     if (!orig) { out.id = uid(); out.no = nextNo(out.type); out.created = Date.now(); db.invoices.push(out); }
     if (!orig && payNow > 0 && party) {
       const vt = sideSale ? 'receipt' : 'payment';
-      db.vouchers.push({ id: uid(), type: vt, no: nextNo(vt), date: out.date, acc: party, cashAcc: cashAccounts()[0]?.id || 'cash', amount: payNow, note: `دفعة على ${INV_TYPES[out.type]} رقم ${out.no}`, cur: 'base', rate: '', created: Date.now() + 1 });
+      db.vouchers.push({ id: uid(), type: vt, no: nextNo(vt), date: out.date, acc: party, cashAcc: cashAccounts()[0]?.id || 'cash', amount: payNow, note: `دفعة على ${INV_TYPES[out.type]} رقم ${out.no}`, cur: 'base', rate: '', created: Date.now() + 1, inv: out.id });
     }
     else db.invoices[db.invoices.indexOf(orig)] = out;
     save(); toast('تم حفظ الفاتورة رقم ' + out.no);
@@ -1473,8 +1473,12 @@ V.settings = (id, q, view) => {
       { k: 'oldFactor', l: 'كل ليرة جديدة = كم ليرة قديمة', t: 'number' },
       { k: 'startDate', l: 'تاريخ بداية الفترة المحاسبية', t: 'date', req: 1 },
       { k: 'paperWidth', l: 'عرض ورق الطابعة الحرارية', t: 'select', opts: [['80', '80 مم (3 إنش)'], ['58', '58 مم (2 إنش)']] },
-      { k: 'receiptFooter', l: 'عبارة أسفل الإيصال', ph: 'شكراً لتعاملكم معنا' },
+      { k: 'receiptHeader', l: 'سطر تحت اسم المحل بالإيصال (نشاطك، السجل التجاري…)', ph: 'شيبس، مياه، غازية، بسكويت — س.ت 384', full: 1 },
+      { k: 'receiptFooter', l: 'عبارة أسفل الإيصال', ph: 'صفة البيع من تاجر نصف جملة إلى تاجر مفرق', full: 1 },
     ], s)}
+    <div class="fld full" style="margin-top:8px"><span>شعار الإيصال (صورة)</span>
+      <div class="acts" style="align-items:center">${s.logo ? `<img src="${s.logo}" style="height:60px;border:1px solid var(--line);border-radius:8px;background:#fff">` : ''}
+      <label class="btn">🖼 اختيار صورة<input type="file" id="logoF" accept="image/*" hidden></label>${s.logo ? '<button type="button" class="btn red" data-act="noLogo">إزالة</button>' : ''}</div></div>
     <div class="form-actions"><button class="btn pri">حفظ الإعدادات</button></div>
   </form>
   <div class="card" id="cloudCard"></div>
@@ -1493,6 +1497,16 @@ V.settings = (id, q, view) => {
     Object.assign(db.settings, Object.fromEntries(new FormData(e.target)));
     save(); toast('تم حفظ الإعدادات');
   };
+  $('#logoF', view).onchange = e => {
+    const f = e.target.files[0]; if (!f) return;
+    const im = new Image(), u = URL.createObjectURL(f);
+    im.onload = () => {
+      const h = 160, w = Math.round(im.width * h / im.height), c = document.createElement('canvas'); c.width = w; c.height = h;
+      const x = c.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, w, h); x.drawImage(im, 0, 0, w, h);
+      db.settings.logo = c.toDataURL('image/png'); URL.revokeObjectURL(u); save(); toast('انحفظ الشعار'); route();
+    };
+    im.src = u;
+  };
   $('#imp', view).onchange = e => {
     const f = e.target.files[0]; if (!f) return;
     const r = new FileReader();
@@ -1507,6 +1521,7 @@ V.settings = (id, q, view) => {
     r.readAsText(f);
   };
   onAct(view, {
+    noLogo: () => { db.settings.logo = ''; save(); route(); },
     export: () => {
       const blob = new Blob([JSON.stringify(db, null, 1)], { type: 'application/json' });
       const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `daftar-backup-${today()}.json`;

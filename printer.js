@@ -16,71 +16,145 @@ const Receipt = (() => {
   const paperW = () => (String(db.settings.paperWidth) === '58' ? 384 : 576);
 
   /* ---------- رسم الإيصال ---------- */
+  // أرصدة الزبون: قبل الفاتورة، بعدها، وهلق
+  function balances(inv) {
+    const a = acc(inv.party); if (!a) return null;
+    const sign = a.type === 'asset' ? 1 : -1;
+    const links = new Set(db.vouchers.filter(v => v.inv === inv.id).map(v => 'v-' + v.id));
+    let run = 0, before = null, eff = 0;
+    for (const e of engine().entries) {
+      const d = e.lines.filter(l => l.acc === a.id).reduce((s, l) => s + (l.dr - l.cr) * sign, 0);
+      if (e.id === 'inv-' + inv.id) { before = run; eff += d; continue; }
+      if (links.has(e.id)) { eff += d; continue; }
+      run += d;
+    }
+    if (before === null) before = run;
+    return { before: r2(before), after: r2(before + eff), now: r2(partyBal(a)) };
+  }
+  const paidFor = inv => db.vouchers.filter(v => v.inv === inv.id).reduce((s, v) => s + num(v.amount), 0);
+
   function build(inv) {
     const s = db.settings, t = invTotals(inv), sym = docSym(inv), a = acc(inv.party);
+    const hasCp = inv.lines.some(l => num(l.cp));
     const ops = [];
     const txt = (text, o = {}) => ops.push({ k: 't', text: String(text ?? ''), ...o });
     const pair = (l, r, o = {}) => ops.push({ k: 'p', l: String(l), r: String(r), ...o });
     const line = () => ops.push({ k: 'hr' });
     const gap = h => ops.push({ k: 'gap', h });
+    const kindTxt = { sale: 'مبيع', purchase: 'شراء', saleReturn: 'مرتجع مبيع', purchaseReturn: 'مرتجع شراء' }[inv.type] || '';
+    const tm = inv.created ? new Date(inv.created) : null;
 
-    txt(s.company, { size: 34, bold: 1, align: 'c' });
-    if (s.address) txt(s.address, { size: 22, align: 'c' });
-    if (s.phone) txt('هاتف: ' + s.phone, { size: 22, align: 'c' });
+    if (logoImg) ops.push({ k: 'img', img: logoImg, h: 130 });
+    txt(s.company, { size: 30, bold: 1, align: 'c' });
+    if (s.receiptHeader) txt(s.receiptHeader, { size: 20, align: 'c' });
+    if (s.address) txt(s.address, { size: 20, align: 'c' });
     line();
-    txt(`${INV_TYPES[inv.type]} رقم ${inv.no}`, { size: 28, bold: 1, align: 'c' });
-    pair('التاريخ', inv.date);
-    if (a) pair(['sale', 'saleReturn'].includes(inv.type) ? 'العميل' : 'المورد', a.name);
-    pair('الدفع', inv.pay === 'cash' ? 'نقدي' : 'آجل');
+    txt(`${kindTxt} - ${inv.pay === 'cash' ? 'نقدي' : 'آجل'}`, { size: 26, bold: 1, align: 'c' });
     line();
-    inv.lines.forEach(l => {
+    txt(`رقم الفاتورة ${inv.no}`, { size: 26, bold: 1, align: 'c' });
+    txt(`تاريخ الفاتورة: ${inv.date}`, { size: 22 });
+    if (tm) txt(`وقت الفاتورة: ${tm.toTimeString().slice(0, 8)}`, { size: 22 });
+    line();
+    txt(`${['sale', 'saleReturn'].includes(inv.type) ? 'السيد' : 'المورد'} : ${a ? a.name : 'زبون عام'}`, { size: 26, bold: 1, align: 'c' });
+    gap(6);
+    const cols = hasCp
+      ? [{ h: 'اسم المادة', w: 0.36 }, { h: 'العدد', w: 0.1 }, { h: 'الإفرادي', w: 0.18 }, { h: 'المستهلك', w: 0.17 }, { h: 'الإجمالي', w: 0.19 }]
+      : [{ h: 'اسم المادة', w: 0.42 }, { h: 'العدد', w: 0.12 }, { h: 'الإفرادي', w: 0.22 }, { h: 'الإجمالي', w: 0.24 }];
+    const rows = inv.lines.map(l => {
       const it = db.items.find(x => x.id === l.item) || {};
-      txt(it.name || '', { size: 25, bold: 1 });
-      pair(`${fmt(l.qty)} × ${fmt(l.price)}`, fmt(num(l.qty) * num(l.price)), { size: 24 });
-      if (num(l.cp)) pair('سعر المستهلك', fmt(l.cp), { size: 20 });
-      gap(4);
+      const r = [it.name || '', fmt(l.qty), fmt(l.price)];
+      if (hasCp) r.push(num(l.cp) ? fmt(l.cp) : '');
+      r.push(fmt(num(l.qty) * num(l.price)));
+      return r;
     });
+    ops.push({ k: 'table', cols, rows, size: hasCp ? 20 : 22 });
+    txt(`مجموع الكميات ${fmt(inv.lines.reduce((x, l) => x + num(l.qty), 0))}`, { size: 22 });
     line();
-    if (t.disc) { pair('الإجمالي', fmt(t.gross)); pair('الحسم', fmt(t.disc)); }
-    pair('الصافي', `${fmt(t.net)} ${sym}`, { size: 32, bold: 1 });
-    if (inv.cur === 'fx') pair('المعادل', `${fmt(t.net * num(inv.rate))} ${cur()}`);
-    else if (oldOn()) pair('بالقديم', oldAmt(t.net), { size: 22 });
-    if (FX().rate && inv.cur !== 'fx') pair('≈ بالدولار', `${fmt(t.net / FX().rate)} ${FX().sym}`, { size: 22 });
-    if (a && inv.pay !== 'cash') {
-      line();
-      const b = partyBal(a), isCust = a.type === 'asset', owes = isCust ? b > 0 : b < 0;
-      pair(r2(b) ? (owes ? 'الرصيد المستحق عليكم' : 'رصيدكم لدينا') : 'الرصيد', `${fmt(Math.abs(b))} ${cur()}`, { bold: 1 });
-    }
+    txt(`مجموع الفاتورة ${fmt(t.gross)}`, { size: 24, bold: 1 });
+    const paid = paidFor(inv);
+    pair(`دفعة نقدية ${fmt(inv.pay === 'cash' ? t.net : paid)}`, `الخصم/الإضافة ${fmt(t.disc ? -t.disc : 0)}`, { size: 21, swap: 1 });
+    gap(4);
+    txt('المبلغ المستحق', { size: 24, bold: 1, align: 'c' });
+    ops.push({ k: 'box', text: `${fmt(t.net)} ${inv.cur === 'fx' ? FX().name : (s.currencyName || cur())}`, size: 28 });
+    if (inv.cur === 'fx') txt(`المعادل: ${fmt(t.net * num(inv.rate))} ${cur()}`, { size: 20, align: 'c' });
+    else if (oldOn()) txt(`بالقديم: ${oldAmt(t.net)}`, { size: 20, align: 'c' });
+    const B = balances(inv);
+    gap(4);
+    pair('رصيده قبل الفاتورة', fmt(B ? B.before : 0), { size: 22 });
+    pair('رصيده بعد الفاتورة', fmt(B ? B.after : 0), { size: 22 });
+    pair('رصيد الحساب الحالي', fmt(B ? B.now : 0), { size: 22 });
     line();
-    txt(s.receiptFooter || 'شكراً لتعاملكم معنا', { size: 24, align: 'c' });
+    if (s.phone) txt(`عند وجود أي استفسار يرجى التواصل مع هذا الرقم: ${s.phone}`, { size: 20, align: 'c' });
+    if (s.receiptFooter) { gap(8); txt(s.receiptFooter, { size: 22, bold: 1, align: 'c' }); }
+    gap(10);
+    const now = new Date();
+    txt(`تاريخ الطباعة ${today()} ${now.toTimeString().slice(0, 8)}`, { size: 18, align: 'c' });
     gap(30);
     return render(ops);
   }
 
+  // الشعار (من الإعدادات) يتحمّل مرة وحدة
+  let logoImg = null, logoSrc = '';
+  function loadLogo() {
+    const src = db.settings.logo || '';
+    if (src === logoSrc) return Promise.resolve();
+    logoSrc = src; logoImg = null;
+    if (!src) return Promise.resolve();
+    return new Promise(ok => { const im = new Image(); im.onload = () => { logoImg = im; ok(); }; im.onerror = ok; im.src = src; });
+  }
+
   function render(ops) {
     const W = paperW(), P = 8, c = document.createElement('canvas'), x = c.getContext('2d');
-    const font = o => `${o.bold ? 'bold ' : ''}${o.size || 24}px ${FONT}`;
+    const scale = W / 576;
+    const font = o => `${o.bold ? 'bold ' : ''}${Math.round((o.size || 24) * (W < 576 ? 0.82 : 1))}px ${FONT}`;
     const wrap = (text, o, max) => {
       x.font = font(o); const out = []; let cur = '';
-      for (const w of text.split(/\s+/)) { const tr = cur ? cur + ' ' + w : w; if (x.measureText(tr).width > max && cur) { out.push(cur); cur = w; } else cur = tr; }
+      for (const w of String(text).split(/\s+/)) { const tr = cur ? cur + ' ' + w : w; if (x.measureText(tr).width > max && cur) { out.push(cur); cur = w; } else cur = tr; }
       out.push(cur); return out;
     };
-    // قياس
     let H = P; const plan = [];
     for (const o of ops) {
-      const sz = o.size || 24, lh = Math.round(sz * 1.45);
+      const sz = (o.size || 24) * (W < 576 ? 0.82 : 1), lh = Math.round(sz * 1.45);
       if (o.k === 't') { const ls = wrap(o.text, o, W - 2 * P); plan.push({ o, ls, y: H, lh }); H += ls.length * lh; }
       else if (o.k === 'p') { plan.push({ o, y: H, lh }); H += lh; }
       else if (o.k === 'hr') { plan.push({ o, y: H }); H += 18; }
-      else { H += o.h; }
+      else if (o.k === 'img') { const h = Math.round(o.h * scale), w = Math.round(o.img.width * h / o.img.height); plan.push({ o, y: H, h, w: Math.min(w, W - 2 * P) }); H += h + 8; }
+      else if (o.k === 'box') { plan.push({ o, y: H, lh }); H += lh + 16; }
+      else if (o.k === 'table') {
+        const tw = W - 2 * P, cw = o.cols.map(cl => cl.w * tw), pad = 5;
+        const rowsL = [o.cols.map(cl => [cl.h]), ...o.rows.map(r => r.map((v, i) => (i === 0 ? wrap(v, o, cw[i] - 2 * pad) : [v])))];
+        const hs = rowsL.map(r => Math.max(...r.map(ls => ls.length)) * lh + 8);
+        plan.push({ o, y: H, lh, cw, rowsL, hs, pad }); H += hs.reduce((a, b) => a + b, 0) + 6;
+      } else H += o.h;
     }
     c.width = W; c.height = H + P;
-    x.fillStyle = '#fff'; x.fillRect(0, 0, W, c.height); x.fillStyle = '#000'; x.textBaseline = 'top';
-    for (const { o, ls, y, lh } of plan) {
+    x.fillStyle = '#fff'; x.fillRect(0, 0, W, c.height); x.fillStyle = '#000'; x.strokeStyle = '#000'; x.textBaseline = 'top';
+    for (const pl of plan) {
+      const { o, y, lh } = pl;
       if (o.k === 'hr') { x.fillRect(P, y + 8, W - 2 * P, 2); continue; }
+      if (o.k === 'img') { x.drawImage(o.img, (W - pl.w) / 2, y, pl.w, pl.h); continue; }
       x.font = font(o); x.direction = 'rtl';
-      if (o.k === 't') ls.forEach((s, i) => { x.textAlign = o.align === 'c' ? 'center' : 'right'; x.fillText(s, o.align === 'c' ? W / 2 : W - P, y + i * lh); });
-      else { x.textAlign = 'right'; x.fillText(o.l, W - P, y); x.textAlign = 'left'; x.fillText(o.r, P, y); }
+      if (o.k === 't') pl.ls.forEach((s, i) => { x.textAlign = o.align === 'c' ? 'center' : 'right'; x.fillText(s, o.align === 'c' ? W / 2 : W - P, y + i * lh); });
+      else if (o.k === 'p') { x.textAlign = 'right'; x.fillText(o.l, W - P, y); x.textAlign = 'left'; x.fillText(o.r, P, y); }
+      else if (o.k === 'box') { x.lineWidth = 2; x.strokeRect(P, y, W - 2 * P, lh + 10); x.textAlign = 'center'; x.fillText(o.text, W / 2, y + 6); }
+      else if (o.k === 'table') {
+        x.lineWidth = 2; let yy = y;
+        pl.rowsL.forEach((r, ri) => {
+          const h = pl.hs[ri]; let xr = W - P;
+          if (ri === 0) { x.fillStyle = '#e8e8e8'; x.fillRect(P, yy, W - 2 * P, h); x.fillStyle = '#000'; }
+          r.forEach((ls, ci) => {
+            const w = pl.cw[ci];
+            x.strokeRect(xr - w, yy, w, h);
+            x.font = font({ ...o, bold: ri === 0 || ci === 0 ? 0 : 0 });
+            ls.forEach((s, li) => {
+              if (ci === 0 && ri > 0) { x.textAlign = 'right'; x.fillText(s, xr - pl.pad, yy + 4 + li * lh); }
+              else { x.textAlign = 'center'; x.fillText(s, xr - w / 2, yy + 4 + li * lh); }
+            });
+            xr -= w;
+          });
+          yy += h;
+        });
+      }
     }
     return c;
   }
@@ -164,7 +238,8 @@ const Receipt = (() => {
   }
 
   /* ---------- الواجهة ---------- */
-  function open(inv) {
+  async function open(inv) {
+    await loadLogo();
     const canvas = build(inv);
     const hasBT = !!(navigator.bluetooth);
     modal('🧾 إيصال حراري', `
@@ -204,6 +279,6 @@ const Receipt = (() => {
       else { const u = URL.createObjectURL(blob), el = document.createElement('a'); el.href = u; el.download = f.name; el.click(); setTimeout(() => URL.revokeObjectURL(u), 3000); }
     }, 'image/png');
   }
-  return { open, build, escpos };
+  return { open, build: inv => build(inv), escpos, loadLogo };
 })();
 window.Receipt = Receipt;
