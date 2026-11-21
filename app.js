@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '3.3';
+const APP_VERSION = '3.4';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -175,8 +175,8 @@ const accOpts = (list, empty) => (empty ? [['', empty]] : []).concat(list.map(a 
    ويحسب أرصدة المواد وكلفتها بالمتوسط المرجّح                         */
 const invTotals = inv => {
   const gross = r2(inv.lines.reduce((s, l) => s + num(l.qty) * num(l.price), 0));
-  const disc = r2(num(inv.discount));
-  return { gross, disc, net: r2(gross - disc) };
+  const disc = r2(num(inv.discount)), add = r2(num(inv.addition));
+  return { gross, disc, add, net: r2(gross - disc + add) };
 };
 function engine() {
   if (_eng) return _eng;
@@ -305,7 +305,7 @@ function waInvoiceText(inv) {
   const lines = inv.lines.map(l => { const it = db.items.find(x => x.id === l.item) || {}; return `• ${it.name || ''}: ${fmt(l.qty)} × ${fmt(l.price)} = ${fmt(num(l.qty) * num(l.price))}`; }).join('\n');
   const a = acc(inv.party);
   let s = `${waHead()}\n${INV_TYPES[inv.type]} رقم ${inv.no}\nالتاريخ: ${inv.date}\n${a ? 'السيد: ' + a.name + '\n' : ''}————————\n${lines}\n————————\n`;
-  if (t.disc) s += `الإجمالي: ${fmt(t.gross)}\nالحسم: ${fmt(t.disc)}\n`;
+  if (t.disc || t.add) s += `الإجمالي: ${fmt(t.gross)}\n${t.disc ? `الحسم: ${fmt(t.disc)}\n` : ''}${t.add ? `إضافة: ${fmt(t.add)}${inv.addNote ? ' (' + inv.addNote + ')' : ''}\n` : ''}`;
   s += `*الصافي: ${fmt(t.net)} ${sym}*\n`;
   if (inv.cur === 'fx') s += `(المعادل: ${fmt(t.net * num(inv.rate))} ${cur()})\n`;
   else if (oldOn()) s += `(بالقديم: ${oldAmt(t.net)})\n`;
@@ -834,7 +834,7 @@ function invoiceHtml(inv) {
   return `<h3 class="ptitle">${INV_TYPES[inv.type]} رقم ${inv.no}</h3>
     <div class="pmeta"><span>التاريخ: ${inv.date}</span><span>${sideSale ? 'العميل' : 'المورد'}: ${esc(accName(inv.party) || 'نقدي')}</span><span>الدفع: ${inv.pay === 'cash' ? 'نقدي' : 'آجل'}</span><span>العملة: ${esc(docCurName(inv))}${inv.cur === 'fx' ? ` — سعر الصرف: ${fmt(inv.rate)}` : ''}</span></div>
     <table><thead><tr><th>#</th><th>المادة</th><th>الوحدة</th><th>الكمية</th><th>السعر</th>${hasCp ? '<th>سعر المستهلك</th>' : ''}<th>الإجمالي</th></tr></thead><tbody>${rows}</tbody>
-    <tfoot><tr><td colspan="${cs}">الإجمالي</td><td>${fmt(t.gross)}</td></tr>${t.disc ? `<tr><td colspan="${cs}">الحسم</td><td>${fmt(t.disc)}</td></tr>` : ''}<tr><td colspan="${cs}">الصافي (${esc(sym)})</td><td>${fmt(t.net)}</td></tr>
+    <tfoot><tr><td colspan="${cs}">الإجمالي</td><td>${fmt(t.gross)}</td></tr>${t.disc ? `<tr><td colspan="${cs}">الحسم</td><td>${fmt(t.disc)}</td></tr>` : ''}${t.add ? `<tr><td colspan="${cs}">إضافة${inv.addNote ? ' — ' + esc(inv.addNote) : ''}</td><td>${fmt(t.add)}</td></tr>` : ''}<tr><td colspan="${cs}">الصافي (${esc(sym)})</td><td>${fmt(t.net)}</td></tr>
     ${inv.cur === 'fx' ? `<tr><td colspan="${cs}">المعادل بـ ${esc(db.settings.currencyName)}</td><td>${fmt(t.net * num(inv.rate))}</td></tr>` : ''}
     ${oldOn() ? `<tr><td colspan="${cs}">الصافي بالعملة القديمة</td><td>${oldAmt(t.net * docRate(inv))}</td></tr>` : ''}</tfoot></table>
     <div class="words">${esc(moneyWords(t.net, inv))}</div>
@@ -886,7 +886,9 @@ V.invoice = (id, q, view) => {
       ${field({ k: 'note', l: 'ملاحظات', t: 'textarea' }, inv.note)}
       <div class="tot-box">
         <div><span>الإجمالي</span><b id="tGross" class="n">0</b></div>
-        <div><span>الحسم</span><input name="discount" type="number" step="any" inputmode="decimal" value="${esc(inv.discount || '')}"></div>
+        <div><span>➖ حسم</span><input name="discount" type="number" step="any" inputmode="decimal" placeholder="0" value="${esc(inv.discount || '')}"></div>
+        <div><span>➕ إضافة</span><input name="addition" type="number" step="any" inputmode="decimal" placeholder="0" value="${esc(inv.addition || '')}"></div>
+        <input name="addNote" placeholder="سبب الإضافة/الحسم (أجور نقل…) — اختياري" value="${esc(inv.addNote || '')}" style="width:100%;font-size:13px">
         <div class="net"><span>الصافي</span><b id="tNet" class="n">0</b></div>
         <div id="tEq" class="muted" style="font-size:14px"></div>
         <div id="tOld" class="old-eq"></div>
@@ -908,7 +910,7 @@ V.invoice = (id, q, view) => {
     $('#rateWrap', view).style.visibility = inv.cur === 'fx' ? 'visible' : 'hidden';
   };
   const totals = () => {
-    const g = inv.lines.reduce((s, l) => s + num(l.qty) * num(l.price), 0), n = g - num(val('discount')), sym = docSym(inv);
+    const g = inv.lines.reduce((s, l) => s + num(l.qty) * num(l.price), 0), n = g - num(val('discount')) + num(val('addition')), sym = docSym(inv);
     $('#tGross', view).textContent = fmt(g) + ' ' + sym; $('#tNet', view).textContent = fmt(n) + ' ' + sym;
     const eq = $('#tEq', view), R = inv.cur === 'fx' ? rate() : FX().rate;
     eq.textContent = !n || !R ? '' : inv.cur === 'fx' ? `المعادل: ${fmt(n * R)} ${cur()}` : `المعادل: ${fmt(n / R)} ${FX().sym}`;
@@ -1064,7 +1066,7 @@ V.invoice = (id, q, view) => {
     if (card && e.target.dataset.f) {
       const l = inv.lines[card.dataset.i]; l[e.target.dataset.f] = e.target.value;
       $('[data-tot]', card).textContent = fmt(num(l.qty) * num(l.price)); $('[data-old]', card).textContent = lineOld(l); totals();
-    } else if (e.target.name === 'discount' || e.target.name === 'rate') totals();
+    } else if (['discount', 'addition', 'rate'].includes(e.target.name)) totals();
   };
   view.onchange = e => {
     if (e.target.name === 'pay') { toggles(); totals(); }
@@ -1074,7 +1076,7 @@ V.invoice = (id, q, view) => {
       if (R && to !== inv.cur && inv.lines.some(l => num(l.price)) && confirm('تحويل الأسعار المدخلة إلى العملة الجديدة حسب سعر الصرف؟')) {
         const c = x => (num(x) ? r2(to === 'fx' ? num(x) / R : num(x) * R) : x);
         inv.lines.forEach(l => { l.price = c(l.price); l.cp = c(l.cp); });
-        const d = $('[name=discount]', view); d.value = c(d.value) || '';
+        ['discount', 'addition'].forEach(k => { const d = $(`[name=${k}]`, view); d.value = c(d.value) || ''; });
       }
       inv.cur = to; toggles(); draw();
     }
@@ -1096,7 +1098,7 @@ V.invoice = (id, q, view) => {
       });
       if (short.length && !confirm('الكمية المطلوبة أكبر من المتوفر في المستودع لبعض المواد:\n' + short.map(([it]) => db.items.find(x => x.id === it)?.name).join('، ') + '\nهل تريد المتابعة؟')) return;
     }
-    const out = { ...inv, date: val('date'), pay, party, cashAcc: pay === 'cash' ? cashAcc : '', cur: inv.cur, rate: inv.cur === 'fx' ? rate() : '', discount: num(val('discount')), note: val('note'), lines };
+    const out = { ...inv, date: val('date'), pay, party, cashAcc: pay === 'cash' ? cashAcc : '', cur: inv.cur, rate: inv.cur === 'fx' ? rate() : '', discount: num(val('discount')), addition: num(val('addition')), addNote: val('addNote').trim(), note: val('note'), lines };
     if (!orig) { out.id = uid(); out.no = nextNo(out.type); out.created = Date.now(); db.invoices.push(out); }
     if (!orig && payNow > 0 && party) {
       const vt = sideSale ? 'receipt' : 'payment';
@@ -1143,6 +1145,7 @@ V.invoice = (id, q, view) => {
     },
     setParty: id => fromPaste({ party: id, lines: [], pay: payNow }),
     setPay: n => { payNow = n; showPay(); },
+    setAdj: (k, v) => { $(`[name=${k}]`, view).value = v || ''; totals(); },
     save: () => doSave(false),
     undo: () => { inv.lines.pop(); draw(); },
   };

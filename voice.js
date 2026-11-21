@@ -31,6 +31,8 @@ const Voice = (() => {
       if (!isNum(w) && w.startsWith('بال') && isNum(w.slice(3))) w = w.slice(3);      // «بالالف»
       if (!isNum(w)) { flush(); out.push(tok); continue; }
       // رقم جديد إذا ما في «و» قبله وما هو ألف/مليون (مثلاً «خمسة آلاف اتنعش» = 5000 و 12)
+      // «خمس مية» = 500
+      if (run && !lead && (w === 'ميه' || w === 'مئه') && run.cur >= 1 && run.cur <= 9) { run.cur *= 100; continue; }
       if (run && !lead && SCALE[w] === undefined && !(HALF.includes(w))) flush();
       if (!run) { if (lead) out.push('و'); run = { total: 0, cur: 0, last: 1 }; }
       if (/^\d/.test(w)) run.cur += +w;
@@ -109,6 +111,10 @@ const Voice = (() => {
       if (/^(احفظ|حفظ|خلص|سجل|احفظها)/.test(n)) { InvHook.save(); return; }
       if (/^(امسح|احذف|شيل)\s*(اخر|آخر)/.test(n)) { InvHook.undo(); return say('شلت آخر مادة'); }
       if (/^(دفعه|دفعة|دفع|واصل|مقبوض)/.test(n)) { const v = /\d/.test(raw) && /مليون|الف|ألف/.test(raw) ? OrderPaste.parseMoney(raw) : (firstNum(t) || OrderPaste.parseMoney(raw)); const old = oldOn() && (v >= 100000 || /قديم/.test(n)); const base = old ? v / oldF() : v; InvHook.setPay(r2(base)); return say(`دفعة ${fmt(base)}${old ? ` (بالقديم ${fmt(v)})` : ''}`); }
+      m = N(t).match(/^(?:حسم|خصم|اخصم|حسملو|حسملها)\s*(?:مبلغ)?\s*(\d+(?:\.\d+)?)\s*(?:ليره|ل\.?س)?$/);
+      if (m) { InvHook.setAdj('discount', +m[1]); return say('حسم ' + fmt(+m[1])); }
+      m = N(t).match(/^(?:اضافه|زيد|زود|ضيف|اضيف)\s*(?:مبلغ)?\s*(\d+(?:\.\d+)?)\s*(?:ليره|ل\.?س)?$/);
+      if (m) { InvHook.setAdj('addition', +m[1]); return say('إضافة ' + fmt(+m[1])); }
       name = after(n, /^(?:الزبون|العميل|الزبونه|المورد|لل|ل)\s+/);
       if (name) { const a = findParty(name); const f = a => { InvHook.setParty(a.id); say('الزبون: ' + a.name); }; return a ? f(a) : askParty(name, f); }
       return InvHook.addSpoken(t, raw);

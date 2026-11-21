@@ -74,7 +74,8 @@ const Receipt = (() => {
     line();
     txt(`مجموع الفاتورة ${fmt(t.gross)}`, { size: 24, bold: 1 });
     const paid = paidFor(inv);
-    pair(`دفعة نقدية ${fmt(inv.pay === 'cash' ? t.net : paid)}`, `الخصم/الإضافة ${fmt(t.disc ? -t.disc : 0)}`, { size: 21, swap: 1 });
+    pair(`دفعة نقدية ${fmt(inv.pay === 'cash' ? t.net : paid)}`, `الخصم/الإضافة ${fmt(t.add - t.disc)}`, { size: 21, swap: 1 });
+    if (inv.addNote && (t.add || t.disc)) txt(`(${inv.addNote})`, { size: 20 });
     gap(4);
     txt('المبلغ المستحق', { size: 24, bold: 1, align: 'c' });
     ops.push({ k: 'box', text: `${fmt(t.net)} ${inv.cur === 'fx' ? FX().name : (s.currencyName || cur())}`, size: 28 });
