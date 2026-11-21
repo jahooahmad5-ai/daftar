@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '3.2';
+const APP_VERSION = '3.3';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -825,10 +825,10 @@ V.invoices = (id, q, view) => {
 
 function invoiceHtml(inv) {
   const t = invTotals(inv), sideSale = ['sale', 'saleReturn'].includes(inv.type), sym = docSym(inv);
-  const hasCp = inv.lines.some(l => num(l.cp));
+  const hasCp = db.settings.receiptCp !== '0';
   const rows = inv.lines.map((l, i) => {
-    const it = db.items.find(x => x.id === l.item) || {};
-    return `<tr><td>${i + 1}</td><td>${esc(it.name || '')}</td><td>${esc(it.unit || '')}</td><td>${fmt(l.qty)}</td><td>${fmt(l.price)}</td>${hasCp ? `<td>${num(l.cp) ? fmt(l.cp) : ''}</td>` : ''}<td>${fmt(num(l.qty) * num(l.price))}</td></tr>`;
+    const it = db.items.find(x => x.id === l.item) || {}, cp = num(l.cp) || num(it.consumerPrice);
+    return `<tr><td>${i + 1}</td><td>${esc(it.name || '')}</td><td>${esc(it.unit || '')}</td><td>${fmt(l.qty)}</td><td>${fmt(l.price)}</td>${hasCp ? `<td>${cp ? fmt(cp) : ''}</td>` : ''}<td>${fmt(num(l.qty) * num(l.price))}</td></tr>`;
   }).join('');
   const cs = hasCp ? 6 : 5;
   return `<h3 class="ptitle">${INV_TYPES[inv.type]} رقم ${inv.no}</h3>
@@ -1473,6 +1473,7 @@ V.settings = (id, q, view) => {
       { k: 'oldFactor', l: 'كل ليرة جديدة = كم ليرة قديمة', t: 'number' },
       { k: 'startDate', l: 'تاريخ بداية الفترة المحاسبية', t: 'date', req: 1 },
       { k: 'paperWidth', l: 'عرض ورق الطابعة الحرارية', t: 'select', opts: [['80', '80 مم (3 إنش)'], ['58', '58 مم (2 إنش)']] },
+      { k: 'receiptCp', l: 'عمود سعر المستهلك بالإيصال', t: 'select', opts: [['1', 'يطلع دايماً'], ['0', 'لا يطلع']] },
       { k: 'receiptHeader', l: 'سطر تحت اسم المحل بالإيصال (نشاطك، السجل التجاري…)', ph: 'شيبس، مياه، غازية، بسكويت — س.ت 384', full: 1 },
       { k: 'receiptFooter', l: 'عبارة أسفل الإيصال', ph: 'صفة البيع من تاجر نصف جملة إلى تاجر مفرق', full: 1 },
     ], s)}

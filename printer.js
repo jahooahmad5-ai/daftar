@@ -35,7 +35,9 @@ const Receipt = (() => {
 
   function build(inv) {
     const s = db.settings, t = invTotals(inv), sym = docSym(inv), a = acc(inv.party);
-    const hasCp = inv.lines.some(l => num(l.cp));
+    // سعر المستهلك: من سطر الفاتورة، وإذا فاضي من بطاقة المادة
+    const cpOf = l => num(l.cp) || num((db.items.find(x => x.id === l.item) || {}).consumerPrice);
+    const hasCp = db.settings.receiptCp !== '0';
     const ops = [];
     const txt = (text, o = {}) => ops.push({ k: 't', text: String(text ?? ''), ...o });
     const pair = (l, r, o = {}) => ops.push({ k: 'p', l: String(l), r: String(r), ...o });
@@ -63,7 +65,7 @@ const Receipt = (() => {
     const rows = inv.lines.map(l => {
       const it = db.items.find(x => x.id === l.item) || {};
       const r = [it.name || '', fmt(l.qty), fmt(l.price)];
-      if (hasCp) r.push(num(l.cp) ? fmt(l.cp) : '');
+      if (hasCp) r.push(cpOf(l) ? fmt(cpOf(l)) : '');
       r.push(fmt(num(l.qty) * num(l.price)));
       return r;
     });
