@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '2.1';
+const APP_VERSION = '2.2';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -527,7 +527,7 @@ V.parties = (id, q, view) => {
       <a class="mini" href="#/vouchers?new=${k === 'c' ? 'receipt' : 'payment'}&acc=${a.id}">${k === 'c' ? 'قبض' : 'دفع'}</a>
       <button class="mini" data-act="edit" data-id="${a.id}">تعديل</button><button class="mini red" data-act="del" data-id="${a.id}">حذف</button></td></tr>`;
   }).join('');
-  view.innerHTML = head('العملاء والموردون', `<button class="btn pri" data-act="add">+ ${k === 'c' ? 'عميل' : 'مورد'} جديد</button>`) + `
+  view.innerHTML = head('العملاء والموردون', `<button class="btn" data-act="import">📥 استيراد Excel</button><button class="btn pri" data-act="add">+ ${k === 'c' ? 'عميل' : 'مورد'} جديد</button>`) + `
     <div class="tabs"><a href="#/parties?t=c" class="${k === 'c' ? 'on' : ''}">العملاء (${customers().length})</a><a href="#/parties?t=s" class="${k === 's' ? 'on' : ''}">الموردون (${suppliers().length})</a></div>
     <div class="card"><input class="search" id="q" placeholder="🔎 بحث بالاسم أو الهاتف" style="margin-bottom:10px">
     ${table(['الرمز', 'الاسم', 'الهاتف', k === 'c' ? 'الرصيد (لنا عليه)' : 'الرصيد (له علينا)', ''], rows,
@@ -535,6 +535,7 @@ V.parties = (id, q, view) => {
   $('#q', view).oninput = e => { const s = e.target.value.trim(); $$('tbody tr[data-name]', view).forEach(tr => (tr.style.display = tr.dataset.name.includes(s) ? '' : 'none')); };
   onAct(view, {
     add: () => partyForm(null, k),
+    import: () => window.ItemImport && ItemImport.openParties(k),
     edit: id => partyForm(acc(id), k),
     wa: id => { const a = acc(id); waSend(a, waBalanceText(a)); },
     del: id => {
