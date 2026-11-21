@@ -255,3 +255,10 @@ dialog::backdrop{background:rgba(10,30,26,.45)}
 .fab{position:fixed;bottom:22px;inset-inline-end:22px;background:#e3e8ef;border:0;border-radius:18px;padding:14px 22px;font:inherit;font-size:17px;font-weight:700;color:#1d3b5c;box-shadow:0 6px 20px rgba(0,0,0,.2);cursor:pointer;z-index:30}
 .menu-list{display:flex;flex-direction:column;gap:8px}
 .menu-list .btn{justify-content:flex-start;padding:12px 14px;font-size:15px}
+
+/* العملة القديمة */
+.old-eq{display:block;color:#8a5a00;font-size:13px;font-weight:600;text-align:center}
+.tot-box .old-eq{text-align:start;padding:4px 0}
+.ln-card .old-eq:empty{display:none}
+.old-bar{color:#f5d38a!important}
+.old-bar:empty{display:none}

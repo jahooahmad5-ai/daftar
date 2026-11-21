@@ -6,6 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
+const APP_VERSION = '1.6';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -25,6 +26,11 @@ const daysAgo = n => { const d = new Date(); d.setDate(d.getDate() - n); return 
 const byCode = (a, b) => String(a.code).localeCompare(String(b.code), 'en', { numeric: true });
 const clone = o => JSON.parse(JSON.stringify(o));
 const cur = () => db.settings.currency;
+/* العملة القديمة (قبل حذف الصفرين): يُعرض المعادل بجانب المبالغ */
+const oldOn = () => db.settings.showOld === '1';
+const oldF = () => num(db.settings.oldFactor) || 100;
+const oldAmt = base => fmt(base * oldF());
+const oldTxt = base => (oldOn() && base ? `بالقديم: ${oldAmt(base)}` : '');
 /* العملة الثانية (الدولار) وسعر الصرف */
 const FX = () => ({ sym: db.settings.currency2 || '$', name: db.settings.currency2Name || 'دولار أمريكي', rate: num(db.settings.rate) });
 const docRate = d => (d && d.cur === 'fx' ? num(d.rate) : 1);
@@ -115,9 +121,9 @@ const DEF_ACCOUNTS = [
 function seed() {
   return {
     version: 1,
-    settings: { company: 'اسم المنشأة', address: '', phone: '', currency: 'ل.س', currencyName: 'ليرة سورية', currency2: '$', currency2Name: 'دولار أمريكي', rate: '', startDate: new Date().getFullYear() + '-01-01' },
+    settings: { company: 'اسم المنشأة', address: '', phone: '', currency: 'ل.س', currencyName: 'ليرة سورية', currency2: '$', currency2Name: 'دولار أمريكي', rate: '', showOld: '1', oldFactor: 100, startDate: new Date().getFullYear() + '-01-01' },
     accounts: DEF_ACCOUNTS.map(([id, code, name, type, parent, group]) => ({ id, code, name, type, parent, group: !!group, sys: true })),
-    items: [], invoices: [], vouchers: [], entries: [], seq: {},
+    items: [], groups: [], invoices: [], vouchers: [], entries: [], seq: {},
   };
 }
 function load() {
@@ -516,16 +522,95 @@ async function scanBarcode(onCode) {
 }
 
 function nextItemCode() { const m = db.items.reduce((x, i) => Math.max(x, parseInt(i.code, 10) || 0), 0); return String(m + 1).padStart(3, '0'); }
-function itemForm(it) {
+/* ------------------------- مجموعات المواد (رئيسية ← فرعية) ------------------------- */
+const grp = id => db.groups.find(g => g.id === id);
+const grpKids = id => db.groups.filter(g => (g.parent || null) === (id || null)).sort(byCode);
+const grpDesc = id => { const out = [id]; grpKids(id).forEach(k => out.push(...grpDesc(k.id))); return out; };
+const grpTree = () => { const out = []; const walk = (p, d) => grpKids(p).forEach(g => { out.push({ g, d }); walk(g.id, d + 1); }); walk(null, 0); return out; };
+const grpPath = id => { const p = []; let g = grp(id), n = 0; while (g && n++ < 20) { p.unshift(g.name); g = grp(g.parent); } return p.join(' › '); };
+const grpOpts = (empty = '— بدون مجموعة —') => [['', empty], ...grpTree().map(({ g, d }) => [g.id, '   '.repeat(d) + (d ? '↳ ' : '') + g.code + ' ' + g.name])];
+const grpItems = id => { const ids = new Set(grpDesc(id)); return db.items.filter(i => ids.has(i.group)); };
+function nextGrpCode(parentId) {
+  const p = grp(parentId), prefix = p ? p.code : '', w = p ? 2 : 3;
+  let max = 0;
+  grpKids(parentId).forEach(s => { if (s.code.startsWith(prefix)) { const n = parseInt(s.code.slice(prefix.length), 10) || 0; if (n > max) max = n; } });
+  return prefix + String(max + 1).padStart(w, '0');
+}
+function groupForm(g, parentId) {
+  const parent = g ? g.parent : parentId;
+  const banned = g ? new Set(grpDesc(g.id)) : new Set();
+  const pOpts = grpOpts('— مجموعة رئيسية —').filter(([id]) => !banned.has(id));
+  modal(g ? 'تعديل مجموعة' : (parent ? `مجموعة فرعية تحت: ${grp(parent).name}` : 'مجموعة رئيسية جديدة'),
+    fields([{ k: 'code', l: 'الرمز' }, { k: 'name', l: 'اسم المجموعة', req: 1 }, { k: 'parent', l: 'تتبع لـ', t: 'select', opts: pOpts, full: 1 }],
+      g || { code: nextGrpCode(parent), parent: parent || '' }), {
+    onSave: d => {
+      const code = (d.code || '').trim() || nextGrpCode(d.parent || null);
+      if (db.groups.some(x => x.code === code && x !== g)) { toast('رمز المجموعة مستخدم مسبقاً', 1); return false; }
+      const o = { code, name: d.name.trim(), parent: d.parent || null };
+      if (g) Object.assign(g, o); else db.groups.push({ id: uid(), ...o });
+      save(); toast('تم الحفظ'); route();
+    },
+  });
+}
+const groupsOpen = new Set();
+V.groups = (id, q, view) => {
+  const card = (g, d) => {
+    const kids = grpKids(g.id), direct = db.items.filter(i => i.group === g.id).length, all = grpItems(g.id).length, open = groupsOpen.has(g.id);
+    return `<div class="g-card ${d ? 'sub' : ''}" style="margin-inline-start:${d * 14}px">
+      <button class="g-tog" data-act="tog" data-id="${g.id}" ${kids.length ? '' : 'style="visibility:hidden"'}>${open ? '▴' : '▾'}</button>
+      <div class="g-main" data-act="items" data-id="${g.id}">
+        <div><span class="g-code">${esc(g.code)}</span> <b>${esc(g.name)}</b></div>
+        <small>المواد ${all}${all !== direct ? ` (مباشرة ${direct})` : ''}${kids.length ? ` · المجموعات الفرعية ${kids.length}` : ''}</small>
+      </div>
+      <button class="g-menu" data-act="menu" data-id="${g.id}" aria-label="خيارات">⋮</button>
+    </div>${open ? kids.map(k => card(k, d + 1)).join('') : ''}`;
+  };
+  const roots = grpKids(null), none = db.items.filter(i => !i.group || !grp(i.group)).length;
+  view.innerHTML = head('مجموعات المواد', `<a class="btn" href="#/items">📦 المواد</a>`) + `
+    <div class="g-list">${roots.length ? roots.map(g => card(g, 0)).join('') : `<div class="empty card">لا توجد مجموعات بعد. أنشئ مجموعة رئيسية (مثلاً اسم الشركة أو نوع البضاعة)، ثم أضف تحتها مجموعات فرعية.</div>`}
+    ${none ? `<div class="g-card none"><span class="g-tog" style="visibility:hidden">▾</span><div class="g-main" data-act="items" data-id="none"><b>مواد بدون مجموعة</b><small>المواد ${none}</small></div></div>` : ''}</div>
+    <button class="fab" data-act="new">＋ إنشاء</button>`;
+  onAct(view, {
+    tog: id => { groupsOpen.has(id) ? groupsOpen.delete(id) : groupsOpen.add(id); route(); },
+    items: id => go('#/items?g=' + id),
+    new: () => groupForm(null, null),
+    menu: id => {
+      const g = grp(id);
+      const f = modal(`${g.code} ${g.name}`, `<div class="menu-list">
+        <button type="button" class="btn" data-m="items">📦 عرض المواد</button>
+        <button type="button" class="btn" data-m="addItem">＋ مادة جديدة بهالمجموعة</button>
+        <button type="button" class="btn" data-m="sub">📂 مجموعة فرعية جديدة</button>
+        <button type="button" class="btn" data-m="edit">✏️ تعديل</button>
+        <button type="button" class="btn red" data-m="del">🗑 حذف</button></div>`);
+      f.onclick = e => {
+        const m = e.target.closest('[data-m]')?.dataset.m; if (!m) return;
+        $('#dlg').close();
+        if (m === 'items') go('#/items?g=' + id);
+        else if (m === 'addItem') itemForm(null, id);
+        else if (m === 'sub') { groupsOpen.add(id); groupForm(null, id); }
+        else if (m === 'edit') groupForm(g);
+        else if (m === 'del') {
+          if (grpKids(id).length) return toast('احذف المجموعات الفرعية أولاً', 1);
+          if (db.items.some(i => i.group === id)) return toast('لا يمكن الحذف: يوجد مواد بهذه المجموعة — انقلها لمجموعة أخرى أولاً', 1);
+          if (!confirm(`حذف المجموعة "${g.name}"؟`)) return;
+          db.groups = db.groups.filter(x => x !== g); save(); route();
+        }
+      };
+    },
+  });
+};
+
+function itemForm(it, defGroup) {
   const fl = [
     { k: 'code', l: 'رمز المادة' }, { k: 'name', l: 'اسم المادة', req: 1 },
+    { k: 'group', l: 'المجموعة', t: 'select', opts: grpOpts(), full: 1 },
     { k: 'unit', l: 'الوحدة', ph: 'قطعة، كيلو، علبة…' }, { k: 'minQty', l: 'الحد الأدنى للتنبيه', t: 'number' },
     { k: 'buyPrice', l: 'سعر الشراء', t: 'number' }, { k: 'sellPrice', l: 'سعر المبيع', t: 'number' },
     { k: 'consumerPrice', l: 'سعر المستهلك', t: 'number', full: 1 },
     { k: 'openQty', l: 'كمية أول المدة', t: 'number' }, { k: 'openCost', l: 'كلفة الوحدة أول المدة', t: 'number' },
     { k: 'barcodes', l: 'الباركودات (كل باركود بسطر — يمكن إضافة أكثر من باركود)', t: 'textarea', full: 1 },
   ];
-  const vals = it ? { ...it, barcodes: (it.barcodes || []).join('\n') } : { code: nextItemCode(), unit: 'قطعة' };
+  const vals = it ? { ...it, barcodes: (it.barcodes || []).join('\n') } : { code: nextItemCode(), unit: 'قطعة', group: defGroup && defGroup !== 'none' ? defGroup : '' };
   const f = modal(it ? 'تعديل مادة' : 'مادة جديدة', fields(fl, vals) +
     (canScan() ? `<button type="button" class="btn" id="bcScan" style="margin-top:8px">📷 إضافة باركود بالكاميرا</button>` : '') +
     `<p class="muted" style="font-size:13px;margin:8px 0 0">بقارئ الباركود: اضغط داخل خانة الباركودات وامسح، كل مسحة بسطر جديد.</p>`, {
@@ -537,7 +622,7 @@ function itemForm(it) {
         const other = db.items.find(x => x !== it && itemCodes(x).includes(c));
         if (other) { toast(`الرمز/الباركود ${c} مستخدم للمادة: ${other.name}`, 1); return false; }
       }
-      const o = { code, barcodes, name: d.name.trim(), unit: d.unit.trim(), minQty: num(d.minQty), buyPrice: num(d.buyPrice), sellPrice: num(d.sellPrice), consumerPrice: num(d.consumerPrice), openQty: num(d.openQty), openCost: num(d.openCost) };
+      const o = { code, barcodes, group: d.group || null, name: d.name.trim(), unit: d.unit.trim(), minQty: num(d.minQty), buyPrice: num(d.buyPrice), sellPrice: num(d.sellPrice), consumerPrice: num(d.consumerPrice), openQty: num(d.openQty), openCost: num(d.openCost) };
       if (it) Object.assign(it, o); else db.items.push({ id: uid(), ...o });
       save(); toast('تم الحفظ'); route();
     },
@@ -549,22 +634,30 @@ function itemForm(it) {
 }
 V.items = (id, q, view) => {
   const st = engine().stock;
+  const gf = q.g || '';
+  let list = [...db.items].sort(byCode);
+  if (gf === 'none') list = list.filter(i => !i.group || !grp(i.group));
+  else if (gf) { const ids = new Set(grpDesc(gf)); list = list.filter(i => ids.has(i.group)); }
   let tv = 0;
-  const rows = [...db.items].sort(byCode).map(i => {
+  const rows = list.map(i => {
     const s = st[i.id] || { qty: num(i.openQty), avg: num(i.openCost) }, v = s.qty * s.avg; tv += v;
     const low = num(i.minQty) > 0 && s.qty <= num(i.minQty);
-    const bcs = i.barcodes || [];
-    return `<tr data-name="${esc(itemCodes(i).join(' ') + ' ' + i.name)}"><td class="n">${esc(i.code)}</td><td>${esc(i.name)}${bcs.length ? `<br><small class="muted">▮▯▮ ${bcs.length === 1 ? esc(bcs[0]) : bcs.length + ' باركود'}</small>` : ''}</td><td>${esc(i.unit || '')}</td>
-      <td class="n">${low ? `<span class="badge low">${fmt(s.qty)}</span>` : fmt(s.qty)}</td><td class="n">${fmt(s.avg)}</td><td class="n">${fmt(v)}</td><td class="n">${fmt(i.sellPrice)}</td><td class="n">${i.consumerPrice ? fmt(i.consumerPrice) : ''}</td>
+    const bcs = i.barcodes || [], gp = i.group && grp(i.group) ? grpPath(i.group) : '';
+    return `<tr data-name="${esc(normAr(itemCodes(i).join(' ') + ' ' + i.name + ' ' + gp))}"><td class="n">${esc(i.code)}</td><td>${esc(i.name)}${gp ? `<br><small class="muted">📂 ${esc(gp)}</small>` : ''}${bcs.length ? `<br><small class="muted">▮▯▮ ${bcs.length === 1 ? esc(bcs[0]) : bcs.length + ' باركود'}</small>` : ''}</td><td>${esc(i.unit || '')}</td>
+      <td class="n">${low ? `<span class="badge low">${fmt(s.qty)}</span>` : fmt(s.qty)}</td><td class="n">${fmt(s.avg)}</td><td class="n">${fmt(v)}</td><td class="n">${fmt(i.sellPrice)}${oldOn() && i.sellPrice ? `<br><small class="muted">${oldAmt(i.sellPrice)} قديم</small>` : ''}</td><td class="n">${i.consumerPrice ? fmt(i.consumerPrice) + (oldOn() ? `<br><small class="muted">${oldAmt(i.consumerPrice)} قديم</small>` : '') : ''}</td>
       <td class="ac"><a class="mini" href="#/report/itemcard?item=${i.id}">الحركة</a><button class="mini" data-act="edit" data-id="${i.id}">تعديل</button><button class="mini red" data-act="del" data-id="${i.id}">حذف</button></td></tr>`;
   }).join('');
-  view.innerHTML = head('المواد والمستودع', `<button class="btn pri" data-act="add">+ مادة جديدة</button>`) + `
-    <div class="card"><input class="search" id="q" placeholder="🔎 بحث بالاسم أو الرمز أو الباركود" style="margin-bottom:10px">
+  const gOpts = [['', '📂 كل المجموعات'], ...grpOpts().slice(1), ['none', '— مواد بدون مجموعة —']];
+  view.innerHTML = head(gf && gf !== 'none' && grp(gf) ? `المواد: ${esc(grpPath(gf))}` : 'المواد والمستودع',
+    `<a class="btn" href="#/groups">📂 المجموعات</a><button class="btn pri" data-act="add">+ مادة جديدة</button>`) + `
+    <div class="card"><div class="filters" style="margin-bottom:10px"><select id="gf" style="flex:1;min-width:160px">${optsHtml(gOpts, gf)}</select>
+    <input class="search" id="q" placeholder="🔎 بحث بالاسم أو الرمز أو الباركود" style="flex:2;min-width:180px"></div>
     ${table(['الرمز', 'المادة', 'الوحدة', 'الكمية', 'متوسط الكلفة', 'قيمة المخزون', 'سعر المبيع', 'سعر المستهلك', ''], rows,
-      `<tr><td colspan="5">إجمالي قيمة المخزون</td><td class="n">${fmt(tv)}</td><td colspan="3"></td></tr>`)}</div>`;
-  $('#q', view).oninput = e => { const s = e.target.value.trim(); $$('tbody tr[data-name]', view).forEach(tr => (tr.style.display = tr.dataset.name.includes(s) ? '' : 'none')); };
+      `<tr><td colspan="5">إجمالي قيمة المخزون (${list.length} مادة)</td><td class="n">${fmt(tv)}</td><td colspan="3"></td></tr>`)}</div>`;
+  $('#q', view).oninput = e => { const s = normAr(e.target.value); $$('tbody tr[data-name]', view).forEach(tr => (tr.style.display = tr.dataset.name.includes(s) ? '' : 'none')); };
+  $('#gf', view).onchange = e => go('#/items' + (e.target.value ? '?g=' + e.target.value : ''));
   onAct(view, {
-    add: () => itemForm(null),
+    add: () => itemForm(null, gf),
     edit: id => itemForm(db.items.find(i => i.id === id)),
     del: id => {
       if (db.invoices.some(inv => inv.lines.some(l => l.item === id))) return toast('لا يمكن حذف مادة مستخدمة في فواتير', 1);
@@ -605,23 +698,29 @@ function invoiceHtml(inv) {
     <div class="pmeta"><span>التاريخ: ${inv.date}</span><span>${sideSale ? 'العميل' : 'المورد'}: ${esc(accName(inv.party) || 'نقدي')}</span><span>الدفع: ${inv.pay === 'cash' ? 'نقدي' : 'آجل'}</span><span>العملة: ${esc(docCurName(inv))}${inv.cur === 'fx' ? ` — سعر الصرف: ${fmt(inv.rate)}` : ''}</span></div>
     <table><thead><tr><th>#</th><th>المادة</th><th>الوحدة</th><th>الكمية</th><th>السعر</th>${hasCp ? '<th>سعر المستهلك</th>' : ''}<th>الإجمالي</th></tr></thead><tbody>${rows}</tbody>
     <tfoot><tr><td colspan="${cs}">الإجمالي</td><td>${fmt(t.gross)}</td></tr>${t.disc ? `<tr><td colspan="${cs}">الحسم</td><td>${fmt(t.disc)}</td></tr>` : ''}<tr><td colspan="${cs}">الصافي (${esc(sym)})</td><td>${fmt(t.net)}</td></tr>
-    ${inv.cur === 'fx' ? `<tr><td colspan="${cs}">المعادل بـ ${esc(db.settings.currencyName)}</td><td>${fmt(t.net * num(inv.rate))}</td></tr>` : ''}</tfoot></table>
+    ${inv.cur === 'fx' ? `<tr><td colspan="${cs}">المعادل بـ ${esc(db.settings.currencyName)}</td><td>${fmt(t.net * num(inv.rate))}</td></tr>` : ''}
+    ${oldOn() ? `<tr><td colspan="${cs}">الصافي بالعملة القديمة</td><td>${oldAmt(t.net * docRate(inv))}</td></tr>` : ''}</tfoot></table>
     <div class="words">${esc(moneyWords(t.net, inv))}</div>
     ${inv.note ? `<p>ملاحظات: ${esc(inv.note)}</p>` : ''}<div class="psign"><span>توقيع المستلم</span><span>توقيع المحاسب</span></div>`;
 }
 
+/* تطبيع النص العربي للبحث: أ إ آ ← ا، ة ← ه، ى ← ي، وإزالة التشكيل */
+const normAr = s => String(s || '').toLowerCase().replace(/[ً-ْـ]/g, '').replace(/[أإآ]/g, 'ا').replace(/ة/g, 'ه').replace(/ى/g, 'ي').replace(/[٠-٩]/g, d => AR_DIG.indexOf(d)).trim();
+const canVoice = () => 'webkitSpeechRecognition' in window || 'SpeechRecognition' in window;
+
 V.invoice = (id, q, view) => {
   const orig = id === 'new' ? null : db.invoices.find(x => x.id === id);
   if (id !== 'new' && !orig) return go('#/invoices');
-  const blank = () => ({ item: '', qty: 1, price: '', cp: '' });
-  const inv = orig ? clone(orig) : { id: null, type: INV_TYPES[q.type] ? q.type : 'sale', date: today(), pay: 'cash', cashAcc: cashAccounts()[0]?.id || '', party: '', cur: 'base', rate: db.settings.rate || '', lines: [blank()], discount: 0, note: '' };
+  const inv = orig ? clone(orig) : { id: null, type: INV_TYPES[q.type] ? q.type : 'sale', date: today(), pay: 'cash', cashAcc: cashAccounts()[0]?.id || '', party: '', cur: 'base', rate: db.settings.rate || '', lines: [], discount: 0, note: '' };
+  inv.lines = inv.lines.filter(l => l.item);
   if (!inv.cur) inv.cur = 'base';
   if (!inv.rate) inv.rate = db.settings.rate || '';
   const sideSale = ['sale', 'saleReturn'].includes(inv.type);
   const parties = sideSale ? customers() : suppliers();
   const st = engine().stock;
   const items = [...db.items].sort(byCode);
-  const itemOpts = [['', '— اختر مادة —'], ...items.map(i => [i.id, (i.code ? i.code + ' - ' : '') + i.name])];
+  const itemById = id => items.find(x => x.id === id);
+  const stockOf = it => (st[it.id] ? st[it.id].qty : num(it.openQty));
 
   view.innerHTML = head(INV_TYPES[inv.type] + (orig ? ` رقم ${orig.no}` : ' جديدة'),
     `${orig ? `<button class="btn" data-act="print">🖨 طباعة</button><button class="btn red" data-act="del">حذف</button>` : ''}<a class="btn" href="#/invoices">رجوع</a>`) + `
@@ -635,9 +734,17 @@ V.invoice = (id, q, view) => {
       <div id="rateWrap">${field({ k: 'rate', l: `سعر الصرف (${cur()} لكل 1 ${FX().sym})`, t: 'number' }, inv.rate)}</div>
     </div>
     ${!items.length ? `<p class="bad">لا توجد مواد. <a href="#/items">أضف مواد أولاً</a>.</p>` : ''}
-    <div class="scan-row"><input id="scanIn" type="search" enterkeyhint="done" autocomplete="off" placeholder="▮▯▮ امسح الباركود أو اكتبه ثم Enter">${canScan() ? '<button class="btn" data-act="cam" title="مسح بالكاميرا">📷</button>' : ''}</div>
-    <div class="tbl" style="margin-top:10px"><table class="lines inv"><thead><tr><th>#</th><th>المادة</th><th>الكمية</th><th>السعر <span class="symH"></span></th><th>سعر المستهلك <span class="symH"></span></th><th>الإجمالي</th><th></th></tr></thead><tbody id="ln"></tbody></table></div>
-    <button class="btn" data-act="addLine" style="margin-top:8px">+ إضافة سطر</button>
+  </div>
+  <div class="search-wrap">
+    <div class="scan-row">
+      ${canScan() ? '<button class="sq-btn" data-act="cam" title="مسح بالكاميرا">▮▯▮</button>' : ''}
+      <input id="scanIn" type="search" enterkeyhint="search" autocomplete="off" placeholder="ادخل اسم المادة أو الباركود لإضافتها للفاتورة">
+      ${canVoice() ? '<button class="sq-btn round" data-act="mic" title="بحث صوتي">🎤</button>' : ''}
+    </div>
+    <div id="sugg" class="sugg" hidden></div>
+  </div>
+  <div id="ln" class="ln-list"></div>
+  <div class="card">
     <div class="inv-foot">
       ${field({ k: 'note', l: 'ملاحظات', t: 'textarea' }, inv.note)}
       <div class="tot-box">
@@ -645,10 +752,15 @@ V.invoice = (id, q, view) => {
         <div><span>الحسم</span><input name="discount" type="number" step="any" inputmode="decimal" value="${esc(inv.discount || '')}"></div>
         <div class="net"><span>الصافي</span><b id="tNet" class="n">0</b></div>
         <div id="tEq" class="muted" style="font-size:14px"></div>
+        <div id="tOld" class="old-eq"></div>
         <small class="muted" id="tWords"></small>
       </div>
     </div>
-    <div class="form-actions"><button class="btn pri big" data-act="save">💾 حفظ الفاتورة</button>${orig ? '' : `<button class="btn big" data-act="saveNew">حفظ وجديد</button>`}</div>
+  </div>
+  <div class="inv-bar">
+    <div class="inv-bar-sum"><small id="barInfo"></small><b id="barNet">0</b><small id="barOld" class="old-bar"></small></div>
+    ${orig ? '' : '<button class="btn" data-act="saveNew">＋ حفظ وجديد</button>'}
+    <button class="btn pri" data-act="save">💾 حفظ</button>
   </div>`;
 
   const val = n => $(`[name="${n}"]`, view).value;
@@ -656,7 +768,6 @@ V.invoice = (id, q, view) => {
   const toggles = () => {
     $('#cashWrap', view).style.visibility = val('pay') === 'cash' ? 'visible' : 'hidden';
     $('#rateWrap', view).style.visibility = inv.cur === 'fx' ? 'visible' : 'hidden';
-    $$('.symH', view).forEach(e => (e.textContent = `(${docSym(inv)})`));
   };
   const totals = () => {
     const g = inv.lines.reduce((s, l) => s + num(l.qty) * num(l.price), 0), n = g - num(val('discount')), sym = docSym(inv);
@@ -664,67 +775,114 @@ V.invoice = (id, q, view) => {
     const eq = $('#tEq', view), R = inv.cur === 'fx' ? rate() : FX().rate;
     eq.textContent = !n || !R ? '' : inv.cur === 'fx' ? `المعادل: ${fmt(n * R)} ${cur()}` : `المعادل: ${fmt(n / R)} ${FX().sym}`;
     $('#tWords', view).textContent = n > 0 ? moneyWords(n, inv) : '';
+    const nb = inv.cur === 'fx' ? n * rate() : n;
+    $('#tOld', view).textContent = oldOn() && nb ? `الصافي بالعملة القديمة: ${oldAmt(nb)} ${cur()}` : '';
+    $('#barOld', view).textContent = oldTxt(nb);
+    const cnt = inv.lines.reduce((s, l) => s + num(l.qty), 0);
+    $('#barNet', view).textContent = fmt(n) + ' ' + sym;
+    $('#barInfo', view).textContent = `${inv.lines.length} مادة — ${fmt(cnt)} قطعة${val('pay') === 'credit' ? ' — آجل' : ' — نقدي'}`;
+  };
+  const toBase = x => (inv.cur === 'fx' ? num(x) * rate() : num(x));
+  const lineOld = l => (oldOn() && num(l.price) ? `بالقديم: الإفرادي ${oldAmt(toBase(l.price))} — الإجمالي ${oldAmt(toBase(num(l.qty) * num(l.price)))}${num(l.cp) ? ` — المستهلك ${oldAmt(toBase(l.cp))}` : ''}` : '');
+  const lineHtml = (l, i) => {
+    const it = itemById(l.item) || { name: '(مادة محذوفة)' };
+    const s = it.id ? stockOf(it) : 0, low = it.id && (s <= 0 || (num(it.minQty) > 0 && s <= num(it.minQty)));
+    return `<div class="ln-card" data-i="${i}">
+      <div class="ln-head">
+        <button class="qb" data-act="inc" data-id="${i}" aria-label="زيادة">＋</button>
+        <button class="qb minus" data-act="dec" data-id="${i}" aria-label="إنقاص">−</button>
+        <b class="ln-name">${esc(it.name)}</b>
+        <button class="qb del" data-act="rmLine" data-id="${i}" aria-label="حذف">✕</button>
+      </div>
+      <div class="ln-row">
+        <label><span>الكمية</span><input data-f="qty" type="number" step="any" inputmode="decimal" value="${esc(l.qty)}"></label>
+        <label class="unit"><span>الوحدة</span><b>${esc(it.unit || '—')}</b></label>
+        <label><span>الإفرادي</span><input data-f="price" type="number" step="any" inputmode="decimal" value="${esc(l.price)}"></label>
+        <label><span>المستهلك</span><input data-f="cp" type="number" step="any" inputmode="decimal" value="${esc(l.cp ?? '')}"></label>
+        <label class="tot"><span>الإجمالي</span><b data-tot>${fmt(num(l.qty) * num(l.price))}</b></label>
+      </div>
+      <small class="old-eq" data-old>${lineOld(l)}</small>
+      ${it.id ? `<small class="${low ? 'bad' : 'muted'}">المتوفر: ${fmt(s)} ${esc(it.unit || '')}${low ? (s <= 0 ? ' — نفدت المادة' : ' — قاربت المادة على النفاد') : ''}</small>` : ''}
+    </div>`;
   };
   const draw = () => {
-    $('#ln', view).innerHTML = inv.lines.map((l, i) => {
-      const s = st[l.item], it = items.find(x => x.id === l.item);
-      const hint = it ? `<small>المتوفر: ${fmt(s ? s.qty : num(it.openQty))} ${esc(it.unit || '')}</small>` : '';
-      return `<tr data-i="${i}"><td>${i + 1}</td><td><select data-f="item">${optsHtml(itemOpts, l.item)}</select>${hint}</td>
-        <td data-l="الكمية"><input data-f="qty" type="number" step="any" inputmode="decimal" value="${esc(l.qty)}" placeholder="الكمية"></td>
-        <td data-l="السعر"><input data-f="price" type="number" step="any" inputmode="decimal" value="${esc(l.price)}" placeholder="السعر"></td>
-        <td data-l="سعر المستهلك"><input data-f="cp" type="number" step="any" inputmode="decimal" value="${esc(l.cp ?? '')}" placeholder="سعر المستهلك"></td>
-        <td class="n" data-l="الإجمالي" data-tot>${fmt(num(l.qty) * num(l.price))}</td>
-        <td><button class="mini red" data-act="rmLine" data-id="${i}" aria-label="حذف السطر">✕</button></td></tr>`;
-    }).join('');
+    $('#ln', view).innerHTML = inv.lines.length ? inv.lines.map(lineHtml).join('')
+      : `<div class="empty card">ابحث عن مادة بالاسم أو امسح الباركود لإضافتها للفاتورة</div>`;
     totals();
   };
   // تحويل سعر من الليرة إلى عملة الفاتورة الحالية
   const toDoc = base => (inv.cur === 'fx' && rate() ? r2(base / rate()) : base);
-  const setItem = (l, it) => {
-    l.item = it.id;
-    l.price = toDoc(sideSale ? num(it.sellPrice) : (num(it.buyPrice) || r2(st[it.id]?.avg || 0)));
-    l.cp = it.consumerPrice ? toDoc(num(it.consumerPrice)) : '';
-  };
-  // إضافة مادة بالباركود: إذا كانت موجودة بالفاتورة تزيد الكمية
-  const addByCode = code => {
-    const it = findByCode(code);
-    if (!it) { toast('لا توجد مادة بهذا الباركود: ' + code, 1); return; }
+  const basePrice = it => (sideSale ? num(it.sellPrice) : (num(it.buyPrice) || r2(st[it.id]?.avg || 0)));
+  // إضافة مادة: إذا كانت موجودة بالفاتورة تزيد الكمية
+  const addItem = it => {
     const ex = inv.lines.find(l => l.item === it.id);
     if (ex) ex.qty = num(ex.qty) + 1;
-    else {
-      let l = inv.lines.find(x => !x.item);
-      if (!l) { l = blank(); inv.lines.push(l); }
-      l.qty = 1; setItem(l, it);
-    }
-    if (inv.lines[inv.lines.length - 1].item) inv.lines.push(blank());
+    else inv.lines.push({ item: it.id, qty: 1, price: toDoc(basePrice(it)), cp: it.consumerPrice ? toDoc(num(it.consumerPrice)) : '' });
     draw(); navigator.vibrate?.(40); toast('✓ ' + it.name);
   };
-  const scanIn = $('#scanIn', view);
+  const addByCode = code => { const it = findByCode(code); if (it) addItem(it); else toast('لا توجد مادة بهذا الباركود: ' + code, 1); };
+
+  /* ---- البحث مع الاقتراحات ---- */
+  const scanIn = $('#scanIn', view), sugg = $('#sugg', view);
+  let matches = [];
+  const search = txt => {
+    const qn = normAr(txt);
+    if (!qn) return [];
+    const words = qn.split(/\s+/);
+    return items.filter(it => {
+      if (itemCodes(it).some(c => c.startsWith(txt.trim()))) return true;
+      const nm = normAr(it.name);
+      return words.every(w => nm.includes(w));
+    }).slice(0, 8);
+  };
+  const showSugg = () => {
+    matches = search(scanIn.value);
+    if (!scanIn.value.trim()) { sugg.hidden = true; return; }
+    sugg.hidden = false;
+    sugg.innerHTML = matches.length ? matches.map((it, i) => {
+      const s = stockOf(it), low = s <= 0 || (num(it.minQty) > 0 && s <= num(it.minQty));
+      return `<button type="button" class="sg" data-i="${i}">
+        <b>${esc(it.name)}</b>
+        <span class="sg-meta"><span>💰 ${fmt(toDoc(basePrice(it)))}${oldOn() ? ` <small class="muted">(${oldAmt(basePrice(it))} قديم)</small>` : ''}</span><span class="${s <= 0 ? 'bad' : ''}">📦 ${fmt(s)} ${esc(it.unit || '')}</span></span>
+        ${low ? `<small class="bad">${s <= 0 ? 'نفدت المادة' : 'قاربت المادة على النفاد'}</small>` : ''}
+      </button>`;
+    }).join('') : `<div class="muted" style="padding:12px">لا توجد مادة بهذا الاسم أو الباركود</div>`;
+  };
+  const pick = it => { scanIn.value = ''; sugg.hidden = true; addItem(it); };
+  scanIn.addEventListener('input', showSugg);
   scanIn.addEventListener('keydown', e => {
     if (e.key !== 'Enter') return;
     e.preventDefault();
-    const c = scanIn.value.trim(); scanIn.value = '';
-    if (c) addByCode(c);
-    scanIn.focus();
+    const c = scanIn.value.trim(); if (!c) return;
+    const exact = findByCode(c);
+    if (exact) pick(exact);
+    else if (matches.length === 1) pick(matches[0]);
+    else if (!matches.length) { toast('لا توجد مادة بهذا الاسم أو الباركود: ' + c, 1); scanIn.value = ''; sugg.hidden = true; }
+    scanIn.focus(); // لقارئ الباركود: يبقى المؤشر جاهزاً للمسحة التالية
   });
+  sugg.addEventListener('click', e => { const b = e.target.closest('.sg'); if (b) pick(matches[+b.dataset.i]); });
+  const outside = e => { if (!view.contains(scanIn)) return document.removeEventListener('click', outside); if (!e.target.closest('.search-wrap')) sugg.hidden = true; };
+  document.addEventListener('click', outside);
+
+  /* ---- البحث الصوتي ---- */
+  const voice = () => {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const r = new SR(); r.lang = 'ar-SY'; r.interimResults = false; r.maxAlternatives = 1;
+    toast('🎤 احكِ اسم المادة…');
+    r.onresult = ev => { scanIn.value = ev.results[0][0].transcript; showSugg(); scanIn.focus(); };
+    r.onerror = () => toast('تعذّر التعرف على الصوت', 1);
+    r.start();
+  };
+
   view.oninput = e => {
-    const tr = e.target.closest('#ln tr');
-    if (tr && e.target.dataset.f && e.target.dataset.f !== 'item') {
-      const l = inv.lines[tr.dataset.i]; l[e.target.dataset.f] = e.target.value;
-      $('[data-tot]', tr).textContent = fmt(num(l.qty) * num(l.price)); totals();
+    const card = e.target.closest('.ln-card');
+    if (card && e.target.dataset.f) {
+      const l = inv.lines[card.dataset.i]; l[e.target.dataset.f] = e.target.value;
+      $('[data-tot]', card).textContent = fmt(num(l.qty) * num(l.price)); $('[data-old]', card).textContent = lineOld(l); totals();
     } else if (e.target.name === 'discount' || e.target.name === 'rate') totals();
   };
   view.onchange = e => {
-    const tr = e.target.closest('#ln tr');
-    if (tr && e.target.dataset.f === 'item') {
-      const l = inv.lines[tr.dataset.i], it = items.find(x => x.id === e.target.value);
-      l.item = e.target.value;
-      if (it) {
-        setItem(l, it);
-      }
-      if (+tr.dataset.i === inv.lines.length - 1 && l.item) inv.lines.push(blank());
-      draw();
-    } else if (e.target.name === 'pay') toggles();
+    if (e.target.name === 'pay') { toggles(); totals(); }
     else if (e.target.name === 'cur') {
       const to = e.target.value, R = rate();
       if (to === 'fx' && !R) { toast('أدخل سعر الصرف أولاً (من الإعدادات أو من الرئيسية)', 1); }
@@ -759,10 +917,19 @@ V.invoice = (id, q, view) => {
     save(); toast('تم حفظ الفاتورة رقم ' + out.no);
     go(andNew ? '#/invoice/new?type=' + out.type : '#/invoice/' + out.id);
   };
+  const step = (i, d) => {
+    const l = inv.lines[+i]; const nq = r2(num(l.qty) + d);
+    if (nq <= 0) { inv.lines.splice(+i, 1); draw(); return; }
+    l.qty = nq;
+    const card = $(`.ln-card[data-i="${i}"]`, view);
+    $('[data-f=qty]', card).value = nq; $('[data-tot]', card).textContent = fmt(nq * num(l.price)); $('[data-old]', card).textContent = lineOld(l); totals();
+  };
   onAct(view, {
-    addLine: () => { inv.lines.push(blank()); draw(); },
     cam: () => scanBarcode(addByCode),
-    rmLine: i => { inv.lines.splice(+i, 1); if (!inv.lines.length) inv.lines.push(blank()); draw(); },
+    mic: voice,
+    inc: i => step(i, 1),
+    dec: i => step(i, -1),
+    rmLine: i => { inv.lines.splice(+i, 1); draw(); },
     save: () => doSave(false),
     saveNew: () => doSave(true),
     print: () => printDoc(invoiceHtml(orig)),
@@ -803,7 +970,8 @@ function voucherForm(v, type, preAcc) {
   const upd = () => {
     const fx = $('[name=cur]', f).value === 'fx', a = num($('[name=amount]', f).value), R = num($('[name=rate]', f).value);
     rateFld.style.visibility = fx ? 'visible' : 'hidden';
-    $('#vEq').textContent = fx && a && R ? `المعادل: ${fmt(a * R)} ${cur()}` : '';
+    const base = fx ? a * R : a;
+    $('#vEq').textContent = [fx && a && R ? `المعادل: ${fmt(base)} ${cur()}` : '', oldOn() && base ? `بالعملة القديمة: ${oldAmt(base)}` : ''].filter(Boolean).join(' — ');
   };
   f.oninput = f.onchange = upd; upd();
   if (v) {
@@ -815,7 +983,7 @@ function voucherHtml(v) {
   const isR = v.type === 'receipt';
   return `<h3 class="ptitle">${isR ? 'سند قبض' : 'سند دفع'} رقم ${v.no}</h3>
   <table><tbody><tr><th>التاريخ</th><td>${v.date}</td></tr><tr><th>${isR ? 'استلمنا من' : 'دفعنا إلى'}</th><td>${esc(accName(v.acc))}</td></tr>
-  <tr><th>المبلغ</th><td>${fmt(v.amount)} ${esc(docSym(v))}</td></tr><tr><th>المبلغ كتابةً</th><td>${esc(moneyWords(v.amount, v))}</td></tr>
+  <tr><th>المبلغ</th><td>${fmt(v.amount)} ${esc(docSym(v))}${oldOn() ? ` — بالعملة القديمة: ${oldAmt(v.amount * docRate(v))}` : ''}</td></tr><tr><th>المبلغ كتابةً</th><td>${esc(moneyWords(v.amount, v))}</td></tr>
   ${v.cur === 'fx' ? `<tr><th>سعر الصرف</th><td>${fmt(v.rate)} — المعادل: ${fmt(v.amount * num(v.rate))} ${esc(cur())}</td></tr>` : ''}
   <tr><th>البيان</th><td>${esc(v.note || '')}</td></tr><tr><th>${isR ? 'إلى الصندوق' : 'من الصندوق'}</th><td>${esc(accName(v.cashAcc))}</td></tr></tbody></table>
   <div class="psign"><span>${isR ? 'توقيع الدافع' : 'توقيع المستلم'}</span><span>توقيع المحاسب</span></div>`;
@@ -1006,8 +1174,10 @@ V.report = (type, q, view) => {
   }
 
   if (type === 'stock') {
+    filters = [{ k: 'g', l: 'المجموعة', t: 'select', opts: [['', 'كل المجموعات'], ...grpOpts().slice(1)] }];
     const st = engine().stock; let tc = 0, ts = 0;
-    const rows = [...db.items].sort(byCode).map(i => {
+    const gids = q.g ? new Set(grpDesc(q.g)) : null;
+    const rows = [...db.items].sort(byCode).filter(i => !gids || gids.has(i.group)).map(i => {
       const s = st[i.id] || { qty: 0, avg: 0 }, c = s.qty * s.avg, sv = s.qty * num(i.sellPrice); tc += c; ts += sv;
       return `<tr><td class="n">${esc(i.code)}</td><td>${esc(i.name)}</td><td>${esc(i.unit || '')}</td><td class="n">${fmt(s.qty)}</td><td class="n">${fmt(s.avg)}</td><td class="n">${fmt(c)}</td><td class="n">${fmt(i.sellPrice)}</td><td class="n">${fmt(sv)}</td></tr>`;
     }).join('');
@@ -1086,6 +1256,8 @@ V.settings = (id, q, view) => {
       { k: 'currency', l: 'رمز العملة الأساسية', ph: 'ل.س' }, { k: 'currencyName', l: 'اسم العملة الأساسية (للتفقيط)', ph: 'ليرة سورية' },
       { k: 'currency2', l: 'رمز العملة الثانية', ph: '$' }, { k: 'currency2Name', l: 'اسم العملة الثانية', ph: 'دولار أمريكي' },
       { k: 'rate', l: 'سعر الصرف الحالي (كم ليرة للدولار)', t: 'number', full: 1 },
+      { k: 'showOld', l: 'إظهار المبالغ بالعملة القديمة كمان (قبل حذف الصفرين)', t: 'select', opts: [['1', 'نعم'], ['0', 'لا']] },
+      { k: 'oldFactor', l: 'كل ليرة جديدة = كم ليرة قديمة', t: 'number' },
       { k: 'startDate', l: 'تاريخ بداية الفترة المحاسبية', t: 'date', req: 1 },
     ], s)}
     <div class="form-actions"><button class="btn pri">حفظ الإعدادات</button></div>
@@ -1098,7 +1270,7 @@ V.settings = (id, q, view) => {
   </div>
   <div class="card"><h3>أخرى</h3>
     <div class="acts"><button class="btn" data-act="demo">🧪 تحميل بيانات تجريبية</button><button class="btn red" data-act="reset">🗑 مسح كل البيانات</button></div>
-    <p class="muted" style="margin-top:10px">عدد الفواتير: ${db.invoices.length} — المواد: ${db.items.length} — السندات: ${db.vouchers.length} — القيود اليدوية: ${db.entries.length}</p>
+    <p class="muted" style="margin-top:10px">الإصدار: <b>${APP_VERSION}</b> — عدد الفواتير: ${db.invoices.length} — المواد: ${db.items.length} — السندات: ${db.vouchers.length} — القيود اليدوية: ${db.entries.length}</p>
   </div>`;
   if (window.Cloud) Cloud.card($('#cloudCard', view)); else $('#cloudCard', view).remove();
   $('#sf', view).onsubmit = e => {
@@ -1138,12 +1310,16 @@ function loadDemo() {
   const c1 = addP('customers', 'أحمد الخطيب', '0933000001'), c2 = addP('customers', 'مطعم الياسمين', '0944000002'), c3 = addP('customers', 'سامر الحلبي', '0955000003');
   const s1 = addP('suppliers', 'شركة الأمل للتوزيع', '0112000001'), s2 = addP('suppliers', 'مؤسسة الشام التجارية', '0113000002');
   const it = (code, name, unit, buy, sell, oq, min) => { const o = { id: uid(), code, name, unit, buyPrice: buy, sellPrice: sell, consumerPrice: Math.round(sell * 1.15 / 5) * 5, openQty: oq, openCost: buy, minQty: min }; db.items.push(o); return o.id; };
+  const G = (code, name, parent = null) => { const g = { id: uid(), code, name, parent }; db.groups.push(g); return g.id; };
+  const gFood = G('001', 'مواد تموينية'), gSugar = G('00101', 'سكر ورز وحبوب', gFood), gOil = G('00102', 'زيوت', gFood);
+  const gDrinks = G('002', 'مشروبات'), gTea = G('00201', 'شاي', gDrinks), gPasta = G('00103', 'معكرونة', gFood);
   const sugar = it('001', 'سكر', 'كيلو', 90, 110, 100, 20), rice = it('002', 'رز مصري', 'كيلو', 140, 170, 80, 20), oil = it('003', 'زيت دوار الشمس', 'ليتر', 210, 250, 40, 10),
     tea = it('004', 'شاي', 'علبة', 320, 380, 25, 5), pasta = it('005', 'معكرونة', 'كيس', 60, 75, 120, 30), lentil = it('006', 'عدس', 'كيلو', 120, 145, 6, 10);
   let t = 0;
   const inv = (type, days, pay, party, lines, discount = 0, fx = 0) => db.invoices.push({ id: uid(), type, no: nextNo(type), date: daysAgo(days), pay, cashAcc: pay === 'cash' ? 'cash' : '', party, cur: fx ? 'fx' : 'base', rate: fx || '', lines: lines.map(([item, qty, price]) => ({ item, qty, price, cp: (db.items.find(x => x.id === item)?.consumerPrice || 0) / (fx || 1) })), discount, note: '', created: ++t });
   const vch = (type, days, a, amount, note, fx = 0) => db.vouchers.push({ id: uid(), type, no: nextNo(type), date: daysAgo(days), acc: a, cashAcc: 'cash', amount, note, cur: fx ? 'fx' : 'base', rate: fx || '', created: ++t });
   db.entries.push({ id: uid(), no: nextNo('entry'), date: daysAgo(40), desc: 'إيداع رأس المال النقدي', lines: [{ acc: 'cash', dr: 50000, cr: 0, note: '' }, { acc: 'capital', dr: 0, cr: 50000, note: '' }] });
+  [gSugar, gSugar, gOil, gTea, gPasta, gSugar].forEach((g, i) => (db.items[i].group = g));
   db.items[0].barcodes = ['6281001234567', '6281001234574']; db.items[1].barcodes = ['6223000111222'];
   inv('purchase', 35, 'credit', s1, [[sugar, 200, 88], [rice, 100, 138], [oil, 60, 205]], 500);
   inv('purchase', 30, 'cash', s2, [[tea, 40, 315], [pasta, 100, 58]]);
@@ -1173,7 +1349,12 @@ $('#backdrop').onclick = () => document.body.classList.remove('menu-open');
 window.addEventListener('hashchange', route);
 route();
 
-if ('serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('sw.js').catch(() => {});
+if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
+  navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(r => r.update()).catch(() => {});
+  // عند وصول نسخة جديدة: إعادة تحميل الصفحة مرة واحدة لتظهر التحديثات
+  let reloaded = false; const hadCtrl = !!navigator.serviceWorker.controller;
+  navigator.serviceWorker.addEventListener('controllerchange', () => { if (reloaded || !hadCtrl) return; reloaded = true; location.reload(); });
+}
 if (navigator.storage?.persist) navigator.storage.persist().catch(() => {});
 let deferredPrompt = null;
 window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferredPrompt = e; $('#installBtn').hidden = false; });
