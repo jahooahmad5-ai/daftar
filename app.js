@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '3.0';
+const APP_VERSION = '3.1';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -663,6 +663,16 @@ V.groups = (id, q, view) => {
   });
 };
 
+/* «بسكوت 1000 12ق» ← «بسكوت 10 12ق»: يقسم الأرقام الكبيرة المدوّرة بالاسم، وما بيلمس التعبئة والأوزان (400 مل، 12ق) */
+function zeroName(name, f) {
+  const unit = /^\s*(?:مل|ملل|مليلتر|غ|غرام|غم|جرام|كغ|كغم|كيلو|كيلوغرام|ل|لتر|ليتر|ق|قطعه|قطعة|حبه|حبة|سم|م|g|gr|kg|ml|l|cm|%)(?![\u0600-\u06FF\w])/i;
+  return String(name).replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d)).replace(/\d+/g, (m, off, str) => {
+    const n = +m;
+    if (n < f || n % f) return m;
+    if (unit.test(str.slice(off + m.length))) return m;
+    return String(n / f);
+  });
+}
 /* حذف صفرين (أو أكتر) من أسعار المواد — للي دخّل الأسعار بالعملة القديمة */
 function zerosForm(gf) {
   const F = [['buyPrice', 'سعر الشراء'], ['sellPrice', 'سعر المبيع'], ['consumerPrice', 'سعر المستهلك'], ['openCost', 'كلفة أول المدة']];
@@ -677,29 +687,48 @@ function zerosForm(gf) {
     </div>
     <div style="margin:10px 0">${F.map(([k, l]) => `<label style="display:inline-flex;gap:6px;align-items:center;margin-left:14px"><input type="checkbox" data-zk="${k}" ${k !== 'openCost' ? 'checked' : ''}> ${l}</label>`).join('')}</div>
     <label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="zOnlyBig" checked> بس الأسعار الكبيرة (≥ 1000) — مشان ما يقسم شي انصلح قبل</label>
+    <label style="display:flex;gap:6px;align-items:center;margin-top:6px"><input type="checkbox" id="zNames"> كمان الأرقام اللي بأسماء المواد (بسكوت 1000 ← بسكوت 10)</label>
     <div id="zPrev" class="card" style="margin-top:10px;padding:10px"></div>
     ${undo ? `<p class="muted" style="font-size:13px">آخر تعديل: ${esc(undo.when)} (${undo.items.length} مادة) <button type="button" class="mini" id="zUndo">↩️ تراجع عنه</button></p>` : ''}`,
     { onSave: () => {
       const f = num($('#zF').value), ks = $$('[data-zk]').filter(x => x.checked).map(x => x.dataset.zk), big = $('#zOnlyBig').checked;
-      if (!ks.length) { toast('اختار سعر واحد على الأقل', 1); return false; }
       const list = scope();
       if (!confirm(`رح تنقسم أسعار ${list.length} مادة على ${f}. متأكد؟`)) return false;
-      const backup = { when: new Date().toLocaleString('ar-SY'), items: list.map(i => ({ id: i.id, ...Object.fromEntries(F.map(([k]) => [k, i[k]])) })) };
+      const doNames = $('#zNames').checked;
+      if (!ks.length && !doNames) { toast('اختار شي لتعدّله', 1); return false; }
+      const backup = { when: new Date().toLocaleString('ar-SY'), items: list.map(i => ({ id: i.id, name: i.name, aliases: i.aliases, aliasKeys: i.aliasKeys, ...Object.fromEntries(F.map(([k]) => [k, i[k]])) })) };
       try { localStorage.setItem(UNDO, JSON.stringify(backup)); } catch (e) {}
       let n = 0;
-      list.forEach(i => { let ch = 0; ks.forEach(k => { const v = num(i[k]); if (v && (!big || v >= 1000)) { i[k] = r2(v / f); ch = 1; } }); n += ch; });
-      save(); toast(`تعدّلت أسعار ${n} مادة`); route();
+      let nn = 0;
+      list.forEach(i => {
+        let ch = 0; ks.forEach(k => { const v = num(i[k]); if (v && (!big || v >= 1000)) { i[k] = r2(v / f); ch = 1; } }); n += ch;
+        if (doNames) {
+          const nm = zeroName(i.name, f);
+          if (nm !== i.name) {
+            // الاسم القديم بيصير «اسم تاني» مشان طلبيات الواتس اللي فيها الأرقام القديمة تضل تنفهم
+            i.aliases = [...new Set([...(i.aliases || []), i.name])];
+            if (window.OrderPaste) i.aliasKeys = [...new Set([...(i.aliasKeys || []), OrderPaste.keyOfText(i.name)].filter(Boolean))];
+            i.name = nm; nn++;
+          }
+        }
+      });
+      save(); toast(`تعدّلت أسعار ${n} مادة${doNames ? ` وأسماء ${nn} مادة` : ''}`); route();
     }, saveText: '✂️ نفّذ' });
   const prev = () => {
     const f = num($('#zF').value), ks = $$('[data-zk]').filter(x => x.checked).map(x => x.dataset.zk), big = $('#zOnlyBig').checked, list = scope();
     const ex = list.filter(i => ks.some(k => num(i[k]) && (!big || num(i[k]) >= 1000)));
-    $('#zPrev').innerHTML = `<b>${ex.length}</b> مادة رح تتعدّل${ex.length ? ':' : ''}<br>` + ex.slice(0, 4).map(i => `<small>${esc(i.name)}: ${ks.filter(k => num(i[k])).map(k => `${fmt(i[k])} ← <b>${fmt((!big || num(i[k]) >= 1000) ? num(i[k]) / f : i[k])}</b>`).join(' ، ')}</small>`).join('<br>') + (ex.length > 4 ? '<br><small class="muted">…</small>' : '');
+    $('#zPrev').innerHTML = `<b>${ex.length}</b> مادة رح تتعدّل أسعارها${ex.length ? ':' : ''}<br>` + ex.slice(0, 4).map(i => `<small>${esc(i.name)}: ${ks.filter(k => num(i[k])).map(k => `${fmt(i[k])} ← <b>${fmt((!big || num(i[k]) >= 1000) ? num(i[k]) / f : i[k])}</b>`).join(' ، ')}</small>`).join('<br>') + (ex.length > 4 ? '<br><small class="muted">…</small>' : '');
+    if ($('#zNames').checked) {
+      const rn = list.map(i => [i.name, zeroName(i.name, f)]).filter(([a, b]) => a !== b);
+      $('#zPrev').innerHTML += `<hr style="border:0;border-top:1px solid var(--line);margin:8px 0"><b>${rn.length}</b> اسم رح يتعدّل${rn.length ? ':' : ''}<br>` + rn.slice(0, 8).map(([a, b]) => `<small>${esc(a)} ← <b>${esc(b)}</b></small>`).join('<br>') + (rn.length > 8 ? '<br><small class="muted">…</small>' : '') +
+        `<br><small class="muted">الأسماء القديمة بتنحفظ كـ«أسماء تانية»، فطلبيات الواتس بالأرقام القديمة بتضل تنفهم.</small>`;
+    }
   };
   $$('#dlg select, #dlg input[type=checkbox]').forEach(x => (x.onchange = prev)); prev();
   const u = $('#zUndo');
   if (u) u.onclick = () => {
     if (!confirm('ترجيع الأسعار متل ما كانت قبل آخر تعديل؟')) return;
-    undo.items.forEach(b => { const i = db.items.find(x => x.id === b.id); if (i) F.forEach(([k]) => (i[k] = b[k])); });
+    undo.items.forEach(b => { const i = db.items.find(x => x.id === b.id); if (i) { F.forEach(([k]) => (i[k] = b[k])); if (b.name) { i.name = b.name; i.aliases = b.aliases; i.aliasKeys = b.aliasKeys; } } });
     localStorage.removeItem(UNDO); save(); $('#dlg').close(); toast('رجعت الأسعار'); route();
   };
 }
