@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '2.7';
+const APP_VERSION = '2.8';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -791,6 +791,14 @@ V.invoice = (id, q, view) => {
 
   view.innerHTML = head(INV_TYPES[inv.type] + (orig ? ` رقم ${orig.no}` : ' جديدة'),
     `${!orig ? '<button class="btn" data-act="paste">📋 لصق طلبية</button>' : ''}${orig ? `${orig.party ? '<button class="btn wa" data-act="wa">واتساب</button>' : ''}<button class="btn" data-act="receipt">🧾 إيصال</button><button class="btn" data-act="print">🖨 طباعة</button><button class="btn red" data-act="del">حذف</button>` : ''}<a class="btn" href="#/invoices">رجوع</a>`) + `
+  <div class="search-wrap">
+    <div class="scan-row">
+      ${canScan() ? '<button class="sq-btn" data-act="cam" title="مسح بالكاميرا">▮▯▮</button>' : ''}
+      <input id="scanIn" type="search" enterkeyhint="search" autocomplete="off" placeholder="ادخل اسم المادة أو الباركود لإضافتها للفاتورة">
+      ${canVoice() ? '<button class="sq-btn round" data-act="mic" title="بحث صوتي">🎤</button>' : ''}
+    </div>
+    <div id="sugg" class="sugg" hidden></div>
+  </div>
   <div class="card">
     <div class="grid4">
       ${field({ k: 'date', l: 'التاريخ', t: 'date', req: 1 }, inv.date)}
@@ -801,14 +809,6 @@ V.invoice = (id, q, view) => {
       <div id="rateWrap">${field({ k: 'rate', l: `سعر الصرف (${cur()} لكل 1 ${FX().sym})`, t: 'number' }, inv.rate)}</div>
     </div>
     ${!items.length ? `<p class="bad">لا توجد مواد. <a href="#/items">أضف مواد أولاً</a>.</p>` : ''}
-  </div>
-  <div class="search-wrap">
-    <div class="scan-row">
-      ${canScan() ? '<button class="sq-btn" data-act="cam" title="مسح بالكاميرا">▮▯▮</button>' : ''}
-      <input id="scanIn" type="search" enterkeyhint="search" autocomplete="off" placeholder="ادخل اسم المادة أو الباركود لإضافتها للفاتورة">
-      ${canVoice() ? '<button class="sq-btn round" data-act="mic" title="بحث صوتي">🎤</button>' : ''}
-    </div>
-    <div id="sugg" class="sugg" hidden></div>
   </div>
   <div id="ln" class="ln-list"></div>
   <div class="card">
@@ -953,6 +953,7 @@ V.invoice = (id, q, view) => {
   const teach = () => { const r = smartRes || smart(scanIn.value); const raw = scanIn.value.trim(); if (!r) return; sugg.hidden = true; Voice.askItem(r.ln, raw.replace(/\s*عدد.*$/, '')).then(it => { if (it) { smartRes = r; addSmart(it); } }); };
   const pick = it => { scanIn.value = ''; sugg.hidden = true; addItem(it); };
   scanIn.addEventListener('input', showSugg);
+  scanIn.addEventListener('focus', () => setTimeout(() => window.scrollTo({ top: 0, behavior: 'smooth' }), 250));
   scanIn.addEventListener('keydown', e => {
     if (e.key !== 'Enter') return;
     e.preventDefault();
