@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '2.2';
+const APP_VERSION = '2.3';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -785,7 +785,7 @@ V.invoice = (id, q, view) => {
   const stockOf = it => (st[it.id] ? st[it.id].qty : num(it.openQty));
 
   view.innerHTML = head(INV_TYPES[inv.type] + (orig ? ` رقم ${orig.no}` : ' جديدة'),
-    `${orig ? `${orig.party ? '<button class="btn wa" data-act="wa">واتساب</button>' : ''}<button class="btn" data-act="receipt">🧾 إيصال</button><button class="btn" data-act="print">🖨 طباعة</button><button class="btn red" data-act="del">حذف</button>` : ''}<a class="btn" href="#/invoices">رجوع</a>`) + `
+    `${!orig ? '<button class="btn" data-act="paste">📋 لصق طلبية</button>' : ''}${orig ? `${orig.party ? '<button class="btn wa" data-act="wa">واتساب</button>' : ''}<button class="btn" data-act="receipt">🧾 إيصال</button><button class="btn" data-act="print">🖨 طباعة</button><button class="btn red" data-act="del">حذف</button>` : ''}<a class="btn" href="#/invoices">رجوع</a>`) + `
   <div class="card">
     <div class="grid4">
       ${field({ k: 'date', l: 'التاريخ', t: 'date', req: 1 }, inv.date)}
@@ -816,6 +816,7 @@ V.invoice = (id, q, view) => {
         <div id="tEq" class="muted" style="font-size:14px"></div>
         <div id="tOld" class="old-eq"></div>
         <small class="muted" id="tWords"></small>
+        <div id="tPay" class="old-eq" hidden></div>
       </div>
     </div>
   </div>
@@ -881,6 +882,23 @@ V.invoice = (id, q, view) => {
     if (ex) ex.qty = num(ex.qty) + 1;
     else inv.lines.push({ item: it.id, qty: 1, price: toDoc(basePrice(it)), cp: it.consumerPrice ? toDoc(num(it.consumerPrice)) : '' });
     draw(); navigator.vibrate?.(40); toast('✓ ' + it.name);
+  };
+  let payNow = 0;
+  const showPay = () => { const e = $('#tPay', view); e.hidden = !payNow; e.innerHTML = payNow ? `💵 دفعة مع الفاتورة: <b>${fmt(payNow)} ${esc(cur())}</b>${oldOn() ? ` (بالقديم ${oldAmt(payNow)})` : ''} <button type="button" class="mini red" data-act="noPay">إلغاء</button>` : ''; };
+  const fromPaste = r => {
+    if (r.party) {
+      const sel = $('[name="party"]', view);
+      if (![...sel.options].some(o => o.value === r.party)) sel.add(new Option(accName(r.party), r.party));
+      sel.value = r.party; $('[name="pay"]', view).value = 'credit'; toggles();
+    }
+    r.lines.forEach(({ item, qty }) => {
+      const it = db.items.find(x => x.id === item); if (!it) return;
+      const ex = inv.lines.find(l => l.item === item);
+      if (ex) ex.qty = num(ex.qty) + qty;
+      else inv.lines.push({ item, qty, price: toDoc(basePrice(it)), cp: it.consumerPrice ? toDoc(num(it.consumerPrice)) : '' });
+    });
+    payNow = r.pay || 0; showPay(); draw();
+    toast(`انضاف ${r.lines.length} مادة${r.skipped ? ` — ${r.skipped} سطر ما انضاف` : ''}`);
   };
   const addByCode = code => { const it = findByCode(code); if (it) addItem(it); else toast('لا توجد مادة بهذا الباركود: ' + code, 1); };
 
@@ -975,6 +993,10 @@ V.invoice = (id, q, view) => {
     }
     const out = { ...inv, date: val('date'), pay, party, cashAcc: pay === 'cash' ? cashAcc : '', cur: inv.cur, rate: inv.cur === 'fx' ? rate() : '', discount: num(val('discount')), note: val('note'), lines };
     if (!orig) { out.id = uid(); out.no = nextNo(out.type); out.created = Date.now(); db.invoices.push(out); }
+    if (!orig && payNow > 0 && party) {
+      const vt = sideSale ? 'receipt' : 'payment';
+      db.vouchers.push({ id: uid(), type: vt, no: nextNo(vt), date: out.date, acc: party, cashAcc: cashAccounts()[0]?.id || 'cash', amount: payNow, note: `دفعة على ${INV_TYPES[out.type]} رقم ${out.no}`, cur: 'base', rate: '', created: Date.now() + 1 });
+    }
     else db.invoices[db.invoices.indexOf(orig)] = out;
     save(); toast('تم حفظ الفاتورة رقم ' + out.no);
     go(andNew ? '#/invoice/new?type=' + out.type : '#/invoice/' + out.id);
@@ -988,6 +1010,8 @@ V.invoice = (id, q, view) => {
   };
   onAct(view, {
     cam: () => scanBarcode(addByCode),
+    paste: () => window.OrderPaste && OrderPaste.open({ sideSale, onDone: fromPaste }),
+    noPay: () => { payNow = 0; showPay(); },
     mic: voice,
     inc: i => step(i, 1),
     dec: i => step(i, -1),
