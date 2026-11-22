@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '5.7';
+const APP_VERSION = '5.8';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -1157,6 +1157,13 @@ V.invoice = (id, q, view) => {
   const pick = it => { scanIn.value = ''; sugg.hidden = true; addItem(it); scanIn.focus(); };
   // الكبس على اقتراح ما بيشيل التركيز عن البحث — هيك الكيبورد بيضل مفتوح للمادة الجاية
   sugg.addEventListener('mousedown', e => e.preventDefault());
+  // أزرار ＋ − ✕ ما بتشيل التركيز (الكيبورد بيضل متل ما هو)
+  view.addEventListener('mousedown', e => { if (e.target.closest('.ln-card .qb')) e.preventDefault(); });
+  // لما تكبس على خانة رقم (كمية، سعر) بيتحدّد الرقم كله — بتكتب الجديد دغري بداله
+  view.addEventListener('focusin', e => {
+    const t = e.target; if (!t.matches || !t.matches('.ln-card input[type=number]')) return;
+    setTimeout(() => { try { t.select(); } catch (er) { /* */ } }, 30);
+  });
   scanIn.addEventListener('input', showSugg);
   // قائمة الاقتراحات ما لازم تنزل تحت الكيبورد: منطلّع البحث لفوق ومنحدد طول القائمة حسب المساحة الظاهرة
   function fitSugg() {

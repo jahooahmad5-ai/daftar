@@ -321,3 +321,5 @@ img,svg,video{max-width:100%}
 .inv-bar-sum .prn-pill{color:#fde68a;font-size:12px}
 .inv-bar-sum .prn-pill:empty{display:none}
 #view.typing .inv-bar{display:none}
+/* الأرقام من الشمال لليمين حتى «10» ما تصير «01» */
+.ln-card input[type=number]{direction:ltr;text-align:center}
