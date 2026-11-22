@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '5.1';
+const APP_VERSION = '5.2';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -1252,7 +1252,8 @@ V.invoice = (id, q, view) => {
         const before = orig ? orig.lines.filter(l => l.item === it).reduce((s, l) => s + num(l.qty), 0) : 0;
         return (st[it]?.qty || 0) + before < qn;
       });
-      if (short.length && !confirm('الكمية المطلوبة أكبر من المتوفر في المستودع لبعض المواد:\n' + short.map(([it]) => db.items.find(x => x.id === it)?.name).join('، ') + '\nهل تريد المتابعة؟')) return toast('⛔ ما انحفظت الفاتورة — كبّس حفظ ووافق إذا بدك تكمّل', 1);
+      // ما منوقف الحفظ بسؤال (كان يلغي الحفظ إذا انكبس «إلغاء» أو انسكّر السؤال) — بس منبّه بعد الحفظ
+      var shortMsg = short.length ? '⚠️ أكتر من الموجود بالمستودع: ' + short.map(([it]) => db.items.find(x => x.id === it)?.name).join('، ') : '';
     }
     const out = { ...inv, date: val('date'), pay, party, cashAcc: pay === 'cash' ? cashAcc : '', cur: inv.cur, rate: inv.cur === 'fx' ? rate() : '', discount: num(val('discount')), addition: num(val('addition')), addNote: val('addNote').trim(), note: val('note'), lines };
     if (!orig) { out.id = uid(); out.no = nextNo(out.type); out.created = Date.now(); db.invoices.push(out); }
@@ -1273,6 +1274,7 @@ V.invoice = (id, q, view) => {
     // سعر المستهلك ثابت للكل: أي تعديل عليه بالفاتورة بينحفظ ببطاقة المادة
     lines.forEach(l => { const it = db.items.find(x => x.id === l.item); if (it && num(l.cp)) { const b = r2(num(l.cp) * docRate(out)); if (b !== num(it.consumerPrice)) it.consumerPrice = b; } });
     save(); navigator.vibrate?.([60, 40, 60]); toast(`✅ انحفظت الفاتورة رقم ${out.no} — ${lines.length} مادة`);
+    if (typeof shortMsg === 'string' && shortMsg) setTimeout(() => toast(shortMsg, 1), 2200);
     go(andNew ? '#/invoice/new?type=' + out.type : '#/invoice/' + out.id + '?saved=1');
     if (print && window.Receipt) Receipt.printDirect(out);
   };
