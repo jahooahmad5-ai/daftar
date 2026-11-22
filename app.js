@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '6.1';
+const APP_VERSION = '6.2';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -395,6 +395,7 @@ function route() {
   const view = $('#view');
   view.onclick = view.oninput = view.onchange = view.onsubmit = null;
   view.classList.remove('typing');
+  { const tc = $('#topCnt'); if (tc) tc.hidden = true; }
   const key = V[name] ? name : 'home';
   const nav = NAV_MAP[key] || key;
   $$('#nav a').forEach(a => a.classList.toggle('on', a.dataset.r === nav));
@@ -955,7 +956,7 @@ V.invoice = (id, q, view) => {
   view.innerHTML = head(INV_TYPES[inv.type] + (orig ? ` رقم ${orig.no}` : ' جديدة'),
     `${!orig ? '<button class="btn" data-act="paste">📋 لصق طلبية</button><button class="btn red" data-act="clearAll">🗑 تفريغ</button>' : ''}${orig ? `<button class="btn wa" data-act="wa">واتساب</button><button class="btn" data-act="receipt">🧾 إيصال</button><button class="btn" data-act="print">🖨 طباعة</button><button class="btn red" data-act="del">حذف</button>` : ''}<a class="btn" href="#/invoices">رجوع</a>`) + `
   ${orig && q.saved ? `<div class="saved-ok">✅ الفاتورة رقم ${orig.no} محفوظة — ${orig.lines.length} مادة، ${fmt(orig.lines.reduce((s, l) => s + num(l.qty), 0))} قطعة</div>` : ''}
-  <div class="inv-count"><span>عدد المواد <b id="cntLines">0</b></span><span>عدد القطع <b id="cntPcs">0</b></span></div>
+  <div class="inv-count-d">القطع: <b id="cntPcs">0</b></div>
   <div id="dirtyNote" class="dirty-note" hidden>⚠️ في تغييرات على هالفاتورة <b>لسا ما انحفظت</b> — كبّس «💾 حفظ التعديلات» تحت</div>
   ${restored ? (orig ? '<div class="draft-note">↩️ رجّعتلك التعديلات اللي ما كانت محفوظة على هالفاتورة. <button class="btn" data-act="discard">تراجع عنها</button></div>'
     : '<div class="draft-note">↩️ رجّعتلك الفاتورة اللي ما كانت محفوظة. إذا بدك تبلّش من جديد كبّس «🗑 تفريغ».</div>') : ''}
@@ -1055,9 +1056,11 @@ V.invoice = (id, q, view) => {
         else localStorage.setItem(DRAFT, JSON.stringify({ lines: inv.lines, payment: val('payment'), inv: fields }));
       } catch (e) { /* */ }
     }
-    $('#cntLines', view).textContent = inv.lines.length; $('#cntPcs', view).textContent = fmt(cnt);
+    // عدد القطع: صغير فوق عاليسار (بشريط البرنامج)، وبالكمبيوتر جنب العنوان
+    $('#cntPcs', view).textContent = fmt(cnt);
+    const tc = $('#topCnt'); if (tc) { tc.hidden = false; tc.textContent = fmt(cnt) + ' قطعة'; }
     $('#barNet', view).textContent = fmt(n) + ' ' + sym;
-    $('#barInfo', view).textContent = `${inv.lines.length} مادة — ${fmt(cnt)} قطعة${val('pay') === 'credit' ? ' — آجل' : ' — نقدي'}`;
+    $('#barInfo', view).textContent = `${fmt(cnt)} قطعة${val('pay') === 'credit' ? ' — آجل' : ' — نقدي'}`;
   };
   const toBase = x => (inv.cur === 'fx' ? num(x) * rate() : num(x));
   const lineOld = l => (oldOn() && num(l.price) ? `بالقديم: الإفرادي ${oldAmt(toBase(l.price))} — الإجمالي ${oldAmt(toBase(num(l.qty) * num(l.price)))}${num(l.cp) ? ` — المستهلك ${oldAmt(toBase(l.cp))}` : ''}` : '');
@@ -1095,7 +1098,7 @@ V.invoice = (id, q, view) => {
     b.hidden = false; b.className = 'last-add' + (merged ? ' merged' : '');
     b.innerHTML = merged
       ? `⚠️ انضاف: <b>${esc(it.name)}</b> × ${fmt(q)} — <b>مكررة</b>، موجودة كمان بالسطر رقم ${merged}`
-      : `✓ انضاف: <b>${esc(it.name)}</b> × ${fmt(q)} — صار بالفاتورة <b>${inv.lines.length}</b> مادة`;
+      : `✓ انضاف: <b>${esc(it.name)}</b> × ${fmt(q)} — صار المجموع <b>${fmt(inv.lines.reduce((s, l) => s + num(l.qty), 0))}</b> قطعة`;
   };
   // تحويل سعر من الليرة إلى عملة الفاتورة الحالية
   const toDoc = base => (inv.cur === 'fx' && rate() ? r2(base / rate()) : base);
@@ -1255,6 +1258,7 @@ V.invoice = (id, q, view) => {
     sugg.style.maxHeight = Math.max(140, bottom - sugg.getBoundingClientRect().top - 8) + 'px';
   }
   const toTop = () => {
+    if (!view.contains(scanIn)) return;
     const tb = $('.top'), off = tb && getComputedStyle(tb).display !== 'none' ? tb.offsetHeight : 0;
     window.scrollTo({ top: Math.max(0, $('.search-wrap', view).getBoundingClientRect().top + window.scrollY - off - 6) });
     fitSugg();

@@ -309,9 +309,10 @@ img,svg,video{max-width:100%}
 .last-add.merged{background:#fff4e5;border-color:#f59e0b;color:#7a4a00}
 .saved-ok{background:#dcfce7;border:2px solid #16a34a;color:#14532d;border-radius:14px;padding:12px;margin-bottom:10px;font-size:16px;font-weight:800;text-align:center}
 .draft-note{background:#fff4e5;border:1px solid #f5c98a;border-radius:12px;padding:8px 12px;margin-bottom:10px;font-size:14px}
-.inv-count{display:flex;gap:8px;margin-bottom:10px}
-.inv-count span{flex:1;background:#0b3b37;color:#a9d2cb;border-radius:12px;padding:8px;text-align:center;font-size:14px}
-.inv-count b{display:block;color:#fff;font-size:26px;line-height:1.2;font-variant-numeric:tabular-nums}
+.top-cnt{align-self:center;background:#fff;color:#0b3b37;border-radius:14px;padding:3px 9px;font-size:15px;font-weight:800;white-space:nowrap}
+.top-cnt[hidden]{display:none}
+.inv-count-d{text-align:left;font-size:14px;color:#33463f;margin:-4px 0 6px}
+@media (max-width:880px){.inv-count-d{display:none}}
 .inv-bar .btn.prt{background:#f59e0b;color:#2b1800;font-weight:800}
 @media (max-width:520px){.inv-bar{flex-wrap:wrap}.inv-bar-sum{flex-basis:100%}.inv-bar .btn{flex:1;padding-inline:6px;font-size:14px}}
 .dirty-note{background:#fee2e2;border:2px solid #dc2626;color:#7f1d1d;border-radius:14px;padding:10px 12px;margin-bottom:10px;font-size:15px;text-align:center}
