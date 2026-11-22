@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '5.9';
+const APP_VERSION = '6.0';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -405,7 +405,7 @@ function route() {
 
 /* ---- بحث بقائمة الزباين/الموردين: خانة بحث فوق كل قائمة «العميل/المورد» ---- */
 function enhancePartySelect(sel) {
-  if (sel.dataset.sx || sel.options.length < 2) return;
+  if (sel.dataset.sx) return;
   sel.dataset.sx = '1';
   const box = document.createElement('div'); box.className = 'sx';
   box.innerHTML = '<input class="sx-in" type="search" placeholder="🔎 ابحث عن الاسم أو الهاتف" autocomplete="off" enterkeyhint="search"><div class="sx-list" hidden></div>';
@@ -425,15 +425,29 @@ function enhancePartySelect(sel) {
       if (!ws.every(w => hay.includes(w))) return null;
       return [normAr(a.name || o.text).startsWith(qn) ? 0 : 1, o];
     }).filter(Boolean).sort((x, y) => x[0] - y[0]).slice(0, 30).map(x => x[1]);
-    list.innerHTML = res.length ? res.map((o, i) => `<button type="button" data-i="${i}">${esc(o.text)}${acc(o.value)?.phone ? ` <small>${esc(acc(o.value).phone)}</small>` : ''}</button>`).join('')
-      : '<div class="sx-none">ما في حدا بهالاسم</div>';
+    const exact = res.some(o => normAr(acc(o.value)?.name || '') === qn);
+    list.innerHTML = res.map((o, i) => `<button type="button" data-i="${i}">${esc(o.text)}${acc(o.value)?.phone ? ` <small>${esc(acc(o.value).phone)}</small>` : ''}</button>`).join('')
+      + (exact ? '' : `<button type="button" class="sx-add" data-add="1">➕ إضافة «${esc(inp.value.trim())}» ك${kindOf() === 'suppliers' ? 'مورد' : 'زبون'} جديد</button>`);
     list.hidden = false;
   };
   inp.addEventListener('input', show);
-  inp.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); if (res[0]) choose(res[0]); } });
+  inp.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); if (res[0]) choose(res[0]); else if (inp.value.trim()) addNew(); } });
   inp.addEventListener('blur', () => setTimeout(() => (list.hidden = true), 150));
   list.addEventListener('mousedown', e => e.preventDefault());
-  list.addEventListener('click', e => { const b = e.target.closest('button[data-i]'); if (b) choose(res[+b.dataset.i]); });
+  // زبون/مورد جديد من نفس المكان
+  const kindOf = () => sel.dataset.kind || ([...sel.options].some(o => o.value && isUnder(o.value, 'suppliers')) ? 'suppliers' : 'customers');
+  const addNew = () => {
+    const name = inp.value.trim(); if (!name) return;
+    const parent = kindOf(), p = acc(parent); if (!p) return toast('ما لقيت حساب ' + (parent === 'suppliers' ? 'الموردين' : 'العملاء'), 1);
+    const na = { id: uid(), code: nextCode(p), name, type: p.type, parent, group: false, phone: '', address: '', notes: '', aliases: [] };
+    db.accounts.push(na); save();
+    const o = new Option(na.code + ' - ' + na.name, na.id); sel.add(o);
+    choose(o); toast(`✅ انضاف ${parent === 'suppliers' ? 'المورد' : 'الزبون'}: ${name}`);
+  };
+  list.addEventListener('click', e => {
+    if (e.target.closest('[data-add]')) return addNew();
+    const b = e.target.closest('button[data-i]'); if (b) choose(res[+b.dataset.i]);
+  });
 }
 new MutationObserver(() => document.querySelectorAll('select[name=party]:not([data-sx])').forEach(enhancePartySelect))
   .observe(document.body, { childList: true, subtree: true });
@@ -932,6 +946,7 @@ V.invoice = (id, q, view) => {
   if (!inv.rate) inv.rate = db.settings.rate || '';
   const sideSale = ['sale', 'saleReturn'].includes(inv.type);
   const parties = sideSale ? customers() : suppliers();
+  setTimeout(() => { const ps = $('[name=party]', view); if (ps) ps.dataset.kind = sideSale ? 'customers' : 'suppliers'; });
   const st = engine().stock;
   const items = [...db.items].sort(byCode);
   const itemById = id => items.find(x => x.id === id);
