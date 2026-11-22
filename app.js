@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '5.2';
+const APP_VERSION = '5.3';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -1104,12 +1104,24 @@ V.invoice = (id, q, view) => {
   const search = txt => {
     const qn = normAr(txt);
     if (!qn) return [];
-    const words = qn.split(/\s+/);
-    return items.filter(it => {
-      if (itemCodes(it).some(c => c.startsWith(txt.trim()))) return true;
-      const nm = normAr(it.name);
-      return words.every(w => nm.includes(w));
-    }).slice(0, 8);
+    // كل كلمة لازم تكون بالاسم (حتى لو بلا فراغات: «12ق» = «12 ق»)، والأقرب بيطلع أول — ومنعرض لحد 40 نتيجة مش 8
+    const words = qn.split(/\s+/), qc = qn.replace(/\s+/g, ''), code = txt.trim();
+    const out = [];
+    for (const it of items) {
+      const nm = normAr(it.name), nc = nm.replace(/\s+/g, '');
+      let sc = -1;
+      if (code && itemCodes(it).some(c => c.startsWith(code))) sc = itemCodes(it).includes(code) ? 1000 : 500;
+      else if (words.every(w => nm.includes(w) || nc.includes(w))) {
+        sc = 0;
+        if (nm === qn || nc === qc) sc += 400;
+        else if (nm.startsWith(qn) || nc.startsWith(qc)) sc += 200;
+        else if (nm.includes(qn) || nc.includes(qc)) sc += 100;
+        const nw = nm.split(/\s+/);
+        words.forEach(w => { if (nw.some(x => x.startsWith(w))) sc += 10; });
+      }
+      if (sc >= 0) out.push([sc, nm.length, it]);
+    }
+    return out.sort((a, b) => b[0] - a[0] || a[1] - b[1]).slice(0, 40).map(x => x[2]);
   };
   const showSugg = () => {
     matches = search(scanIn.value);
