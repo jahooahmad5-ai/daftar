@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '4.5';
+const APP_VERSION = '4.6';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -1048,7 +1048,19 @@ V.invoice = (id, q, view) => {
   };
   // تحويل سعر من الليرة إلى عملة الفاتورة الحالية
   const toDoc = base => (inv.cur === 'fx' && rate() ? r2(base / rate()) : base);
-  const basePrice = it => (sideSale ? num(it.sellPrice) : (num(it.buyPrice) || r2(st[it.id]?.avg || 0)));
+  // سعر المبيع: آخر سعر بعناه لهالزبون بنفس المادة، وإذا ما في منرجع لسعر بطاقة المادة
+  const lastFor = (party, itemId) => {
+    if (!sideSale || !party) return 0;
+    let best = null;
+    for (const d of db.invoices) {
+      if (d.type !== inv.type || d.party !== party || (orig && d.id === orig.id)) continue;
+      const l = d.lines.find(x => x.item === itemId); if (!l || !num(l.price)) continue;
+      const k = (d.date || '') + String(d.created || 0).padStart(15, '0');
+      if (!best || k > best.k) best = { k, p: num(l.price) * docRate(d) };
+    }
+    return best ? r2(best.p) : 0;
+  };
+  const basePrice = it => (sideSale ? (lastFor(val('party'), it.id) || num(it.sellPrice)) : (num(it.buyPrice) || r2(st[it.id]?.avg || 0)));
   // إضافة مادة: إذا كانت موجودة بالفاتورة تزيد الكمية
   let lastId = null;
   const addItem = it => {
@@ -1179,6 +1191,11 @@ V.invoice = (id, q, view) => {
   };
   view.onchange = e => {
     if (e.target.name === 'pay') { toggles(); totals(); }
+    else if (e.target.name === 'party' && sideSale && inv.lines.length) {
+      let n = 0;
+      inv.lines.forEach(l => { const it = db.items.find(x => x.id === l.item); if (!it) return; const np = toDoc(basePrice(it)); if (np && np !== num(l.price)) { l.price = np; n++; } });
+      if (n) { draw(); toast(`💰 تغيّر سعر ${n} مادة حسب ${e.target.value ? 'آخر بيع لـ' + accName(e.target.value) : 'بطاقة المادة'}`); }
+    }
     else if (e.target.name === 'cur') {
       const to = e.target.value, R = rate();
       if (to === 'fx' && !R) { toast('أدخل سعر الصرف أولاً (من الإعدادات أو من الرئيسية)', 1); }
@@ -1225,6 +1242,8 @@ V.invoice = (id, q, view) => {
     if (linked.some(v => v !== keep)) db.vouchers = db.vouchers.filter(v => v.inv !== out.id || v === keep);
     savedAt = Date.now();
     dropDraft();
+    // سعر المستهلك ثابت للكل: أي تعديل عليه بالفاتورة بينحفظ ببطاقة المادة
+    lines.forEach(l => { const it = db.items.find(x => x.id === l.item); if (it && num(l.cp)) { const b = r2(num(l.cp) * docRate(out)); if (b !== num(it.consumerPrice)) it.consumerPrice = b; } });
     save(); navigator.vibrate?.([60, 40, 60]); toast(`✅ انحفظت الفاتورة رقم ${out.no} — ${lines.length} مادة`);
     go(andNew ? '#/invoice/new?type=' + out.type : '#/invoice/' + out.id + '?saved=1');
     if (print && window.Receipt) Receipt.printDirect(out);
