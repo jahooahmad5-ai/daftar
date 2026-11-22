@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '5.0';
+const APP_VERSION = '5.1';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -1044,7 +1044,7 @@ V.invoice = (id, q, view) => {
     const b = $('#lastAdd', view); if (!b) return;
     b.hidden = false; b.className = 'last-add' + (merged ? ' merged' : '');
     b.innerHTML = merged
-      ? `⚠️ <b>${esc(it.name)}</b> كانت موجودة بالفاتورة — صار عددها <b>${fmt(q)}</b> (ما انضاف سطر جديد)`
+      ? `⚠️ انضاف: <b>${esc(it.name)}</b> × ${fmt(q)} — <b>مكررة</b>، موجودة كمان بالسطر رقم ${merged}`
       : `✓ انضاف: <b>${esc(it.name)}</b> × ${fmt(q)} — صار بالفاتورة <b>${inv.lines.length}</b> مادة`;
   };
   // تحويل سعر من الليرة إلى عملة الفاتورة الحالية
@@ -1067,13 +1067,13 @@ V.invoice = (id, q, view) => {
   let lastId = null, lastBase = 0;
   const addItem = it => {
     lastId = it.id;
+    // الصنف المكرر بينضاف بسطر جديد لحاله (ما بيندمج مع القديم)
     const ex = inv.lines.find(l => l.item === it.id);
-    lastBase = ex ? num(ex.qty) : 0;
-    if (ex) { ex.qty = num(ex.qty) + 1; inv.lines.splice(inv.lines.indexOf(ex), 1); inv.lines.push(ex); }
-    else inv.lines.push({ item: it.id, qty: 1, price: toDoc(basePrice(it)), cp: it.consumerPrice ? toDoc(num(it.consumerPrice)) : '' });
-    draw(inv.lines.indexOf(ex || inv.lines[inv.lines.length - 1]));
+    lastBase = 0;
+    inv.lines.push({ item: it.id, qty: 1, price: toDoc(basePrice(it)), cp: it.consumerPrice ? toDoc(num(it.consumerPrice)) : '' });
+    draw(inv.lines.length - 1);
     navigator.vibrate?.(ex ? [40, 60, 40] : 40);
-    noteAdd(it, !!ex, ex ? ex.qty : 1); toast((ex ? '⚠️ ' : '✓ ') + it.name + (ex ? ' — صار عددها ' + fmt(ex.qty) : ''), !!ex);
+    noteAdd(it, ex ? inv.lines.indexOf(ex) + 1 : 0, 1); toast((ex ? '⚠️ ' : '✓ ') + it.name + (ex ? ' — مكررة بسطر جديد' : ''), !!ex);
   };
   let payNow = 0;
   if (orig) payNow = db.vouchers.filter(v => v.inv === orig.id).reduce((x, v) => x + num(v.amount), 0);
@@ -1089,10 +1089,9 @@ V.invoice = (id, q, view) => {
       lastId = item;
       const it = db.items.find(x => x.id === item); if (!it) return;
       const ex = inv.lines.find(l => l.item === item);
-      lastBase = ex ? num(ex.qty) : 0;
-      if (ex) { ex.qty = num(ex.qty) + qty; inv.lines.splice(inv.lines.indexOf(ex), 1); inv.lines.push(ex); }
-      else inv.lines.push({ item, qty, price: toDoc(basePrice(it)), cp: it.consumerPrice ? toDoc(num(it.consumerPrice)) : '' });
-      if (r.lines.length === 1) { hl = inv.lines.indexOf(ex || inv.lines[inv.lines.length - 1]); noteAdd(it, !!ex, ex ? ex.qty : qty); }
+      lastBase = 0;
+      inv.lines.push({ item, qty, price: toDoc(basePrice(it)), cp: it.consumerPrice ? toDoc(num(it.consumerPrice)) : '' });
+      if (r.lines.length === 1) { hl = inv.lines.length - 1; noteAdd(it, ex ? inv.lines.indexOf(ex) + 1 : 0, qty); }
     });
     payNow = r.pay || 0; showPay(); draw(hl);
     if (r.lines.length > 1 || r.skipped) toast(`انضاف ${r.lines.length} مادة${r.skipped ? ` — ${r.skipped} سطر ما انضاف` : ''}`);
@@ -1319,12 +1318,12 @@ V.invoice = (id, q, view) => {
     setParty: id => fromPaste({ party: id, lines: [], pay: payNow }),
     setPay: n => { payNow = n; showPay(); },
     setQty: q => {
-      const l = inv.lines.find(x => x.item === lastId) || inv.lines[inv.lines.length - 1];
+      const l = inv.lines[inv.lines.length - 1]; // آخر سطر انضاف
       if (!l || !(q > 0)) return null;
       const base = l.item === lastId ? lastBase : 0;
       l.qty = base + q;
       const it = db.items.find(x => x.id === l.item);
-      draw(inv.lines.indexOf(l)); if (it) noteAdd(it, base > 0, l.qty);
+      draw(inv.lines.indexOf(l)); if (it) { const ex = inv.lines.find(x => x !== l && x.item === l.item); noteAdd(it, ex ? inv.lines.indexOf(ex) + 1 : 0, l.qty); }
       return it && { name: it.name, base, total: l.qty };
     },
     setAdj: (k, v) => { $(`[name=${k}]`, view).value = v || ''; totals(); },
