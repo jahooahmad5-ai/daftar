@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '4.8';
+const APP_VERSION = '4.9';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -1646,8 +1646,8 @@ V.settings = (id, q, view) => {
       { k: 'startDate', l: 'تاريخ بداية الفترة المحاسبية', t: 'date', req: 1 },
       { k: 'paperWidth', l: 'عرض ورق الطابعة الحرارية', t: 'select', opts: [['80', '80 مم (3 إنش)'], ['58', '58 مم (2 إنش)']] },
       { k: 'receiptCp', l: 'عمود سعر المستهلك بالإيصال', t: 'select', opts: [['1', 'يطلع دايماً'], ['0', 'لا يطلع']] },
-      { k: 'receiptHeader', l: 'سطر تحت اسم المحل بالإيصال (نشاطك، السجل التجاري…)', ph: 'شيبس، مياه، غازية، بسكويت — س.ت 384', full: 1 },
-      { k: 'receiptFooter', l: 'عبارة أسفل الإيصال', ph: 'صفة البيع من تاجر نصف جملة إلى تاجر مفرق', full: 1 },
+      { k: 'receiptHeader', l: 'سطر تحت اسم المحل بالإيصال (نشاطك، السجل التجاري…)', ph: 'شيبس، مياه، غازية، بسكويت — س.ت 384', t: 'textarea', full: 1 },
+      { k: 'receiptFooter', l: 'عبارة أسفل الإيصال', ph: 'صفة البيع من تاجر نصف جملة إلى تاجر مفرق', t: 'textarea', full: 1 },
     ], s)}
     <div class="fld full" style="margin-top:8px"><span>شعار الإيصال (صورة)</span>
       <div class="acts" style="align-items:center">${s.logo ? `<img src="${s.logo}" style="height:60px;border:1px solid var(--line);border-radius:8px;background:#fff">` : ''}

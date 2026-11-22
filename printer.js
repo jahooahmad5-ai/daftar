@@ -121,7 +121,11 @@ const Receipt = (() => {
     const font = o => `${o.bold ? 'bold ' : ''}${Math.round((o.size || 24) * (W < 576 ? 0.82 : 1))}px ${FONT}`;
     const wrap = (text, o, max) => {
       x.font = font(o); const out = []; let cur = '';
-      for (const w of String(text).split(/\s+/)) { const tr = cur ? cur + ' ' + w : w; if (x.measureText(tr).width > max && cur) { out.push(cur); cur = w; } else cur = tr; }
+      // كل سطر مكتوب لحاله (Enter) بيطلع سطر لحاله بالإيصال
+      String(text).split(/\n/).forEach((para, pi) => {
+        if (pi) { out.push(cur); cur = ''; }
+        for (const w of para.trim().split(/\s+/)) { if (!w) continue; const tr = cur ? cur + ' ' + w : w; if (x.measureText(tr).width > max && cur) { out.push(cur); cur = w; } else cur = tr; }
+      });
       out.push(cur); return out;
     };
     let H = P; const plan = [];
