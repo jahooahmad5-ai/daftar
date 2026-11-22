@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '4.7';
+const APP_VERSION = '4.8';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -1154,8 +1154,9 @@ V.invoice = (id, q, view) => {
     fitSugg();
   };
   // وقت الكتابة منخبّي شريط المجموع تحت حتى ما يغطّي الاقتراحات
-  scanIn.addEventListener('focus', () => { view.classList.add('typing'); setTimeout(toTop, 300); setTimeout(toTop, 700); });
-  scanIn.addEventListener('blur', () => setTimeout(() => { if (document.activeElement !== scanIn) view.classList.remove('typing'); }, 250));
+  // (بس طول ما قائمة الاقتراحات ظاهرة — أول ما تختفي برجع الشريط وزر الحفظ)
+  new MutationObserver(() => view.classList.toggle('typing', !sugg.hidden)).observe(sugg, { attributes: true, attributeFilter: ['hidden'] });
+  scanIn.addEventListener('focus', () => { setTimeout(toTop, 300); setTimeout(toTop, 700); });
   if (window.visualViewport) {
     const onVV = () => { if (!view.contains(scanIn)) return window.visualViewport.removeEventListener('resize', onVV); fitSugg(); };
     window.visualViewport.addEventListener('resize', onVV);
