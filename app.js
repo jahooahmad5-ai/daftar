@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '4.4';
+const APP_VERSION = '4.5';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -948,7 +948,7 @@ V.invoice = (id, q, view) => {
     </div>
   </div>
   <div class="inv-bar">
-    <div class="inv-bar-sum"><small id="barInfo"></small><b id="barNet">0</b><small id="barOld" class="old-bar"></small></div>
+    <div class="inv-bar-sum"><small id="barInfo"></small><small id="prnPill" class="prn-pill"></small><b id="barNet">0</b><small id="barOld" class="old-bar"></small></div>
     ${orig ? '' : '<button class="btn" data-act="saveNew">＋ حفظ وجديد</button>'}
     <button class="btn pri" data-act="save">${orig ? '💾 حفظ التعديلات' : '💾 حفظ'}</button>
     <button class="btn prt" data-act="savePrint">🖨 حفظ وطباعة</button>
@@ -1280,6 +1280,7 @@ V.invoice = (id, q, view) => {
     undo: () => { inv.lines.pop(); draw(); },
   };
   if (window.Voice) Voice.invReady();
+  if (window.Receipt) { Receipt.pill(); const w = Receipt.warm(); if (w) w.then(() => Receipt.pill()); }
 };
 
 /* ------------------------- السندات ------------------------- */

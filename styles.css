@@ -318,3 +318,5 @@ img,svg,video{max-width:100%}
 .draft-note .btn{padding:4px 10px;font-size:13px;margin-inline-start:6px}
 .inv-bar .btn.pri.pulse{background:#dc2626;color:#fff;animation:spulse 1.2s infinite}
 @keyframes spulse{0%,100%{box-shadow:0 0 0 0 rgba(220,38,38,.7)}50%{box-shadow:0 0 0 7px rgba(220,38,38,0)}}
+.inv-bar-sum .prn-pill{color:#fde68a;font-size:12px}
+.inv-bar-sum .prn-pill:empty{display:none}

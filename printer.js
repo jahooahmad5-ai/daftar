@@ -216,26 +216,58 @@ const Receipt = (() => {
     }
     throw new Error('ما لقيت قناة كتابة بالطابعة');
   }
-  async function connect(pick) {
-    if (ch && dev && dev.gatt.connected) return ch;
+  const wait = (p, ms) => Promise.race([p, new Promise((_, j) => setTimeout(() => j(new Error('timeout')), ms))]);
+  let lastInfo = '';
+  // الطابعة اللي سبق وأعطاها Chrome الإذن (بيحتاج إعداد web-bluetooth-new-permissions-backend)
+  async function remembered() {
+    if (!navigator.bluetooth || !navigator.bluetooth.getDevices) { lastInfo = 'nogd'; return null; }
     const id = localStorage.getItem('daftar-printer'), nm = localStorage.getItem('daftar-printer-name');
-    // إذا Chrome بيسمح (getDevices) منرجع للطابعة المحفوظة بلا ما نسأل
-    if (!dev && !pick && navigator.bluetooth.getDevices) {
+    try {
+      const list = await navigator.bluetooth.getDevices();
+      lastInfo = 'gd' + list.length;
+      return list.find(d => d.id === id) || (nm && list.find(d => d.name === nm)) || list.find(d => /^XP/i.test(d.name || '')) || null;
+    } catch (e) { lastInfo = 'gderr'; return null; }
+  }
+  // اتصال بالطابعة المعروفة بدون نافذة: محاولة مباشرة، وإذا ما زبط منستنى إشارتها (watchAdvertisements)
+  async function quiet(d, ms, watch = true) {
+    try { ch = await findChar(await wait(d.gatt.connect(), ms)); dev = d; return true; } catch (e) { /* */ }
+    if (watch && d.watchAdvertisements) {
       try {
-        const list = await navigator.bluetooth.getDevices();
-        dev = list.find(d => d.id === id) || (nm && list.find(d => d.name === nm)) || null;
-      } catch (e) { dev = null; }
+        const seen = new Promise(r => d.addEventListener('advertisementreceived', r, { once: true }));
+        await d.watchAdvertisements();
+        await wait(seen, ms);
+        ch = await findChar(await wait(d.gatt.connect(), ms)); dev = d; return true;
+      } catch (e) { /* */ }
     }
-    if (dev && !pick) {
-      try { ch = await findChar(await dev.gatt.connect()); return ch; } catch (e) { dev = null; }
-    }
-    // وإلا منفتح قائمة الاختيار — بس فيها الطابعة المحفوظة إذا في وحدة
+    ch = null; return false;
+  }
+  let warming = null;
+  // بنتصل بالطابعة من قبل ما تكبس طباعة، حتى الكبسة تطبع دغري
+  function warm() {
+    if (ready() || warming || !localStorage.getItem('daftar-printer')) return warming;
+    warming = (async () => { const d = dev || await remembered(); if (d) await quiet(d, 6000); warming = null; pill(); })();
+    return warming;
+  }
+  const ready = () => !!(ch && dev && dev.gatt.connected);
+  function pill() {
+    const el = document.getElementById('prnPill'); if (!el) return;
+    const known = !!localStorage.getItem('daftar-printer');
+    el.textContent = ready() ? '🟢 الطابعة متصلة' : !navigator.bluetooth ? '' : !known ? '⚪ ما في طابعة محفوظة' : lastInfo === 'nogd' ? '🟡 بدها اختيار كل مرة (الإعداد ما اشتغل)' : lastInfo === 'gd0' ? '🟡 Chrome ما حفظ الإذن' : '⚪ الطابعة مو متصلة';
+  }
+  async function connect(pick) {
+    if (!pick && ready()) return ch;
+    if (!pick && warming) { await warming; if (ready()) return ch; }
+    // ضمن نفس الجلسة: الطابعة معروفة، منرجع نتصل فيها بسرعة
+    if (!pick && dev && await quiet(dev, 2500, false)) return ch;
+    const nm = localStorage.getItem('daftar-printer-name');
     const opts = !pick && nm ? { filters: [{ name: nm }], optionalServices: SERVICES } : { acceptAllDevices: true, optionalServices: SERVICES };
     dev = await navigator.bluetooth.requestDevice(opts);
     localStorage.setItem('daftar-printer', dev.id);
     if (dev.name) localStorage.setItem('daftar-printer-name', dev.name);
     const server = await dev.gatt.connect();
     ch = await findChar(server);
+    dev.addEventListener('gattserverdisconnected', () => { ch = null; pill(); });
+    pill();
     return ch;
   }
   const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -333,6 +365,6 @@ const Receipt = (() => {
       else { toast('❌ ما زبطت الطباعة بالبلوتوث — الفاتورة محفوظة، جرّب طريقة تانية', 1); open(inv); }
     }
   }
-  return { open, printDirect, build: inv => build(inv), escpos, loadLogo, balances };
+  return { open, printDirect, warm, pill, build: inv => build(inv), escpos, loadLogo, balances };
 })();
 window.Receipt = Receipt;
