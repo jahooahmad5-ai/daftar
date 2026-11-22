@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '4.2';
+const APP_VERSION = '4.3';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -874,18 +874,23 @@ V.invoice = (id, q, view) => {
   if (id !== 'new' && !orig) return go('#/invoices');
   const inv = orig ? clone(orig) : { id: null, type: INV_TYPES[q.type] ? q.type : 'sale', date: today(), pay: 'cash', cashAcc: cashAccounts()[0]?.id || '', party: '', cur: 'base', rate: db.settings.rate || '', lines: [], discount: 0, note: '' };
   // مسودة الفاتورة الجديدة: بتنحفظ أول بأول حتى ما يضيع شي إذا انسكّر البرنامج أو عمل تحديث
-  const DRAFT = 'daftar_draft_' + inv.type;
+  // الفاتورة الجديدة إلها مسودة، والفاتورة المحفوظة إلها مسودة تعديلات لحالها
+  const DRAFT = orig ? 'daftar_draft_edit_' + orig.id : 'daftar_draft_' + inv.type;
   let draftPay = 0, restored = false;
-  if (!orig) {
+  {
     try {
       const d = JSON.parse(localStorage.getItem(DRAFT) || 'null');
       if (d && Array.isArray(d.lines) && d.lines.length) {
         Object.assign(inv, d.inv, { lines: d.lines.filter(l => db.items.some(x => x.id === l.item)) });
-        draftPay = num(d.payment); restored = inv.lines.length > 0;
+        draftPay = num(d.payment); restored = orig ? true : inv.lines.length > 0;
       }
     } catch (e) { /* */ }
   }
   const dropDraft = () => { try { localStorage.removeItem(DRAFT); } catch (e) { /* */ } };
+  // لمعرفة إذا في تغييرات على الفاتورة المحفوظة لسا ما انحفظت
+  const sigOf = (lines, f) => JSON.stringify([lines.map(l => [l.item, num(l.qty), num(l.price), num(l.cp)]).sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0)),
+    f.date, f.pay, f.party || '', num(f.discount), num(f.addition), String(f.note || ''), f.pay === 'credit' ? num(f.payment) : 0]);
+  const baseSig = orig ? sigOf(orig.lines, { ...orig, payment: db.vouchers.filter(v => v.inv === orig.id).reduce((x, v) => x + num(v.amount), 0) }) : '';
   inv.lines = inv.lines.filter(l => l.item);
   if (!inv.cur) inv.cur = 'base';
   if (!inv.rate) inv.rate = db.settings.rate || '';
@@ -900,7 +905,9 @@ V.invoice = (id, q, view) => {
     `${!orig ? '<button class="btn" data-act="paste">📋 لصق طلبية</button><button class="btn red" data-act="clearAll">🗑 تفريغ</button>' : ''}${orig ? `<button class="btn wa" data-act="wa">واتساب</button><button class="btn" data-act="receipt">🧾 إيصال</button><button class="btn" data-act="print">🖨 طباعة</button><button class="btn red" data-act="del">حذف</button>` : ''}<a class="btn" href="#/invoices">رجوع</a>`) + `
   ${orig && q.saved ? `<div class="saved-ok">✅ الفاتورة رقم ${orig.no} محفوظة — ${orig.lines.length} مادة، ${fmt(orig.lines.reduce((s, l) => s + num(l.qty), 0))} قطعة</div>` : ''}
   <div class="inv-count"><span>عدد المواد <b id="cntLines">0</b></span><span>عدد القطع <b id="cntPcs">0</b></span></div>
-  ${restored ? '<div class="draft-note">↩️ رجّعتلك الفاتورة اللي ما كانت محفوظة. إذا بدك تبلّش من جديد كبّس «🗑 تفريغ».</div>' : ''}
+  <div id="dirtyNote" class="dirty-note" hidden>⚠️ في تغييرات على هالفاتورة <b>لسا ما انحفظت</b> — كبّس «💾 حفظ التعديلات» تحت</div>
+  ${restored ? (orig ? '<div class="draft-note">↩️ رجّعتلك التعديلات اللي ما كانت محفوظة على هالفاتورة. <button class="btn" data-act="discard">تراجع عنها</button></div>'
+    : '<div class="draft-note">↩️ رجّعتلك الفاتورة اللي ما كانت محفوظة. إذا بدك تبلّش من جديد كبّس «🗑 تفريغ».</div>') : ''}
   <div class="search-wrap">
     <div class="scan-row">
       ${canScan() ? '<button class="sq-btn" data-act="cam" title="مسح بالكاميرا">▮▯▮</button>' : ''}
@@ -984,10 +991,17 @@ V.invoice = (id, q, view) => {
       }
     }
     const cnt = inv.lines.reduce((s, l) => s + num(l.qty), 0);
-    if (!orig) {
+    const fields = { date: val('date'), pay: val('pay'), cashAcc: val('cashAcc'), party: val('party'), cur: inv.cur, rate: val('rate'), discount: val('discount'), addition: val('addition'), addNote: val('addNote'), note: val('note') };
+    const dirty = orig ? sigOf(inv.lines, { ...fields, payment: val('payment') }) !== baseSig : inv.lines.length > 0;
+    if (orig) {
+      $('#dirtyNote', view).hidden = !dirty;
+      const ok = $('.saved-ok', view); if (ok && dirty) ok.hidden = true;
+      $('[data-act=save]', view).classList.toggle('pulse', dirty);
+    }
+    {
       try {
-        if (!inv.lines.length) localStorage.removeItem(DRAFT);
-        else localStorage.setItem(DRAFT, JSON.stringify({ lines: inv.lines, payment: val('payment'), inv: { date: val('date'), pay: val('pay'), cashAcc: val('cashAcc'), party: val('party'), cur: inv.cur, rate: val('rate'), discount: val('discount'), addition: val('addition'), addNote: val('addNote'), note: val('note') } }));
+        if (!dirty) localStorage.removeItem(DRAFT);
+        else localStorage.setItem(DRAFT, JSON.stringify({ lines: inv.lines, payment: val('payment'), inv: fields }));
       } catch (e) { /* */ }
     }
     $('#cntLines', view).textContent = inv.lines.length; $('#cntPcs', view).textContent = fmt(cnt);
@@ -1210,7 +1224,7 @@ V.invoice = (id, q, view) => {
     const keep = pv > 0 ? linked[0] : null;
     if (linked.some(v => v !== keep)) db.vouchers = db.vouchers.filter(v => v.inv !== out.id || v === keep);
     savedAt = Date.now();
-    if (!orig) dropDraft();
+    dropDraft();
     save(); navigator.vibrate?.([60, 40, 60]); toast(`✅ انحفظت الفاتورة رقم ${out.no} — ${lines.length} مادة`);
     go(andNew ? '#/invoice/new?type=' + out.type : '#/invoice/' + out.id + '?saved=1');
     if (print && window.Receipt) Receipt.printDirect(out);
@@ -1229,6 +1243,7 @@ V.invoice = (id, q, view) => {
     inc: i => step(i, 1),
     dec: i => step(i, -1),
     rmLine: i => { inv.lines.splice(+i, 1); draw(); },
+    discard: () => { dropDraft(); route(); },
     clearAll: () => { if (inv.lines.length && !confirm('تفريغ الفاتورة ومسح كل المواد اللي فيها؟')) return; dropDraft(); inv.lines = []; route(); },
     save: () => doSave(false),
     saveNew: () => doSave(true),
