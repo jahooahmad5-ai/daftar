@@ -330,3 +330,5 @@ img,svg,video{max-width:100%}
 .sx-list button small{color:#6b7a74;margin-inline-start:6px}
 .sx-none{padding:10px 12px;color:#6b7a74}
 .sx-list .sx-add{color:#0f766e;font-weight:800;background:#f0fbf9}
+.sugg .sg-new{background:#f0fbf9}
+.sugg .sg-new b{color:#0f766e}

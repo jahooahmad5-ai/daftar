@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '6.0';
+const APP_VERSION = '6.1';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -1184,7 +1184,40 @@ V.invoice = (id, q, view) => {
         <span class="sg-meta"><span>💰 ${fmt(toDoc(basePrice(it)))}${oldOn() ? ` <small class="muted">(${oldAmt(basePrice(it))} قديم)</small>` : ''}</span><span class="${s <= 0 ? 'bad' : ''}">📦 ${fmt(s)} ${esc(it.unit || '')}</span></span>
         ${low ? `<small class="bad">${s <= 0 ? 'نفدت المادة' : 'قاربت المادة على النفاد'}</small>` : ''}
       </button>`;
-    }).join('') : smartHtml();
+    }).join('') + newBtn() : smartHtml() + newBtn();
+  };
+  // ➕ مادة جديدة من نفس البحث: «اسم المادة» أو «اسم المادة عدد 3»
+  const newSplit = t => { const m = String(t).trim().match(/^(.*?)\s*عدد\s*(\d+(?:\.\d+)?)\s*$/); return m ? { name: m[1].trim(), qty: +m[2] } : { name: String(t).trim(), qty: 1 }; };
+  const newBtn = () => {
+    const { name } = newSplit(scanIn.value);
+    if (!name || /^\d+$/.test(name) || db.items.some(x => normAr(x.name) === normAr(name))) return '';
+    return `<button type="button" class="sg sg-new" data-new="1"><b>➕ مادة جديدة: «${esc(name)}»</b><small class="muted">بتنضاف عالمواد وعالفاتورة فوراً</small></button>`;
+  };
+  const quickNew = () => {
+    const { name, qty } = newSplit(scanIn.value); sugg.hidden = true;
+    const pk = sideSale ? 'sellPrice' : 'buyPrice';
+    modal('➕ مادة جديدة', fields([
+      { k: 'name', l: 'اسم المادة', req: 1, full: 1 },
+      { k: 'price', l: sideSale ? 'سعر المبيع' : 'سعر الشراء', t: 'number' },
+      { k: 'consumerPrice', l: 'سعر المستهلك', t: 'number' },
+      { k: 'unit', l: 'الوحدة' }, { k: 'qty', l: 'العدد بالفاتورة', t: 'number' },
+    ], { name, unit: 'قطعة', qty }), {
+      saveText: '➕ إضافة',
+      onSave: d => {
+        const nm = d.name.trim(); if (!nm) return false;
+        if (db.items.some(x => normAr(x.name) === normAr(nm))) { toast('في مادة بنفس الاسم', 1); return false; }
+        const R = inv.cur === 'fx' && rate() ? rate() : 1;
+        const it = { id: uid(), code: nextItemCode(), barcodes: [], aliases: [], aliasKeys: [], group: null, name: nm, unit: (d.unit || '').trim(), minQty: 0,
+          buyPrice: 0, sellPrice: 0, consumerPrice: r2(num(d.consumerPrice) * R), openQty: 0, openCost: 0 };
+        it[pk] = r2(num(d.price) * R);
+        db.items.push(it); items.push(it); save();
+        scanIn.value = '';
+        fromPaste({ party: '', lines: [{ item: it.id, qty: num(d.qty) || 1 }], pay: payNow });
+        toast('✅ انضافت المادة: ' + nm);
+        setTimeout(() => scanIn.focus(), 300);
+      },
+    });
+    setTimeout(() => { const pi = $('#dlg [name=price]'); if (pi) pi.focus(); }, 80);
   };
   // بحث ذكي: «بسكوت الالف 12 قطعه عدد 3» ← يفهم الأرقام والتعبئة والتسميات المحفوظة
   let smartRes = null;
@@ -1264,6 +1297,7 @@ V.invoice = (id, q, view) => {
     const b = e.target.closest('.sg'); if (!b) return;
     if (b.dataset.smart) return addSmart(smartRes.m.it);
     if (b.dataset.teach) return teach();
+    if (b.dataset.new) return quickNew();
     pick(matches[+b.dataset.i]);
   });
   const outside = e => { if (!view.contains(scanIn)) return document.removeEventListener('click', outside); if (!e.target.closest('.search-wrap')) sugg.hidden = true; };
