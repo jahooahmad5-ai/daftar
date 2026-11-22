@@ -78,11 +78,13 @@ const Receipt = (() => {
     const k = docRate(inv), netB = r2(t.net * k), sgn = ['sale', 'purchase'].includes(inv.type) ? 1 : -1;
     const paidB = inv.pay === 'cash' ? netB : paidFor(inv);
     const B = balances(inv);
-    const row = (label, v, o = {}) => ops.push({ k: 'tri', l: label, m: fmt(v), r: oldOn() ? oldAmt(v) : '', ...o });
+    // رمز العملة (ل.س) مع المبالغ: براس العمودين إذا في جديد وقديم، وإلا جنب كل مبلغ
+    const cs = db.settings.currency || 'ل.س';
+    const row = (label, v, o = {}) => ops.push({ k: 'tri', l: label, m: oldOn() ? fmt(v) : `${fmt(v)} ${cs}`, r: oldOn() ? oldAmt(v) : '', ...o });
     if (t.disc || t.add) {
       txt(`الإجمالي ${fmt(t.gross)}${t.disc ? ` — حسم ${fmt(t.disc)}` : ''}${t.add ? ` — إضافة ${fmt(t.add)}` : ''}${inv.addNote ? ` (${inv.addNote})` : ''}`, { size: 20 });
     }
-    if (oldOn()) ops.push({ k: 'tri', l: '', m: 'جديد', r: 'قديم', size: 20, head: 1 });
+    if (oldOn()) ops.push({ k: 'tri', l: '', m: `جديد ${cs}`, r: `قديم ${cs}`, size: 20, head: 1 });
     row('مجموع الفاتورة', netB, { size: 24, bold: 1 });
     if (inv.cur === 'fx') txt(`(${fmt(t.net)} ${FX().sym} × ${fmt(inv.rate)})`, { size: 20 });
     if (B) {
