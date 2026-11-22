@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '5.5';
+const APP_VERSION = '5.6';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -1154,7 +1154,9 @@ V.invoice = (id, q, view) => {
   };
   const addSmart = it => { const q = smartRes ? smartRes.qty : 1; const txt = scanIn.value; scanIn.value = ''; sugg.hidden = true; fromPaste({ party: '', lines: [{ item: it.id, qty: q }], pay: payNow }); toast(`✓ ${it.name} × ${fmt(q)}`); return txt; };
   const teach = () => { const r = smartRes || smart(scanIn.value); const raw = scanIn.value.trim(); if (!r) return; sugg.hidden = true; Voice.askItem(r.ln, raw.replace(/\s*عدد.*$/, '')).then(it => { if (it) { smartRes = r; addSmart(it); } }); };
-  const pick = it => { scanIn.value = ''; sugg.hidden = true; addItem(it); };
+  const pick = it => { scanIn.value = ''; sugg.hidden = true; addItem(it); scanIn.focus(); };
+  // الكبس على اقتراح ما بيشيل التركيز عن البحث — هيك الكيبورد بيضل مفتوح للمادة الجاية
+  sugg.addEventListener('mousedown', e => e.preventDefault());
   scanIn.addEventListener('input', showSugg);
   // قائمة الاقتراحات ما لازم تنزل تحت الكيبورد: منطلّع البحث لفوق ومنحدد طول القائمة حسب المساحة الظاهرة
   function fitSugg() {
