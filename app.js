@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '4.9';
+const APP_VERSION = '5.0';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -1063,10 +1063,12 @@ V.invoice = (id, q, view) => {
   };
   const basePrice = it => (sideSale ? (lastFor(val('party'), it.id) || num(it.sellPrice)) : (num(it.buyPrice) || r2(st[it.id]?.avg || 0)));
   // إضافة مادة: إذا كانت موجودة بالفاتورة تزيد الكمية
-  let lastId = null;
+  // lastBase: كم كان عدد المادة قبل آخر إضافة — حتى «عدد 2» بعد تكرار الصنف تنضاف على القديم وما تمسحه
+  let lastId = null, lastBase = 0;
   const addItem = it => {
     lastId = it.id;
     const ex = inv.lines.find(l => l.item === it.id);
+    lastBase = ex ? num(ex.qty) : 0;
     if (ex) { ex.qty = num(ex.qty) + 1; inv.lines.splice(inv.lines.indexOf(ex), 1); inv.lines.push(ex); }
     else inv.lines.push({ item: it.id, qty: 1, price: toDoc(basePrice(it)), cp: it.consumerPrice ? toDoc(num(it.consumerPrice)) : '' });
     draw(inv.lines.indexOf(ex || inv.lines[inv.lines.length - 1]));
@@ -1087,6 +1089,7 @@ V.invoice = (id, q, view) => {
       lastId = item;
       const it = db.items.find(x => x.id === item); if (!it) return;
       const ex = inv.lines.find(l => l.item === item);
+      lastBase = ex ? num(ex.qty) : 0;
       if (ex) { ex.qty = num(ex.qty) + qty; inv.lines.splice(inv.lines.indexOf(ex), 1); inv.lines.push(ex); }
       else inv.lines.push({ item, qty, price: toDoc(basePrice(it)), cp: it.consumerPrice ? toDoc(num(it.consumerPrice)) : '' });
       if (r.lines.length === 1) { hl = inv.lines.indexOf(ex || inv.lines[inv.lines.length - 1]); noteAdd(it, !!ex, ex ? ex.qty : qty); }
@@ -1166,7 +1169,14 @@ V.invoice = (id, q, view) => {
     e.preventDefault();
     const c = scanIn.value.trim(); if (!c) return;
     const qm = window.Voice && normAr(Voice.spokenNums(c)).match(/^(?:عدد|العدد|كميه)\s*(\d+(?:\.\d+)?)$/);
-    if (qm) { const it = InvHook.setQty(+qm[1]); scanIn.value = ''; sugg.hidden = true; return it ? toast(`✓ ${it.name} × ${fmt(+qm[1])}`) : toast('ما في مادة بالفاتورة', 1); }
+    if (qm) { const it = InvHook.setQty(+qm[1]); scanIn.value = ''; sugg.hidden = true; return it ? toast(it.base ? `⚠️ ${it.name}: ${fmt(it.base)} + ${fmt(+qm[1])} = ${fmt(it.total)}` : `✓ ${it.name} × ${fmt(+qm[1])}`) : toast('ما في مادة بالفاتورة', 1); }
+    // «اسم المادة كامل + رقم» (حتى لو بالاسم أرقام متل بسكوت 1000 دبل 3) — الرقم الأخير هو العدد
+    const nm = c.match(/^(.+?)\s+(?:عدد\s*)?(\d+(?:\.\d+)?)$/);
+    const byName = nm && db.items.find(x => normAr(x.name) === normAr(nm[1]));
+    if (byName && !findByCode(c) && !db.items.some(x => normAr(x.name) === normAr(c))) {
+      fromPaste({ party: '', lines: [{ item: byName.id, qty: +nm[2] }], pay: payNow });
+      scanIn.value = ''; sugg.hidden = true; scanIn.focus(); return;
+    }
     const exact = findByCode(c);
     if (exact) pick(exact);
     else if (matches.length === 1) pick(matches[0]);
@@ -1311,7 +1321,11 @@ V.invoice = (id, q, view) => {
     setQty: q => {
       const l = inv.lines.find(x => x.item === lastId) || inv.lines[inv.lines.length - 1];
       if (!l || !(q > 0)) return null;
-      l.qty = q; draw(); return db.items.find(x => x.id === l.item);
+      const base = l.item === lastId ? lastBase : 0;
+      l.qty = base + q;
+      const it = db.items.find(x => x.id === l.item);
+      draw(inv.lines.indexOf(l)); if (it) noteAdd(it, base > 0, l.qty);
+      return it && { name: it.name, base, total: l.qty };
     },
     setAdj: (k, v) => { $(`[name=${k}]`, view).value = v || ''; totals(); },
     save: () => doSave(false),
