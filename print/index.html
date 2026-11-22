@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#3b2a06">
+<title>طباعة سريعة</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg">
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:"Segoe UI",Tahoma,"Noto Kufi Arabic",system-ui,sans-serif;background:#f6f3ec;color:#221a08;line-height:1.5}
+header{position:sticky;top:0;z-index:5;background:#3b2a06;color:#fff;padding:12px 14px;display:flex;align-items:center;gap:10px}
+header h1{margin:0;font-size:20px;flex:1}
+.pill{font-size:12.5px;background:rgba(255,255,255,.12);border-radius:20px;padding:4px 10px;white-space:nowrap}
+main{max-width:620px;margin:0 auto;padding:12px 12px 120px}
+.card{background:#fff;border:1px solid #e7dfcc;border-radius:16px;padding:12px;margin-bottom:12px}
+.card h2{margin:0 0 8px;font-size:16px;display:flex;align-items:center;gap:8px}
+.card h2 .sp{flex:1}
+textarea{width:100%;min-height:120px;border:1px solid #d8cdb2;border-radius:12px;padding:10px;font:inherit;font-size:16px;resize:vertical}
+.btn{border:0;border-radius:12px;padding:10px 14px;font:inherit;font-size:15px;font-weight:700;cursor:pointer;background:#efe7d4;color:#3b2a06}
+.btn.sm{padding:6px 10px;font-size:13px}
+.btn.red{background:#fde2e2;color:#8a1c1c}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px}
+.seg{display:flex;border:1px solid #d8cdb2;border-radius:12px;overflow:hidden}
+.seg button{border:0;background:#fff;padding:8px 12px;font:inherit;font-size:14px;cursor:pointer;color:#3b2a06}
+.seg button.on{background:#3b2a06;color:#fff;font-weight:700}
+label.lb{font-size:13.5px;color:#6b5a33}
+input[type=range]{flex:1;min-width:120px}
+#imgBox img{max-width:100%;max-height:160px;border-radius:10px;border:1px solid #e7dfcc;display:block;margin:6px auto}
+.prev{background:#fff;border:1px dashed #cbbf9f;border-radius:12px;padding:8px;text-align:center}
+.prev canvas{width:100%;max-width:300px;box-shadow:0 2px 10px rgba(0,0,0,.08)}
+.muted{color:#7a6b48;font-size:13px}
+.bar{position:fixed;inset:auto 0 0 0;background:#3b2a06;padding:10px 12px calc(10px + env(safe-area-inset-bottom));display:flex;gap:8px;align-items:center;z-index:6}
+.bar .go{flex:1;background:#f59e0b;color:#2b1800;font-size:19px;padding:14px}
+.bar .go:disabled{opacity:.6}
+.bar select{border-radius:10px;padding:10px 6px;font:inherit;font-size:15px;border:0}
+#msg{position:fixed;inset:auto 12px 86px 12px;background:#221a08;color:#fff;border-radius:12px;padding:10px 12px;text-align:center;font-size:15px;opacity:0;transition:opacity .25s;pointer-events:none;z-index:7}
+#msg.show{opacity:1}
+</style>
+</head>
+<body>
+<header><h1>🖨 طباعة سريعة</h1><span class="pill" id="pill">…</span></header>
+<main>
+  <section class="card">
+    <h2>✍️ الكلام<span class="sp"></span><button class="btn sm" id="pasteBtn">📋 لصق</button><button class="btn sm red" id="clrTxt">مسح</button></h2>
+    <textarea id="txt" placeholder="الصق هون الرسالة من الواتس، أو اكتب أي شي بدك تطبعه"></textarea>
+    <div class="row">
+      <label class="lb">حجم الخط</label>
+      <div class="seg" id="size"><button data-v="22">صغير</button><button data-v="28" class="on">وسط</button><button data-v="36">كبير</button><button data-v="46">كبير جداً</button></div>
+    </div>
+    <div class="row">
+      <div class="seg" id="align"><button data-v="r" class="on">يمين</button><button data-v="c">وسط</button></div>
+      <div class="seg" id="bold"><button data-v="0">عادي</button><button data-v="1" class="on">عريض</button></div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>🖼 صورة<span class="sp"></span><button class="btn sm" id="pickImg">اختار صورة</button><button class="btn sm red" id="clrImg" hidden>شيلها</button></h2>
+    <input type="file" id="file" accept="image/*" hidden>
+    <div id="imgBox" class="muted">سكرين شوت أو صورة من الواتس (طلبية، فاتورة، ورقة…)</div>
+    <div class="row" id="imgOpts" hidden>
+      <div class="seg" id="mode"><button data-v="text" class="on">كتابة (أوضح)</button><button data-v="photo">صورة (تدرّج)</button></div>
+      <label class="lb">الغمق</label><input type="range" id="dark" min="90" max="220" value="160">
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>👀 هيك رح تطلع<span class="sp"></span><span class="muted" id="paperLbl"></span></h2>
+    <div class="prev"><canvas id="cv" width="576" height="60"></canvas></div>
+  </section>
+  <p class="muted" style="text-align:center">مع دفتر بنفس الطابعة — <a href="../">رجوع لدفتر</a> · <a href="#" id="pickPrn">اختيار طابعة تانية</a> · <a href="#" id="paperBtn">عرض الورق</a></p>
+</main>
+<div class="bar">
+  <select id="copies" aria-label="عدد النسخ"><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option></select>
+  <button class="btn go" id="go">🖨 اطبع</button>
+</div>
+<div id="msg"></div>
+
+<script>
+'use strict';
+const $ = s => document.querySelector(s);
+const LS = { get: k => { try { return localStorage.getItem(k); } catch (e) { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch (e) { /* */ } } };
+let msgT;
+const msg = (t, long) => { const m = $('#msg'); m.textContent = t; m.classList.add('show'); clearTimeout(msgT); msgT = setTimeout(() => m.classList.remove('show'), long ? 4500 : 2200); };
+
+/* ---------- الإعدادات ---------- */
+const st = { size: 28, align: 'r', bold: '1', mode: 'text', dark: 160, img: null };
+const paper = () => (LS.get('quickprint-paper') || '80');
+const W = () => (paper() === '58' ? 384 : 576);
+function seg(id, key) {
+  const el = $('#' + id);
+  el.addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b) return;
+    el.querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b));
+    st[key] = key === 'size' ? +b.dataset.v : b.dataset.v; render();
+  });
+}
+seg('size', 'size'); seg('align', 'align'); seg('bold', 'bold'); seg('mode', 'mode');
+$('#dark').oninput = e => { st.dark = +e.target.value; render(); };
+$('#txt').oninput = () => render();
+$('#clrTxt').onclick = () => { $('#txt').value = ''; render(); };
+$('#pasteBtn').onclick = async () => {
+  try { const t = await navigator.clipboard.readText(); if (t) { $('#txt').value = t; render(); } else msg('الحافظة فاضية'); }
+  catch (e) { msg('اضغط مطوّلاً على الخانة واختار «لصق»', 1); $('#txt').focus(); }
+};
+$('#paperBtn').onclick = e => { e.preventDefault(); LS.set('quickprint-paper', paper() === '80' ? '58' : '80'); render(); msg('عرض الورق: ' + paper() + ' مم'); };
+
+/* ---------- الصورة ---------- */
+$('#pickImg').onclick = () => $('#file').click();
+$('#file').onchange = e => { const f = e.target.files[0]; if (f) setImage(f); e.target.value = ''; };
+$('#clrImg').onclick = () => { st.img = null; $('#imgBox').innerHTML = 'سكرين شوت أو صورة من الواتس (طلبية، فاتورة، ورقة…)'; $('#imgOpts').hidden = $('#clrImg').hidden = true; render(); };
+function setImage(blob) {
+  const url = URL.createObjectURL(blob), im = new Image();
+  im.onload = () => { st.img = im; $('#imgBox').innerHTML = ''; const t = new Image(); t.src = url; $('#imgBox').appendChild(t); $('#imgOpts').hidden = $('#clrImg').hidden = false; render(); };
+  im.onerror = () => msg('ما قدرت افتح الصورة', 1);
+  im.src = url;
+}
+
+/* ---------- الرسم ---------- */
+const FONT = 'Tahoma,"Noto Sans Arabic","Noto Kufi Arabic",Arial,sans-serif';
+function wrap(x, text, max) {
+  const out = [];
+  String(text).replace(/\r/g, '').split('\n').forEach(para => {
+    if (!para.trim()) { out.push(''); return; }
+    let cur = '';
+    for (const w of para.trim().split(/\s+/)) {
+      const tr = cur ? cur + ' ' + w : w;
+      if (x.measureText(tr).width > max && cur) { out.push(cur); cur = w; } else cur = tr;
+      // كلمة أطول من السطر لحالها (رابط مثلاً): منقطعها
+      while (x.measureText(cur).width > max && cur.length > 1) {
+        let n = cur.length; while (n > 1 && x.measureText(cur.slice(0, n)).width > max) n--;
+        out.push(cur.slice(0, n)); cur = cur.slice(n);
+      }
+    }
+    out.push(cur);
+  });
+  while (out.length && !out[out.length - 1]) out.pop();
+  return out;
+}
+function build() {
+  const w = W(), P = 8, c = document.createElement('canvas'), x = c.getContext('2d');
+  const sz = st.size * (w < 576 ? 0.8 : 1), lh = Math.round(sz * 1.45);
+  const font = `${st.bold === '1' ? 'bold ' : ''}${sz}px ${FONT}`;
+  x.font = font;
+  const lines = $('#txt').value.trim() ? wrap(x, $('#txt').value, w - 2 * P) : [];
+  let ih = 0;
+  if (st.img) ih = Math.round(st.img.naturalHeight * (w / st.img.naturalWidth));
+  const H = Math.max(40, P + lines.length * lh + (lines.length && ih ? 16 : 0) + ih + P);
+  c.width = w; c.height = H;
+  x.fillStyle = '#fff'; x.fillRect(0, 0, w, H);
+  x.fillStyle = '#000'; x.font = font; x.direction = 'rtl'; x.textBaseline = 'top';
+  x.textAlign = st.align === 'c' ? 'center' : 'right';
+  lines.forEach((s, i) => x.fillText(s, st.align === 'c' ? w / 2 : w - P, P + i * lh));
+  if (st.img) {
+    const y0 = P + lines.length * lh + (lines.length ? 16 : 0);
+    x.drawImage(st.img, 0, y0, w, ih);
+    toBW(x, 0, y0, w, ih);
+  }
+  return c;
+}
+// تحويل الصورة لأبيض وأسود: «كتابة» = حد واضح، «صورة» = تدرّج (Floyd–Steinberg)
+function toBW(x, X, Y, w, h) {
+  const d = x.getImageData(X, Y, w, h), p = d.data, g = new Float32Array(w * h);
+  for (let i = 0; i < w * h; i++) g[i] = p[i * 4] * 0.3 + p[i * 4 + 1] * 0.59 + p[i * 4 + 2] * 0.11;
+  const T = st.dark;
+  for (let y = 0; y < h; y++) for (let xx = 0; xx < w; xx++) {
+    const i = y * w + xx, old = g[i], v = old < T ? 0 : 255;
+    g[i] = v;
+    if (st.mode === 'photo') {
+      const e = old - v;
+      if (xx + 1 < w) g[i + 1] += e * 7 / 16;
+      if (y + 1 < h) { if (xx) g[i + w - 1] += e * 3 / 16; g[i + w] += e * 5 / 16; if (xx + 1 < w) g[i + w + 1] += e / 16; }
+    }
+  }
+  for (let i = 0; i < w * h; i++) { p[i * 4] = p[i * 4 + 1] = p[i * 4 + 2] = g[i]; p[i * 4 + 3] = 255; }
+  x.putImageData(d, X, Y);
+}
+let rT;
+function render() {
+  clearTimeout(rT);
+  rT = setTimeout(() => {
+    const c = build(), cv = $('#cv');
+    cv.width = c.width; cv.height = c.height; cv.getContext('2d').drawImage(c, 0, 0);
+    $('#paperLbl').textContent = `ورق ${paper()} مم`;
+  }, 80);
+}
+
+/* ---------- أوامر الطابعة ESC/POS ---------- */
+function escpos(c, copies) {
+  const w = c.width, H = c.height, bw = w / 8, px = c.getContext('2d').getImageData(0, 0, w, H).data;
+  const parts = [new Uint8Array([0x1b, 0x40])];
+  for (let k = 0; k < copies; k++) {
+    for (let y0 = 0; y0 < H; y0 += 128) {
+      const h = Math.min(128, H - y0), buf = new Uint8Array(8 + bw * h);
+      buf.set([0x1d, 0x76, 0x30, 0x00, bw & 255, bw >> 8, h & 255, h >> 8]);
+      for (let y = 0; y < h; y++) for (let xx = 0; xx < w; xx++) {
+        const i = ((y0 + y) * w + xx) * 4;
+        if (px[i] * 0.3 + px[i + 1] * 0.59 + px[i + 2] * 0.11 < 128) buf[8 + y * bw + (xx >> 3)] |= 0x80 >> (xx & 7);
+      }
+      parts.push(buf);
+    }
+    parts.push(new Uint8Array([0x1b, 0x64, 0x04]));
+  }
+  const n = parts.reduce((s, q) => s + q.length, 0), out = new Uint8Array(n);
+  let o = 0; parts.forEach(q => { out.set(q, o); o += q.length; });
+  return out;
+}
+
+/* ---------- البلوتوث (نفس طابعة دفتر — الإذن والطابعة المحفوظة مشتركين) ---------- */
+const SERVICES = [
+  '000018f0-0000-1000-8000-00805f9b34fb', 'e7810a71-73ae-499d-8c15-faa9aef0c3f2',
+  '49535343-fe7d-4ae5-8fa9-9fafd205e455', '0000ff00-0000-1000-8000-00805f9b34fb',
+  '0000ffe0-0000-1000-8000-00805f9b34fb', '0000fee7-0000-1000-8000-00805f9b34fb',
+  '0000ae30-0000-1000-8000-00805f9b34fb', '0000ae3a-0000-1000-8000-00805f9b34fb',
+  '0000ff12-0000-1000-8000-00805f9b34fb', '0000fff0-0000-1000-8000-00805f9b34fb',
+  '0000ff80-0000-1000-8000-00805f9b34fb',
+];
+let dev = null, ch = null, chunk = 180;
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const wait = (p, ms) => Promise.race([p, new Promise((_, j) => setTimeout(() => j(new Error('timeout')), ms))]);
+const ready = () => !!(ch && dev && dev.gatt.connected);
+async function findChar(server) {
+  for (const sv of await server.getPrimaryServices())
+    for (const c of await sv.getCharacteristics()) if (c.properties.writeWithoutResponse || c.properties.write) return c;
+  throw new Error('ما لقيت قناة كتابة بالطابعة');
+}
+async function quiet(d, ms, watch) {
+  try { ch = await findChar(await wait(d.gatt.connect(), ms)); dev = d; return true; } catch (e) { /* */ }
+  if (watch && d.watchAdvertisements) {
+    try {
+      const seen = new Promise(r => d.addEventListener('advertisementreceived', r, { once: true }));
+      await d.watchAdvertisements(); await wait(seen, ms);
+      ch = await findChar(await wait(d.gatt.connect(), ms)); dev = d; return true;
+    } catch (e) { /* */ }
+  }
+  ch = null; return false;
+}
+async function remembered() {
+  if (!navigator.bluetooth || !navigator.bluetooth.getDevices) return null;
+  const id = LS.get('daftar-printer'), nm = LS.get('daftar-printer-name');
+  try {
+    const list = await navigator.bluetooth.getDevices();
+    return list.find(d => d.id === id) || (nm && list.find(d => d.name === nm)) || list.find(d => /^XP/i.test(d.name || '')) || null;
+  } catch (e) { return null; }
+}
+function pill() {
+  const known = LS.get('daftar-printer-name');
+  $('#pill').textContent = !navigator.bluetooth ? '⚠️ افتحها على Chrome' : ready() ? '🟢 ' + (dev.name || 'الطابعة') + ' متصلة' : known ? '⚪ ' + known : '⚪ ما في طابعة';
+}
+let warming = null;
+function warm() {
+  if (ready() || warming || !navigator.bluetooth) return;
+  warming = (async () => { const d = await remembered(); if (d) await quiet(d, 6000, true); warming = null; pill(); })();
+}
+async function connect(pick) {
+  if (!pick && ready()) return;
+  if (!pick && warming) { await warming; if (ready()) return; }
+  if (!pick && dev && await quiet(dev, 2500, false)) return;
+  const nm = LS.get('daftar-printer-name');
+  const opts = !pick && nm ? { filters: [{ name: nm }], optionalServices: SERVICES } : { acceptAllDevices: true, optionalServices: SERVICES };
+  dev = await navigator.bluetooth.requestDevice(opts);
+  LS.set('daftar-printer', dev.id); if (dev.name) LS.set('daftar-printer-name', dev.name);
+  ch = await findChar(await dev.gatt.connect());
+  dev.addEventListener('gattserverdisconnected', () => { ch = null; pill(); });
+  pill();
+}
+async function send(data, onProg) {
+  const c = ch, noResp = c.properties.writeWithoutResponse && c.writeValueWithoutResponse;
+  for (let i = 0; i < data.length;) {
+    const part = data.slice(i, i + chunk);
+    try { if (noResp) await c.writeValueWithoutResponse(part); else await c.writeValue(part); }
+    catch (e) { if (chunk > 20) { chunk = 20; continue; } throw e; }
+    i += part.length;
+    if (noResp) await sleep(12);
+    onProg && onProg(i / data.length);
+  }
+}
+async function doPrint(pick) {
+  if (!navigator.bluetooth) return msg('البلوتوث من المتصفح بيشتغل بس على Chrome', 1);
+  if (!$('#txt').value.trim() && !st.img) return msg('ما في شي للطباعة — الصق كلام أو اختار صورة', 1);
+  const b = $('#go'); b.disabled = true;
+  try {
+    b.textContent = '🔵 عم يتصل…';
+    const conn = connect(pick); conn.catch(() => {});
+    const data = escpos(build(), +$('#copies').value || 1);
+    await conn;
+    await send(data, p => (b.textContent = `🖨 عم يطبع… ${Math.round(p * 100)}%`));
+    msg('✅ انطبعت');
+  } catch (e) {
+    ch = null;
+    msg(e && e.name === 'NotFoundError' ? 'ما اخترت طابعة' : '❌ ما زبطت الطباعة: ' + ((e && e.message) || e), 1);
+  }
+  b.disabled = false; b.textContent = '🖨 اطبع'; pill();
+}
+$('#go').onclick = () => doPrint(false);
+$('#pickPrn').onclick = e => { e.preventDefault(); doPrint(true); };
+
+/* ---------- المشاركة من الواتس (Share) ---------- */
+async function loadShared() {
+  const q = new URLSearchParams(location.search);
+  const t = [q.get('title'), q.get('text'), q.get('url')].filter(Boolean).join('\n');
+  if (t) $('#txt').value = t;
+  if (q.has('shared') && 'caches' in window) {
+    try {
+      const c = await caches.open('quickprint-share');
+      const tr = await c.match('shared-text'); if (tr) { const s = await tr.text(); if (s) $('#txt').value = s; }
+      const ir = await c.match('shared-image'); if (ir) setImage(await ir.blob());
+      await c.delete('shared-text'); await c.delete('shared-image');
+    } catch (e) { /* */ }
+  }
+  if (t || q.has('shared')) history.replaceState(null, '', location.pathname);
+  render();
+}
+
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+pill(); warm(); loadShared();
+document.addEventListener('visibilitychange', () => { if (!document.hidden) warm(); });
+</script>
+</body>
+</html>
