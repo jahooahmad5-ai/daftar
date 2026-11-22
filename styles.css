@@ -320,3 +320,4 @@ img,svg,video{max-width:100%}
 @keyframes spulse{0%,100%{box-shadow:0 0 0 0 rgba(220,38,38,.7)}50%{box-shadow:0 0 0 7px rgba(220,38,38,0)}}
 .inv-bar-sum .prn-pill{color:#fde68a;font-size:12px}
 .inv-bar-sum .prn-pill:empty{display:none}
+#view.typing .inv-bar{display:none}

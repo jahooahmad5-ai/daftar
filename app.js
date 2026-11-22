@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '4.6';
+const APP_VERSION = '4.7';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -394,6 +394,7 @@ function route() {
   const q = Object.fromEntries(new URLSearchParams(qs || ''));
   const view = $('#view');
   view.onclick = view.oninput = view.onchange = view.onsubmit = null;
+  view.classList.remove('typing');
   const key = V[name] ? name : 'home';
   const nav = NAV_MAP[key] || key;
   $$('#nav a').forEach(a => a.classList.toggle('on', a.dataset.r === nav));
@@ -1111,7 +1112,7 @@ V.invoice = (id, q, view) => {
   const showSugg = () => {
     matches = search(scanIn.value);
     if (!scanIn.value.trim()) { sugg.hidden = true; return; }
-    sugg.hidden = false;
+    sugg.hidden = false; requestAnimationFrame(fitSugg);
     sugg.innerHTML = matches.length ? matches.map((it, i) => {
       const s = stockOf(it), low = s <= 0 || (num(it.minQty) > 0 && s <= num(it.minQty));
       return `<button type="button" class="sg" data-i="${i}">
@@ -1141,7 +1142,24 @@ V.invoice = (id, q, view) => {
   const teach = () => { const r = smartRes || smart(scanIn.value); const raw = scanIn.value.trim(); if (!r) return; sugg.hidden = true; Voice.askItem(r.ln, raw.replace(/\s*عدد.*$/, '')).then(it => { if (it) { smartRes = r; addSmart(it); } }); };
   const pick = it => { scanIn.value = ''; sugg.hidden = true; addItem(it); };
   scanIn.addEventListener('input', showSugg);
-  scanIn.addEventListener('focus', () => setTimeout(() => window.scrollTo({ top: 0, behavior: 'smooth' }), 250));
+  // قائمة الاقتراحات ما لازم تنزل تحت الكيبورد: منطلّع البحث لفوق ومنحدد طول القائمة حسب المساحة الظاهرة
+  function fitSugg() {
+    if (!view.contains(sugg) || sugg.hidden) return;
+    const vv = window.visualViewport, bottom = vv ? vv.height + vv.offsetTop : window.innerHeight;
+    sugg.style.maxHeight = Math.max(140, bottom - sugg.getBoundingClientRect().top - 8) + 'px';
+  }
+  const toTop = () => {
+    const tb = $('.top'), off = tb && getComputedStyle(tb).display !== 'none' ? tb.offsetHeight : 0;
+    window.scrollTo({ top: Math.max(0, $('.search-wrap', view).getBoundingClientRect().top + window.scrollY - off - 6) });
+    fitSugg();
+  };
+  // وقت الكتابة منخبّي شريط المجموع تحت حتى ما يغطّي الاقتراحات
+  scanIn.addEventListener('focus', () => { view.classList.add('typing'); setTimeout(toTop, 300); setTimeout(toTop, 700); });
+  scanIn.addEventListener('blur', () => setTimeout(() => { if (document.activeElement !== scanIn) view.classList.remove('typing'); }, 250));
+  if (window.visualViewport) {
+    const onVV = () => { if (!view.contains(scanIn)) return window.visualViewport.removeEventListener('resize', onVV); fitSugg(); };
+    window.visualViewport.addEventListener('resize', onVV);
+  }
   scanIn.addEventListener('keydown', e => {
     if (e.key !== 'Enter') return;
     e.preventDefault();
