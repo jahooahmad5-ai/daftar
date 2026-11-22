@@ -323,3 +323,9 @@ img,svg,video{max-width:100%}
 #view.typing .inv-bar{display:none}
 /* الأرقام من الشمال لليمين حتى «10» ما تصير «01» */
 .ln-card input[type=number]{direction:ltr;text-align:center}
+.sx{position:relative;margin-bottom:6px}
+.sx-in{width:100%;box-sizing:border-box;border:1px solid #14b8a6;border-radius:10px;padding:9px 10px;font:inherit;font-size:15px;background:#f0fbf9}
+.sx-list{position:absolute;inset-inline:0;top:100%;z-index:40;background:#fff;border:1px solid #d7dee4;border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,.15);max-height:50vh;overflow:auto;margin-top:4px}
+.sx-list button{display:block;width:100%;text-align:right;border:0;border-bottom:1px solid #eef2f5;background:#fff;padding:11px 12px;font:inherit;font-size:16px;cursor:pointer}
+.sx-list button small{color:#6b7a74;margin-inline-start:6px}
+.sx-none{padding:10px 12px;color:#6b7a74}

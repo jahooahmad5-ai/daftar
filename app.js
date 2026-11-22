@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '5.8';
+const APP_VERSION = '5.9';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -402,6 +402,41 @@ function route() {
   V[key](id, q, view);
   window.scrollTo(0, 0);
 }
+
+/* ---- بحث بقائمة الزباين/الموردين: خانة بحث فوق كل قائمة «العميل/المورد» ---- */
+function enhancePartySelect(sel) {
+  if (sel.dataset.sx || sel.options.length < 2) return;
+  sel.dataset.sx = '1';
+  const box = document.createElement('div'); box.className = 'sx';
+  box.innerHTML = '<input class="sx-in" type="search" placeholder="🔎 ابحث عن الاسم أو الهاتف" autocomplete="off" enterkeyhint="search"><div class="sx-list" hidden></div>';
+  sel.parentNode.insertBefore(box, sel);
+  const inp = box.firstChild, list = box.lastChild;
+  let res = [];
+  const choose = o => {
+    sel.value = o.value;
+    sel.dispatchEvent(new Event('input', { bubbles: true })); sel.dispatchEvent(new Event('change', { bubbles: true }));
+    inp.value = ''; list.hidden = true; inp.blur(); toast('✓ ' + o.text);
+  };
+  const show = () => {
+    const qn = normAr(inp.value); if (!qn) { list.hidden = true; return; }
+    const ws = qn.split(/\s+/);
+    res = [...sel.options].filter(o => o.value).map(o => {
+      const a = acc(o.value) || {}, hay = normAr(o.text + ' ' + (a.phone || '') + ' ' + (a.code || ''));
+      if (!ws.every(w => hay.includes(w))) return null;
+      return [normAr(a.name || o.text).startsWith(qn) ? 0 : 1, o];
+    }).filter(Boolean).sort((x, y) => x[0] - y[0]).slice(0, 30).map(x => x[1]);
+    list.innerHTML = res.length ? res.map((o, i) => `<button type="button" data-i="${i}">${esc(o.text)}${acc(o.value)?.phone ? ` <small>${esc(acc(o.value).phone)}</small>` : ''}</button>`).join('')
+      : '<div class="sx-none">ما في حدا بهالاسم</div>';
+    list.hidden = false;
+  };
+  inp.addEventListener('input', show);
+  inp.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); if (res[0]) choose(res[0]); } });
+  inp.addEventListener('blur', () => setTimeout(() => (list.hidden = true), 150));
+  list.addEventListener('mousedown', e => e.preventDefault());
+  list.addEventListener('click', e => { const b = e.target.closest('button[data-i]'); if (b) choose(res[+b.dataset.i]); });
+}
+new MutationObserver(() => document.querySelectorAll('select[name=party]:not([data-sx])').forEach(enhancePartySelect))
+  .observe(document.body, { childList: true, subtree: true });
 
 /* ------------------------- الرئيسية ------------------------- */
 V.home = (id, q, view) => {
