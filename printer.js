@@ -218,15 +218,22 @@ const Receipt = (() => {
   }
   async function connect(pick) {
     if (ch && dev && dev.gatt.connected) return ch;
+    const id = localStorage.getItem('daftar-printer'), nm = localStorage.getItem('daftar-printer-name');
+    // إذا Chrome بيسمح (getDevices) منرجع للطابعة المحفوظة بلا ما نسأل
     if (!dev && !pick && navigator.bluetooth.getDevices) {
-      const id = localStorage.getItem('daftar-printer');
-      const list = await navigator.bluetooth.getDevices();
-      dev = list.find(d => d.id === id) || null;
+      try {
+        const list = await navigator.bluetooth.getDevices();
+        dev = list.find(d => d.id === id) || (nm && list.find(d => d.name === nm)) || null;
+      } catch (e) { dev = null; }
     }
-    if (!dev || pick) {
-      dev = await navigator.bluetooth.requestDevice({ acceptAllDevices: true, optionalServices: SERVICES });
-      localStorage.setItem('daftar-printer', dev.id);
+    if (dev && !pick) {
+      try { ch = await findChar(await dev.gatt.connect()); return ch; } catch (e) { dev = null; }
     }
+    // وإلا منفتح قائمة الاختيار — بس فيها الطابعة المحفوظة إذا في وحدة
+    const opts = !pick && nm ? { filters: [{ name: nm }], optionalServices: SERVICES } : { acceptAllDevices: true, optionalServices: SERVICES };
+    dev = await navigator.bluetooth.requestDevice(opts);
+    localStorage.setItem('daftar-printer', dev.id);
+    if (dev.name) localStorage.setItem('daftar-printer-name', dev.name);
     const server = await dev.gatt.connect();
     ch = await findChar(server);
     return ch;
