@@ -334,7 +334,9 @@ const Receipt = (() => {
         await connect(pick);
         msg.textContent = 'عم يطبع… 0%';
         await send(escpos(canvas), p => (msg.textContent = `عم يطبع… ${Math.round(p * 100)}%`));
-        msg.textContent = '✅ انطبع'; toast('تمت الطباعة');
+        msg.textContent = '✅ انطبع'; toast('✅ انطبعت الفاتورة رقم ' + inv.no);
+        // بعد الطباعة منرجع لقائمة الفواتير
+        setTimeout(() => { try { d.close(); } catch (e2) { /* */ } location.hash = '#/invoices'; }, 600);
       } catch (e) {
         if (e && e.name === 'NotFoundError') msg.textContent = 'ما اخترت طابعة.';
         else { msg.textContent = '❌ ما زبطت الطباعة: ' + (e && e.message || e); ch = null; }
@@ -363,6 +365,7 @@ const Receipt = (() => {
       await conn;
       await send(escpos(canvas), p => toast(`🖨 عم يطبع… ${Math.round(p * 100)}%`));
       toast('✅ انحفظت وانطبعت الفاتورة رقم ' + inv.no);
+      location.hash = '#/invoices'; // بعد الطباعة منرجع لقائمة الفواتير
     } catch (e) {
       ch = null;
       if (e && e.name === 'NotFoundError') toast('ما اخترت طابعة — الفاتورة محفوظة', 1);
