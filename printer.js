@@ -308,6 +308,24 @@ const Receipt = (() => {
       else { const u = URL.createObjectURL(blob), el = document.createElement('a'); el.href = u; el.download = f.name; el.click(); setTimeout(() => URL.revokeObjectURL(u), 3000); }
     }, 'image/png');
   }
-  return { open, build: inv => build(inv), escpos, loadLogo, balances };
+  /* ---------- طباعة مباشرة مع الحفظ (بلوتوث من المتصفح) ---------- */
+  async function printDirect(inv) {
+    if (!navigator.bluetooth) { toast('المتصفح ما بيدعم البلوتوث — اختار طريقة طباعة', 1); return open(inv); }
+    try {
+      toast('🔵 عم يتصل بالطابعة…');
+      const conn = connect(false); // لازم يبلّش فوراً مع الكبسة حتى يقبل المتصفح يفتح قائمة الطابعات
+      conn.catch(() => {});
+      await loadLogo();
+      const canvas = build(inv);
+      await conn;
+      await send(escpos(canvas), p => toast(`🖨 عم يطبع… ${Math.round(p * 100)}%`));
+      toast('✅ انحفظت وانطبعت الفاتورة رقم ' + inv.no);
+    } catch (e) {
+      ch = null;
+      if (e && e.name === 'NotFoundError') toast('ما اخترت طابعة — الفاتورة محفوظة', 1);
+      else { toast('❌ ما زبطت الطباعة بالبلوتوث — الفاتورة محفوظة، جرّب طريقة تانية', 1); open(inv); }
+    }
+  }
+  return { open, printDirect, build: inv => build(inv), escpos, loadLogo, balances };
 })();
 window.Receipt = Receipt;

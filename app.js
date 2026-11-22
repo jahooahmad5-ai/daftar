@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '4.1';
+const APP_VERSION = '4.2';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -873,6 +873,19 @@ V.invoice = (id, q, view) => {
   const orig = id === 'new' ? null : db.invoices.find(x => x.id === id);
   if (id !== 'new' && !orig) return go('#/invoices');
   const inv = orig ? clone(orig) : { id: null, type: INV_TYPES[q.type] ? q.type : 'sale', date: today(), pay: 'cash', cashAcc: cashAccounts()[0]?.id || '', party: '', cur: 'base', rate: db.settings.rate || '', lines: [], discount: 0, note: '' };
+  // مسودة الفاتورة الجديدة: بتنحفظ أول بأول حتى ما يضيع شي إذا انسكّر البرنامج أو عمل تحديث
+  const DRAFT = 'daftar_draft_' + inv.type;
+  let draftPay = 0, restored = false;
+  if (!orig) {
+    try {
+      const d = JSON.parse(localStorage.getItem(DRAFT) || 'null');
+      if (d && Array.isArray(d.lines) && d.lines.length) {
+        Object.assign(inv, d.inv, { lines: d.lines.filter(l => db.items.some(x => x.id === l.item)) });
+        draftPay = num(d.payment); restored = inv.lines.length > 0;
+      }
+    } catch (e) { /* */ }
+  }
+  const dropDraft = () => { try { localStorage.removeItem(DRAFT); } catch (e) { /* */ } };
   inv.lines = inv.lines.filter(l => l.item);
   if (!inv.cur) inv.cur = 'base';
   if (!inv.rate) inv.rate = db.settings.rate || '';
@@ -884,7 +897,10 @@ V.invoice = (id, q, view) => {
   const stockOf = it => (st[it.id] ? st[it.id].qty : num(it.openQty));
 
   view.innerHTML = head(INV_TYPES[inv.type] + (orig ? ` رقم ${orig.no}` : ' جديدة'),
-    `${!orig ? '<button class="btn" data-act="paste">📋 لصق طلبية</button>' : ''}${orig ? `<button class="btn wa" data-act="wa">واتساب</button><button class="btn" data-act="receipt">🧾 إيصال</button><button class="btn" data-act="print">🖨 طباعة</button><button class="btn red" data-act="del">حذف</button>` : ''}<a class="btn" href="#/invoices">رجوع</a>`) + `
+    `${!orig ? '<button class="btn" data-act="paste">📋 لصق طلبية</button><button class="btn red" data-act="clearAll">🗑 تفريغ</button>' : ''}${orig ? `<button class="btn wa" data-act="wa">واتساب</button><button class="btn" data-act="receipt">🧾 إيصال</button><button class="btn" data-act="print">🖨 طباعة</button><button class="btn red" data-act="del">حذف</button>` : ''}<a class="btn" href="#/invoices">رجوع</a>`) + `
+  ${orig && q.saved ? `<div class="saved-ok">✅ الفاتورة رقم ${orig.no} محفوظة — ${orig.lines.length} مادة، ${fmt(orig.lines.reduce((s, l) => s + num(l.qty), 0))} قطعة</div>` : ''}
+  <div class="inv-count"><span>عدد المواد <b id="cntLines">0</b></span><span>عدد القطع <b id="cntPcs">0</b></span></div>
+  ${restored ? '<div class="draft-note">↩️ رجّعتلك الفاتورة اللي ما كانت محفوظة. إذا بدك تبلّش من جديد كبّس «🗑 تفريغ».</div>' : ''}
   <div class="search-wrap">
     <div class="scan-row">
       ${canScan() ? '<button class="sq-btn" data-act="cam" title="مسح بالكاميرا">▮▯▮</button>' : ''}
@@ -893,6 +909,7 @@ V.invoice = (id, q, view) => {
     </div>
     <div id="sugg" class="sugg" hidden></div>
   </div>
+  <div id="lastAdd" class="last-add" hidden></div>
   <div id="ln" class="ln-list"></div>
   <div class="card">
     <div class="grid4">
@@ -926,7 +943,8 @@ V.invoice = (id, q, view) => {
   <div class="inv-bar">
     <div class="inv-bar-sum"><small id="barInfo"></small><b id="barNet">0</b><small id="barOld" class="old-bar"></small></div>
     ${orig ? '' : '<button class="btn" data-act="saveNew">＋ حفظ وجديد</button>'}
-    <button class="btn pri" data-act="save">💾 حفظ</button>
+    <button class="btn pri" data-act="save">${orig ? '💾 حفظ التعديلات' : '💾 حفظ'}</button>
+    <button class="btn prt" data-act="savePrint">🖨 حفظ وطباعة</button>
   </div>`;
 
   const val = n => $(`[name="${n}"]`, view).value;
@@ -966,6 +984,13 @@ V.invoice = (id, q, view) => {
       }
     }
     const cnt = inv.lines.reduce((s, l) => s + num(l.qty), 0);
+    if (!orig) {
+      try {
+        if (!inv.lines.length) localStorage.removeItem(DRAFT);
+        else localStorage.setItem(DRAFT, JSON.stringify({ lines: inv.lines, payment: val('payment'), inv: { date: val('date'), pay: val('pay'), cashAcc: val('cashAcc'), party: val('party'), cur: inv.cur, rate: val('rate'), discount: val('discount'), addition: val('addition'), addNote: val('addNote'), note: val('note') } }));
+      } catch (e) { /* */ }
+    }
+    $('#cntLines', view).textContent = inv.lines.length; $('#cntPcs', view).textContent = fmt(cnt);
     $('#barNet', view).textContent = fmt(n) + ' ' + sym;
     $('#barInfo', view).textContent = `${inv.lines.length} مادة — ${fmt(cnt)} قطعة${val('pay') === 'credit' ? ' — آجل' : ' — نقدي'}`;
   };
@@ -978,7 +1003,7 @@ V.invoice = (id, q, view) => {
       <div class="ln-head">
         <button class="qb" data-act="inc" data-id="${i}" aria-label="زيادة">＋</button>
         <button class="qb minus" data-act="dec" data-id="${i}" aria-label="إنقاص">−</button>
-        <b class="ln-name">${esc(it.name)}</b>
+        <span class="ln-no">${i + 1}</span><b class="ln-name">${esc(it.name)}</b>
         <button class="qb del" data-act="rmLine" data-id="${i}" aria-label="حذف">✕</button>
       </div>
       <div class="ln-row">
@@ -992,10 +1017,20 @@ V.invoice = (id, q, view) => {
       ${it.id ? `<small class="${low ? 'bad' : 'muted'}">المتوفر: ${fmt(s)} ${esc(it.unit || '')}${low ? (s <= 0 ? ' — نفدت المادة' : ' — قاربت المادة على النفاد') : ''}</small>` : ''}
     </div>`;
   };
-  const draw = () => {
-    $('#ln', view).innerHTML = inv.lines.length ? inv.lines.map(lineHtml).join('')
+  const draw = hl => {
+    // الأحدث فوق: آخر مادة انضافت بتطلع أول شي، والقديم بينزل لتحت
+    $('#ln', view).innerHTML = inv.lines.length ? inv.lines.map(lineHtml).reverse().join('')
       : `<div class="empty card">ابحث عن مادة بالاسم أو امسح الباركود لإضافتها للفاتورة</div>`;
     totals();
+    if (hl != null && hl >= 0) { const c = $(`.ln-card[data-i="${hl}"]`, view); if (c) c.classList.add('flash'); }
+  };
+  // شريط واضح تحت البحث: شو آخر شي انضاف، وإذا انضاف على مادة موجودة من قبل
+  const noteAdd = (it, merged, q) => {
+    const b = $('#lastAdd', view); if (!b) return;
+    b.hidden = false; b.className = 'last-add' + (merged ? ' merged' : '');
+    b.innerHTML = merged
+      ? `⚠️ <b>${esc(it.name)}</b> كانت موجودة بالفاتورة — صار عددها <b>${fmt(q)}</b> (ما انضاف سطر جديد)`
+      : `✓ انضاف: <b>${esc(it.name)}</b> × ${fmt(q)} — صار بالفاتورة <b>${inv.lines.length}</b> مادة`;
   };
   // تحويل سعر من الليرة إلى عملة الفاتورة الحالية
   const toDoc = base => (inv.cur === 'fx' && rate() ? r2(base / rate()) : base);
@@ -1005,9 +1040,11 @@ V.invoice = (id, q, view) => {
   const addItem = it => {
     lastId = it.id;
     const ex = inv.lines.find(l => l.item === it.id);
-    if (ex) ex.qty = num(ex.qty) + 1;
+    if (ex) { ex.qty = num(ex.qty) + 1; inv.lines.splice(inv.lines.indexOf(ex), 1); inv.lines.push(ex); }
     else inv.lines.push({ item: it.id, qty: 1, price: toDoc(basePrice(it)), cp: it.consumerPrice ? toDoc(num(it.consumerPrice)) : '' });
-    draw(); navigator.vibrate?.(40); toast('✓ ' + it.name);
+    draw(inv.lines.indexOf(ex || inv.lines[inv.lines.length - 1]));
+    navigator.vibrate?.(ex ? [40, 60, 40] : 40);
+    noteAdd(it, !!ex, ex ? ex.qty : 1); toast((ex ? '⚠️ ' : '✓ ') + it.name + (ex ? ' — صار عددها ' + fmt(ex.qty) : ''), !!ex);
   };
   let payNow = 0;
   if (orig) payNow = db.vouchers.filter(v => v.inv === orig.id).reduce((x, v) => x + num(v.amount), 0);
@@ -1018,14 +1055,16 @@ V.invoice = (id, q, view) => {
       if (![...sel.options].some(o => o.value === r.party)) sel.add(new Option(accName(r.party), r.party));
       sel.value = r.party; $('[name="pay"]', view).value = 'credit'; toggles();
     }
+    let hl = null;
     r.lines.forEach(({ item, qty }) => {
       lastId = item;
       const it = db.items.find(x => x.id === item); if (!it) return;
       const ex = inv.lines.find(l => l.item === item);
-      if (ex) ex.qty = num(ex.qty) + qty;
+      if (ex) { ex.qty = num(ex.qty) + qty; inv.lines.splice(inv.lines.indexOf(ex), 1); inv.lines.push(ex); }
       else inv.lines.push({ item, qty, price: toDoc(basePrice(it)), cp: it.consumerPrice ? toDoc(num(it.consumerPrice)) : '' });
+      if (r.lines.length === 1) { hl = inv.lines.indexOf(ex || inv.lines[inv.lines.length - 1]); noteAdd(it, !!ex, ex ? ex.qty : qty); }
     });
-    payNow = r.pay || 0; showPay(); draw();
+    payNow = r.pay || 0; showPay(); draw(hl);
     if (r.lines.length > 1 || r.skipped) toast(`انضاف ${r.lines.length} مادة${r.skipped ? ` — ${r.skipped} سطر ما انضاف` : ''}`);
   };
   const addByCode = code => { const it = findByCode(code); if (it) addItem(it); else toast('لا توجد مادة بهذا الباركود: ' + code, 1); };
@@ -1086,6 +1125,7 @@ V.invoice = (id, q, view) => {
     const exact = findByCode(c);
     if (exact) pick(exact);
     else if (matches.length === 1) pick(matches[0]);
+    else if (matches.length > 1) { sugg.hidden = false; toast(`في ${matches.length} مواد بهالاسم — اختار وحدة من القائمة`, 1); }
     else if (!matches.length) {
       smartRes = smart(c);
       if (smartRes && smartRes.m.it && smartRes.m.sure) addSmart(smartRes.m.it);
@@ -1136,7 +1176,9 @@ V.invoice = (id, q, view) => {
       inv.cur = to; toggles(); draw();
     }
   };
-  const doSave = andNew => {
+  let savedAt = 0;
+  const doSave = (andNew, print) => {
+    if (Date.now() - savedAt < 2000) return; // منع الحفظ المكرر بكبستين ورا بعض
     const lines = inv.lines.filter(l => l.item && num(l.qty) > 0).map(l => ({ item: l.item, qty: num(l.qty), price: num(l.price), cp: num(l.cp) }));
     if (!lines.length) return toast('أضف مادة واحدة على الأقل بكمية صحيحة', 1);
     const pay = val('pay'), party = val('party'), cashAcc = val('cashAcc');
@@ -1151,7 +1193,7 @@ V.invoice = (id, q, view) => {
         const before = orig ? orig.lines.filter(l => l.item === it).reduce((s, l) => s + num(l.qty), 0) : 0;
         return (st[it]?.qty || 0) + before < qn;
       });
-      if (short.length && !confirm('الكمية المطلوبة أكبر من المتوفر في المستودع لبعض المواد:\n' + short.map(([it]) => db.items.find(x => x.id === it)?.name).join('، ') + '\nهل تريد المتابعة؟')) return;
+      if (short.length && !confirm('الكمية المطلوبة أكبر من المتوفر في المستودع لبعض المواد:\n' + short.map(([it]) => db.items.find(x => x.id === it)?.name).join('، ') + '\nهل تريد المتابعة؟')) return toast('⛔ ما انحفظت الفاتورة — كبّس حفظ ووافق إذا بدك تكمّل', 1);
     }
     const out = { ...inv, date: val('date'), pay, party, cashAcc: pay === 'cash' ? cashAcc : '', cur: inv.cur, rate: inv.cur === 'fx' ? rate() : '', discount: num(val('discount')), addition: num(val('addition')), addNote: val('addNote').trim(), note: val('note'), lines };
     if (!orig) { out.id = uid(); out.no = nextNo(out.type); out.created = Date.now(); db.invoices.push(out); }
@@ -1167,8 +1209,11 @@ V.invoice = (id, q, view) => {
     }
     const keep = pv > 0 ? linked[0] : null;
     if (linked.some(v => v !== keep)) db.vouchers = db.vouchers.filter(v => v.inv !== out.id || v === keep);
-    save(); toast('تم حفظ الفاتورة رقم ' + out.no);
-    go(andNew ? '#/invoice/new?type=' + out.type : '#/invoice/' + out.id);
+    savedAt = Date.now();
+    if (!orig) dropDraft();
+    save(); navigator.vibrate?.([60, 40, 60]); toast(`✅ انحفظت الفاتورة رقم ${out.no} — ${lines.length} مادة`);
+    go(andNew ? '#/invoice/new?type=' + out.type : '#/invoice/' + out.id + '?saved=1');
+    if (print && window.Receipt) Receipt.printDirect(out);
   };
   const step = (i, d) => {
     const l = inv.lines[+i]; const nq = r2(num(l.qty) + d);
@@ -1184,13 +1229,16 @@ V.invoice = (id, q, view) => {
     inc: i => step(i, 1),
     dec: i => step(i, -1),
     rmLine: i => { inv.lines.splice(+i, 1); draw(); },
+    clearAll: () => { if (inv.lines.length && !confirm('تفريغ الفاتورة ومسح كل المواد اللي فيها؟')) return; dropDraft(); inv.lines = []; route(); },
     save: () => doSave(false),
     saveNew: () => doSave(true),
+    savePrint: () => doSave(false, true),
     print: () => printDoc(invoiceHtml(orig)),
     wa: () => waSend(acc(orig.party), waInvoiceText(orig)),
     receipt: () => window.Receipt && Receipt.open(orig),
     del: () => { if (!confirm('حذف الفاتورة نهائياً؟ سيتم عكس أثرها على الحسابات والمستودع.')) return; db.invoices = db.invoices.filter(x => x !== orig); db.vouchers = db.vouchers.filter(v => v.inv !== orig.id); save(); toast('تم الحذف'); go('#/invoices'); },
   });
+  if (draftPay) payNow = draftPay;
   $('[name=payment]', view).value = payNow || '';
   toggles(); draw();
   // للأوامر الصوتية
@@ -1654,7 +1702,10 @@ if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
   navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(r => r.update()).catch(() => {});
   // عند وصول نسخة جديدة: إعادة تحميل الصفحة مرة واحدة لتظهر التحديثات
   let reloaded = false; const hadCtrl = !!navigator.serviceWorker.controller;
-  navigator.serviceWorker.addEventListener('controllerchange', () => { if (reloaded || !hadCtrl) return; reloaded = true; location.reload(); });
+  // ما منعمل إعادة تحميل وإنت عم تكتب فاتورة أو قيد — منستنى لتطلع منها
+  const busyNow = () => /^#\/(invoice|entry)\//.test(location.hash) || $('#dlg').open;
+  const doReload = () => { if (reloaded) return; if (busyNow()) return window.addEventListener('hashchange', doReload, { once: true }); reloaded = true; location.reload(); };
+  navigator.serviceWorker.addEventListener('controllerchange', () => { if (!hadCtrl) return; doReload(); });
 }
 if (navigator.storage?.persist) navigator.storage.persist().catch(() => {});
 let deferredPrompt = null;
