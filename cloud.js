@@ -84,6 +84,11 @@ const Cloud = (() => {
 
   /* ---------- رفع وتنزيل ---------- */
   async function push() {
+    // موبايل المندوب (وضع البيّاع) بيرفع فواتيره وسنداتها بس — ما بيلمس المواد ولا الحسابات ولا الإعدادات
+    // (هيك ما بيرجّع سعر قديم فوق تعديلات المدير)
+    if (typeof isSeller === 'function' && isSeller()) {
+      for (const k of Object.keys(st.dirty)) if (!/^(invoices|vouchers|seq)\//.test(k)) delete st.dirty[k];
+    }
     const keys = Object.keys(st.dirty); if (!keys.length) return;
     const cur = recs(), sent = {};
     const rows = keys.map(k => {

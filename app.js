@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '6.22';
+const APP_VERSION = '6.23';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -166,6 +166,7 @@ const priceBad = (sell, buy) => num(sell) > 0 && num(buy) > 0 && Math.abs(num(se
 const priceBadMsg = (name, sell, buy) => `لازم تتعدّل الأسعار${name ? ': ' + name : ''} — سعر الشراء ${fmt(num(buy))} وسعر المبيع ${fmt(num(sell))}، والفرق بينهن لازم ما يزيد عن 20٪ (سعر الشراء بين ${fmt(r2(num(sell) * (1 - MAX_GAP)))} و ${fmt(r2(num(sell) * (1 + MAX_GAP)))})`;
 function fillPrices(it, salePrice) {
   let ch = false;
+  if (isSeller()) return ch; // المندوب ما بيعدّل بطاقات المواد
   if (!num(it.sellPrice) && num(salePrice) > 0) { it.sellPrice = r2(num(salePrice)); ch = true; }
   if (!num(it.buyPrice) && num(it.sellPrice) > 0) { it.buyPrice = r2(num(it.sellPrice) * AUTO_BUY); ch = true; }
   return ch;
