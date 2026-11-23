@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '6.52';
+const APP_VERSION = '6.53';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -424,14 +424,24 @@ const V = {};
 const NAV_MAP = { invoice: 'invoices', entry: 'journal', report: 'reports' };
 /* ------------------------- وضع البيّاع (لهالموبايل بس) ------------------------- */
 // محفوظ عالجهاز (مش بالمزامنة) — هيك بيتفعّل على موبايل الشب بس
-const SELLER_KEY = 'daftar_seller';
-const sellerCfg = () => { try { return JSON.parse(localStorage.getItem(SELLER_KEY) || 'null'); } catch (e) { return null; } };
+// «وضع البيّاع» القديم (بالرمز السري) انشال: الموبايل يلي كان عليه بيصير موبايل نقطة بيع (بالباركود والتفعيل)
+try {
+  const old = JSON.parse(localStorage.getItem('daftar_seller') || 'null');
+  if (old) {
+    const cs = JSON.parse(localStorage.getItem('daftar-cloud-v1') || '{}');
+    if (!(cs.session && cs.company && cs.owner)) { // موبايل المدير ما منقفله
+      localStorage.setItem('daftar_pos_device', '1');
+      if (old.name && !localStorage.getItem('daftar_rep_name')) localStorage.setItem('daftar_rep_name', old.name);
+    }
+    localStorage.removeItem('daftar_seller');
+  }
+} catch (e) { /* */ }
 // وضع البيّاع: إما متفعّل يدوي عالموبايل، أو تلقائي لأي حساب عضو بالشركة مش صاحبها (المندوب)
 const autoSeller = () => !!(window.Cloud && Cloud.info && Cloud.info().member);
-const isSeller = () => !!sellerCfg() || autoSeller();
+const isSeller = () => autoSeller();
 const REP_KEY = 'daftar_rep_name';
 const repName = () => { try { return localStorage.getItem(REP_KEY) || ''; } catch (e) { return ''; } };
-const myRep = () => (isSeller() && ((sellerCfg() || {}).name || repName() || (window.Cloud && Cloud.info().email) || 'مندوب')) || '';
+const myRep = () => (isSeller() && (repName() || (window.Cloud && Cloud.info().email) || 'مندوب')) || '';
 const repTag = i => (i && i.rep ? ` — مندوب: ${i.rep}` : '');
 // صندوق خاص لكل مندوب (بينعمل عند المدير لما يفعّل موبايله، وبيوصل للمندوب بالمزامنة)
 const myBox = () => { const n = myRep(); return n ? db.accounts.find(a => a.repBox === n) : null; };
@@ -467,28 +477,7 @@ function applySellerUI() {
   const tt = document.getElementById('topTitle');
   if (on || posDevice()) { if (tt) tt.textContent = '🧑‍💼 نقطة البيع'; document.title = 'نقطة البيع' + (myRep() ? ' — ' + myRep() : ''); }
   else { if (tt) tt.textContent = 'دفتر'; document.title = 'دفتر'; }
-  let b = document.getElementById('sellerExit');
-  // حساب المندوب (عضو بالشركة): ما في خروج أبداً
-  if (on && (!sellerCfg() || autoSeller())) { if (b) b.remove(); return; }
-  if (on && !b) {
-    b = document.createElement('button'); b.id = 'sellerExit'; b.className = 'install'; b.textContent = '🔓 خروج من وضع البيّاع';
-    b.onclick = () => { const p = prompt('الرمز السري للخروج من وضع البيّاع:'); if (p == null) return; if (p.trim() !== String(sellerCfg().pin)) return toast('الرمز غلط', 1); localStorage.removeItem(SELLER_KEY); applySellerUI(); toast('✓ رجعت لوضع المدير'); route(); };
-    $('#nav').after(b);
-  } else if (!on && b) b.remove();
-}
-function sellerSetup(preName) {
-  modal('🧑‍💼 تفعيل وضع البيّاع على هالموبايل', `<p class="muted">بوضع البيّاع بيقدر يعمل فواتير مبيع بس. ما بيشوف حسابات الزباين وأرصدتهم، ولا التقارير والأرباح والإعدادات، وما بيقدر يحذف ولا يعدّل المواد.<br>للخروج بيلزم الرمز السري يلي رح تحطه هلق — <b>لا تعطيه للشب</b>.</p>` +
-    fields([{ k: 'name', l: 'اسم المندوب (بيطلع عفواتيره)', req: 1, full: 1, ph: 'محمد صعوبي' }, { k: 'pin', l: 'رمز سري (4 أرقام أو أكتر)', t: 'password', req: 1 }, { k: 'pin2', l: 'أعد كتابة الرمز', t: 'password', req: 1 }], { name: preName || '' }), {
-    saveText: 'تفعيل',
-    onSave: d => {
-      const p = String(d.pin || '').trim();
-      if (p.length < 4) { toast('الرمز لازم يكون 4 أرقام أو أكتر', 1); return false; }
-      if (p !== String(d.pin2 || '').trim()) { toast('الرمزين مش متطابقين', 1); return false; }
-      const nm = String(d.name || '').trim(); if (!nm) { toast('اكتب اسم المندوب', 1); return false; }
-      localStorage.setItem(SELLER_KEY, JSON.stringify({ pin: p, name: nm, at: Date.now() }));
-      applySellerUI(); toast('✓ تفعّل وضع البيّاع'); go('#/');
-    },
-  });
+  const b = document.getElementById('sellerExit'); if (b) b.remove();
 }
 
 // مساحة التخزين على هالموبايل: بيانات البرنامج، والمستعمل من المسموح
@@ -723,7 +712,8 @@ V.pos = V.sellersetup = (id, q, view) => {
   view.innerHTML = head(`🧑‍💼 تجهيز نقطة البيع${name ? ' — ' + esc(name) : ''}`) + `
   <div class="card">
     ${ownerIn ? `<p class="bad"><b>⚠️ هالموبايل مسجّل دخول بحساب المدير (${esc(info.email || '')}).</b><br>لحتى يصير نقطة بيع: اكبس «تسجيل الخروج» تحت، وبعدين سجّل دخول بإيميل المندوب.</p>${posDevice() ? `<p><button class="btn" id="posUnlock">↩️ هاد موبايل المدير — رجّع دفتر كامل</button></p>` : ''}` :
-    `<p class="muted">سجّل دخول بإيميل المندوب وكلمة سره ← <b>دخول</b> (أو «إنشاء حساب جديد» إذا أول مرة). بعدين اكبس <b>📂 فتح</b> على اسم الشركة.<br>⚠️ <b>لا تكبس «إنشاء ورفع بياناتي»</b>.<br>إذا ما طلعت الشركة: من موبايل المدير ← الإعدادات ← 👤 إضافة مستخدم ← إيميل المندوب، وارجع لهون.</p>`}
+    `<p><b>📷 الأسهل:</b> من موبايل المدير ← الإعدادات ← «باركود نقطة البيع» ← صوّر الباركود بهالموبايل، والمدير بيفعّله.</p>
+    <p class="muted">أو: سجّل دخول بإيميل المندوب وكلمة سره ← <b>دخول</b> (أو «إنشاء حساب جديد» إذا أول مرة). بعدين اكبس <b>📂 فتح</b> على اسم الشركة.<br>⚠️ <b>لا تكبس «إنشاء ورفع بياناتي»</b>.<br>إذا ما طلعت الشركة: من موبايل المدير ← الإعدادات ← 👤 إضافة مستخدم ← إيميل المندوب، وارجع لهون.</p>`}
     <div id="cloudCard"></div></div>`;
   if (window.Cloud) Cloud.card($('#cloudCard', view)); else $('#cloudCard', view).remove();
   const ul = $('#posUnlock', view);
@@ -753,7 +743,7 @@ function sellerHome(view) {
   <p class="muted" style="text-align:center;margin-top:14px">الإصدار ${APP_VERSION}${window.Cloud && Cloud.info().email && !/@pos\.daftar\.app$/.test(Cloud.info().email) ? ` — ${esc(Cloud.info().email)}` : ''}</p>
   <p style="text-align:center;margin-top:4px"><button class="btn" style="font-size:12px;opacity:.7" data-act="boss">🔑 دخول المدير</button></p>`;
   if (window.Cloud && !Cloud.info().linked) { const c = document.createElement('div'); c.className = 'card'; view.appendChild(c); Cloud.card(c); }
-  if (!(sellerCfg() || {}).name && !repName()) {
+  if (!repName()) {
     modal('🧑‍💼 اسم المندوب', '<p class="muted">اكتب اسمك مرة وحدة — بيطلع على كل فواتيرك.</p>' + fields([{ k: 'name', l: 'اسم المندوب', req: 1, full: 1 }]), {
       saveText: 'حفظ', onSave: d => { const n = String(d.name || '').trim(); if (!n) return false; localStorage.setItem(REP_KEY, n); route(); },
     });
@@ -2345,11 +2335,10 @@ V.settings = (id, q, view) => {
     <div class="form-actions"><button class="btn pri">حفظ الإعدادات</button></div>
   </form>
   <div class="card" id="cloudCard"></div>
-  <div class="card"><h3>🧑‍💼 وضع البيّاع (نقطة بيع)</h3>
-    <p class="muted">فعّله على موبايل الشب يلي بيشتغل معك (بعد ما تربطه بشركتك من المزامنة السحابية): بيصير يبيع بس، بلا حسابات زباين ولا تقارير ولا أرباح ولا إعدادات ولا حذف. بيتفعّل على هالموبايل بس.</p>
+  <div class="card"><h3>🧑‍💼 نقطة البيع (موبايلات المندوبين)</h3>
     <p class="muted">📷 <b>الباركود</b>: المندوب بيصوّره بموبايله ← بيوصلك طلب ← بتكبس «تفعيل» ← بتفتح عنده نقطة البيع بس. بلا إيميل ولا كلمة سر.</p>
     <div id="posDevs"></div>
-    <div class="acts"><button class="btn pri" data-act="posqr">📷 باركود نقطة البيع لموبايل المندوب</button><button class="btn" data-act="repbox">💰 صندوق لمندوب</button><button class="btn" data-act="seller">🔒 تفعيل وضع البيّاع على هالموبايل</button></div>
+    <div class="acts"><button class="btn pri" data-act="posqr">📷 باركود نقطة البيع لموبايل المندوب</button><button class="btn" data-act="repbox">💰 صندوق لمندوب</button></div>
   </div>
   <div class="card"><h3>النسخ الاحتياطي</h3>
     <p class="muted">البيانات محفوظة على هذا الجهاز فقط داخل المتصفح. خذ نسخة احتياطية بانتظام واحفظها في مكان آمن، ويمكنك نقلها لجهاز آخر.</p>
@@ -2394,7 +2383,6 @@ V.settings = (id, q, view) => {
   };
   onAct(view, {
     noLogo: () => { db.settings.logo = ''; save(); route(); },
-    seller: () => sellerSetup(),
     posqr: () => posQR(),
     repbox: () => repBoxDialog(),
     export: () => {
