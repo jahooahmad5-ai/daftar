@@ -209,3 +209,40 @@ begin
 end $$;
 revoke execute on function public.take_no(uuid, text, bigint) from public, anon;
 grant execute on function public.take_no(uuid, text, bigint) to authenticated;
+
+-- ===================== تنظيف الحسابات الوهمية =====================
+-- حساب ما إله شركة، ولا هو عضو، ولا بعت طلب نقطة بيع = حساب وهمي/مهجور:
+--   حسابات نقطة البيع التلقائية (pos-…@pos.daftar.app) بتنمسح بعد يوم، وغيرها بعد 7 أيام
+create or replace function public.cleanup_orphan_users() returns integer
+language plpgsql security definer set search_path = public, auth as $$
+declare n integer;
+begin
+  delete from auth.users u
+  where u.created_at < now() - (case when u.email like 'pos-%@pos.daftar.app' then interval '1 day' else interval '7 days' end)
+    and not exists (select 1 from public.companies c where c.owner = u.id)
+    and not exists (select 1 from public.members m where m.user_id = u.id)
+    and not exists (select 1 from public.pos_requests r where r.user_id = u.id);
+  get diagnostics n = row_count;
+  return n;
+end $$;
+revoke execute on function public.cleanup_orphan_users() from public, anon, authenticated;
+
+-- حدّ لطلبات التفعيل يلي لسا ما انقبلت: 20 لكل شركة (حتى ما حدا يعبّي القائمة بطلبات وهمية)
+create or replace function public.pending_pos(c uuid) returns integer
+language sql security definer stable set search_path = public as $$
+  select count(*)::integer from public.pos_requests where company_id = c and not approved;
+$$;
+grant execute on function public.pending_pos(uuid) to authenticated;
+drop policy if exists pos_req_insert on public.pos_requests;
+create policy pos_req_insert on public.pos_requests for insert to authenticated
+  with check (user_id = auth.uid() and approved = false and public.pending_pos(company_id) < 20);
+
+-- التنظيف كل يوم الساعة 3:17 الصبح (إذا pg_cron متوفر — موجود بـ Supabase)
+do $$ begin
+  if exists (select 1 from pg_available_extensions where name = 'pg_cron') then
+    create extension if not exists pg_cron;
+    perform cron.schedule('daftar-cleanup-orphans', '17 3 * * *', 'select public.cleanup_orphan_users()');
+  end if;
+exception when others then
+  raise notice 'ما قدرنا نفعّل التنظيف اليومي (pg_cron): % — فيك تشغّل select public.cleanup_orphan_users(); بإيدك', sqlerrm;
+end $$;

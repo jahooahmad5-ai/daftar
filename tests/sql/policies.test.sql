@@ -48,3 +48,32 @@ select pg_temp.expect('price unchanged', (select data->>'sellPrice' from records
 select pg_temp.expect('number continues from device max', pg_temp.run('boss', $$select take_no('11111111-1111-1111-1111-111111111111','sale',40)::text$$), '41');
 select pg_temp.expect('next number', pg_temp.run('boss', $$select take_no('11111111-1111-1111-1111-111111111111','sale',40)::text$$), '42');
 select pg_temp.expect('stale device still unique', pg_temp.run('rep', $$select take_no('11111111-1111-1111-1111-111111111111','sale',30)::text$$), '43');
+
+-- تنظيف الحسابات الوهمية
+insert into auth.users (id, email, created_at) values
+  ('00000000-0000-0000-0000-0000000000d1', 'pos-old@pos.daftar.app', now() - interval '2 days'),   -- وهمي قديم ← ينمسح
+  ('00000000-0000-0000-0000-0000000000d2', 'pos-new@pos.daftar.app', now() - interval '2 hours'),  -- جديد ← يضل
+  ('00000000-0000-0000-0000-0000000000d3', 'someone@mail', now() - interval '3 days'),             -- عادي عمره 3 أيام ← يضل
+  ('00000000-0000-0000-0000-0000000000d4', 'spam@mail', now() - interval '10 days'),               -- عادي قديم ← ينمسح
+  ('00000000-0000-0000-0000-0000000000d5', 'pos-wait@pos.daftar.app', now() - interval '5 days');  -- بعت طلب ← يضل
+insert into pos_requests (company_id, user_id, name) values ('11111111-1111-1111-1111-111111111111', '00000000-0000-0000-0000-0000000000d5', 'علي');
+update auth.users set created_at = now() - interval '30 days' where email in ('boss@test', 'rep@test', 'stranger@test');
+select pg_temp.expect('rep cannot run cleanup', pg_temp.run('rep', $$select cleanup_orphan_users()::text$$), 'denied');
+select pg_temp.expect('cleanup removes orphans', public.cleanup_orphan_users()::text, '3');
+select pg_temp.expect('kept users', (select string_agg(email, ',' order by email) from auth.users), 'boss@test,pos-new@pos.daftar.app,pos-wait@pos.daftar.app,rep@test,someone@mail');
+
+-- حد طلبات التفعيل
+do $$ begin
+  for i in 1..19 loop
+    insert into auth.users (id, email) values (('00000000-0000-0000-0001-' || lpad(i::text, 12, '0'))::uuid, 'pos-' || i || '@pos.daftar.app');
+    perform set_config('test.uid', '00000000-0000-0000-0001-' || lpad(i::text, 12, '0'), true);
+    set local role authenticated;
+    insert into pos_requests (company_id, name) values ('11111111-1111-1111-1111-111111111111', 'x' || i);
+    reset role;
+  end loop;
+end $$;
+insert into auth.users (id, email) values ('00000000-0000-0000-0001-000000000099', 'pos-99@pos.daftar.app');
+create or replace function pg_temp.run_as(uid text, q text) returns text language plpgsql as $f$
+begin perform set_config('test.uid', uid, true); execute 'set local role authenticated'; execute q; reset role; return 'ok';
+exception when others then reset role; return 'denied'; end $f$;
+select pg_temp.expect('21st pending request blocked', pg_temp.run_as('00000000-0000-0000-0001-000000000099', $$insert into pos_requests (company_id, name) values ('11111111-1111-1111-1111-111111111111', 'spam')$$), 'denied');
