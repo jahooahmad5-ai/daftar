@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '6.14';
+const APP_VERSION = '6.15';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -158,6 +158,14 @@ const suppliers = () => postable().filter(a => isUnder(a.id, 'suppliers'));
 // «زبون عام»: زبون ثابت للبيع المباشر — دايماً نقدي وما بيصير عليه حساب (ما بيكون آجل أبداً)
 const WALKIN_NAME = 'زبون عام';
 const MAX_UP = 0.10; // أعلى زيادة مسموحة على سعر المبيع ببطاقة المادة
+const AUTO_BUY = 0.80; // إذا نسيت سعر الشراء: سعر الشراء = سعر المبيع ناقص 20٪
+// تكميل أسعار البطاقة الناقصة: سعر المبيع من سعر فاتورة الزبون، وسعر الشراء من سعر المبيع
+function fillPrices(it, salePrice) {
+  let ch = false;
+  if (!num(it.sellPrice) && num(salePrice) > 0) { it.sellPrice = r2(num(salePrice)); ch = true; }
+  if (!num(it.buyPrice) && num(it.sellPrice) > 0) { it.buyPrice = r2(num(it.sellPrice) * AUTO_BUY); ch = true; }
+  return ch;
+}
 const isWalkin = id => { const a = acc(id); return !!a && (a.walkin || a.id === 'walkin'); };
 function ensureWalkin() {
   let a = customers().find(x => x.walkin || x.id === 'walkin')
@@ -908,6 +916,7 @@ function itemForm(it, defGroup, after) {
       const aliases = String(d.aliases || '').split(/\n+/).map(x => x.trim()).filter(Boolean);
       const aliasKeys = window.OrderPaste ? [...new Set(aliases.map(OrderPaste.keyOfText).filter(Boolean))] : [];
       const o = { code, barcodes, aliases, aliasKeys, group: d.group || null, name: d.name.trim(), unit: d.unit.trim(), minQty: num(d.minQty), buyPrice: num(d.buyPrice), sellPrice: num(d.sellPrice), consumerPrice: num(d.consumerPrice), openQty: num(d.openQty), openCost: num(d.openCost) };
+      fillPrices(o);
       if (it) Object.assign(it, o); else db.items.push({ id: uid(), ...o });
       save(); toast('تم الحفظ');
       if (after) after(it); else route();
@@ -1296,6 +1305,7 @@ V.invoice = (id, q, view) => {
           buyPrice: 0, sellPrice: 0, consumerPrice: r2(num(d.consumerPrice) * R), openQty: 0, openCost: 0 };
         it[pk] = r2(num(d.price) * R);
         it[sideSale ? 'buyPrice' : 'sellPrice'] = r2(num(d.other) * R);
+        fillPrices(it);
         db.items.push(it); items.push(it); save();
         scanIn.value = '';
         fromPaste({ party: '', lines: [{ item: it.id, qty: num(d.qty) || 1 }], pay: payNow });
@@ -1471,6 +1481,8 @@ V.invoice = (id, q, view) => {
         return toast(`يجب تعديل سعر مبيع المادة أولاً: ${it.name} — سعرها بالبطاقة ${fmt(num(it.sellPrice))}، وأعلى سعر مسموح ${fmt(r2(num(it.sellPrice) * (1 + MAX_UP)))}`, 1);
       }
     }
+    // مواد بلا سعر مبيع ببطاقتها: بياخد سعرها من فاتورة الزبون (وسعر الشراء = المبيع − 20٪ إذا ناقص)
+    if (inv.type === 'sale') lines.forEach(l => { const it = db.items.find(x => x.id === l.item); if (it) fillPrices(it, toBase(l.price)); });
     const out = { ...inv, date: val('date'), pay, party, cashAcc: pay === 'cash' ? cashAcc : '', cur: inv.cur, rate: inv.cur === 'fx' ? rate() : '', discount: num(val('discount')), addition: num(val('addition')), addNote: val('addNote').trim(), note: val('note'), lines };
     if (!orig) { out.id = uid(); out.no = nextNo(out.type); out.created = Date.now(); db.invoices.push(out); }
     else {
