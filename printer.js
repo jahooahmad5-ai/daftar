@@ -311,6 +311,40 @@ const Receipt = (() => {
     setTimeout(() => window.print(), 150);
   }
 
+  /* ---------- PDF: صفحة وحدة بعرض ورق الإيصال، فيها صورة الإيصال (بلا مكتبات وبيشتغل بلا نت) ---------- */
+  function pdfBlob(canvas) {
+    const mm = String(db.settings.paperWidth) === '58' ? 58 : 80;
+    const W = mm * 72 / 25.4, H = W * canvas.height / canvas.width; // بالنقاط
+    // خلفية بيضا (الـ JPEG ما بيدعم الشفافية)
+    const c = document.createElement('canvas'); c.width = canvas.width; c.height = canvas.height;
+    const x = c.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, c.width, c.height); x.drawImage(canvas, 0, 0);
+    const b64 = c.toDataURL('image/jpeg', 0.92).split(',')[1], bin = atob(b64);
+    const img = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) img[i] = bin.charCodeAt(i);
+    const enc = new TextEncoder(), parts = [], offs = []; let len = 0;
+    const add = d => { const u = typeof d === 'string' ? enc.encode(d) : d; parts.push(u); len += u.length; };
+    const obj = (n, body, stream) => {
+      offs[n] = len; add(`${n} 0 obj\n${body}\n`);
+      if (stream) { add('stream\n'); add(stream); add('\nendstream\n'); }
+      add('endobj\n');
+    };
+    const f = v => v.toFixed(2);
+    const content = `q ${f(W)} 0 0 ${f(H)} 0 0 cm /Im0 Do Q`;
+    add('%PDF-1.4\n');
+    obj(1, '<< /Type /Catalog /Pages 2 0 R >>');
+    obj(2, '<< /Type /Pages /Kids [3 0 R] /Count 1 >>');
+    obj(3, `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${f(W)} ${f(H)}] /Resources << /XObject << /Im0 4 0 R >> >> /Contents 5 0 R >>`);
+    obj(4, `<< /Type /XObject /Subtype /Image /Width ${c.width} /Height ${c.height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${img.length} >>`, img);
+    obj(5, `<< /Length ${content.length} >>`, content);
+    const xref = len;
+    add(`xref\n0 6\n0000000000 65535 f \n${[1, 2, 3, 4, 5].map(n => String(offs[n]).padStart(10, '0') + ' 00000 n \n').join('')}trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`);
+    return new Blob(parts, { type: 'application/pdf' });
+  }
+  async function shareFile(blob, name) {
+    const f = new File([blob], name, { type: blob.type });
+    if (navigator.canShare && navigator.canShare({ files: [f] })) { try { await navigator.share({ files: [f] }); } catch (e) { /* انلغت */ } return; }
+    const u = URL.createObjectURL(blob), el = document.createElement('a'); el.href = u; el.download = name; el.click(); setTimeout(() => URL.revokeObjectURL(u), 3000);
+  }
+
   /* ---------- الواجهة ---------- */
   async function open(inv) {
     await loadLogo();
@@ -323,6 +357,7 @@ const Receipt = (() => {
         ${hasBT ? '<button type="button" class="btn" id="rcBt">🔵 بلوتوث مباشر من المتصفح</button>' : ''}
         <button type="button" class="btn" id="rcSys">🖨 طباعة أندرويد</button>
         <button type="button" class="btn" id="rcShare">📤 مشاركة كصورة</button>
+        <button type="button" class="btn" id="rcPdf">📄 مشاركة PDF</button>
         ${hasBT ? '<button type="button" class="btn" id="rcPick" style="font-size:13px">🔄 اختيار طابعة بلوتوث تانية</button>' : ''}
       </div>
       <p class="muted" id="rcMsg" style="margin:8px 0 0">أول مرة: نزّل تطبيق <b>RawBT</b> من Play Store، افتحه واختار طابعتك من الإعدادات، بعدها ارجع واضغط «طباعة عبر RawBT».</p>`);
@@ -349,6 +384,7 @@ const Receipt = (() => {
     $('#rcSys', d).onclick = () => sysPrint(canvas);
     const bt = $('#rcBt', d); if (bt) bt.onclick = () => go(false);
     const pk = $('#rcPick', d); if (pk) pk.onclick = () => { dev = null; ch = null; go(true); };
+    $('#rcPdf', d).onclick = () => { try { shareFile(pdfBlob(canvas), `فاتورة-${inv.no}.pdf`); } catch (e) { toast('ما زبط الـ PDF: ' + (e && e.message || e), 1); } };
     $('#rcShare', d).onclick = () => canvas.toBlob(async blob => {
       const f = new File([blob], `فاتورة-${inv.no}.png`, { type: 'image/png' });
       if (navigator.canShare && navigator.canShare({ files: [f] })) { try { await navigator.share({ files: [f] }); } catch (e) {} }
@@ -374,6 +410,6 @@ const Receipt = (() => {
       else { toast('❌ ما زبطت الطباعة بالبلوتوث — الفاتورة محفوظة، جرّب طريقة تانية', 1); open(inv); }
     }
   }
-  return { open, printDirect, warm, pill, build: inv => build(inv), escpos, loadLogo, balances };
+  return { open, pdfBlob, printDirect, warm, pill, build: inv => build(inv), escpos, loadLogo, balances };
 })();
 window.Receipt = Receipt;
