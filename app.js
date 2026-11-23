@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '6.28';
+const APP_VERSION = '6.29';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -424,12 +424,15 @@ const repName = () => { try { return localStorage.getItem(REP_KEY) || ''; } catc
 const myRep = () => (isSeller() && ((sellerCfg() || {}).name || repName() || (window.Cloud && Cloud.info().email) || 'مندوب')) || '';
 const repTag = i => (i && i.rep ? ` — مندوب: ${i.rep}` : '');
 const SELLER_ROUTES = ['home', 'invoices', 'invoice'];
+// موبايل انفتح من رابط/باركود نقطة البيع: بينقفل عليها من أول فتحة (حتى قبل تسجيل الدخول)
+const POS_DEV_KEY = 'daftar_pos_device';
+const posDevice = () => { try { return localStorage.getItem(POS_DEV_KEY) === '1'; } catch (e) { return false; } };
 function applySellerUI() {
   const on = isSeller();
-  document.body.classList.toggle('seller', on);
+  document.body.classList.toggle('seller', on || posDevice());
   // موبايل المندوب: بيبيّن «نقطة البيع» بس، بلا اسم دفتر ولا قائمة
   const tt = document.getElementById('topTitle');
-  if (on) { if (tt) tt.textContent = '🧑‍💼 نقطة البيع'; document.title = 'نقطة البيع' + (myRep() ? ' — ' + myRep() : ''); }
+  if (on || posDevice()) { if (tt) tt.textContent = '🧑‍💼 نقطة البيع'; document.title = 'نقطة البيع' + (myRep() ? ' — ' + myRep() : ''); }
   else { if (tt) tt.textContent = 'دفتر'; document.title = 'دفتر'; }
   let b = document.getElementById('sellerExit');
   // حساب المندوب (عضو بالشركة): ما في خروج أبداً
@@ -471,6 +474,9 @@ function route() {
     const bad = !SELLER_ROUTES.includes(key)
       || (key === 'invoice' && (id === 'new' ? (q.type || 'sale') !== 'sale' : (() => { const iv = db.invoices.find(x => x.id === id); return !iv || iv.type !== 'sale' || iv.rep !== myRep(); })()));
     if (bad) { if (location.hash && location.hash !== '#/') { toast('🔒 هالصفحة مسكّرة بوضع البيّاع', 1); } history.replaceState(null, '', '#/'); key = 'home'; }
+  } else if (posDevice() && key !== 'pos' && key !== 'sellersetup') {
+    // موبايل نقطة بيع لسا ما سجّل دخول المندوب: ما بيشوف دفتر أبداً، بس صفحة التجهيز
+    history.replaceState(null, '', '#/pos'); key = 'pos';
   }
   const nav = NAV_MAP[key] || key;
   $$('#nav a').forEach(a => a.classList.toggle('on', a.dataset.r === nav));
@@ -586,12 +592,16 @@ V.pos = V.sellersetup = (id, q, view) => {
   const info = window.Cloud ? Cloud.info() : {};
   if (info.member) return go('#/'); // حساب المندوب: دغري نقطة البيع
   const ownerIn = info.linked && !info.member;
+  if (!ownerIn) try { localStorage.setItem(POS_DEV_KEY, '1'); } catch (e) { /* */ }
+  applySellerUI();
   view.innerHTML = head(`🧑‍💼 تجهيز نقطة البيع${name ? ' — ' + esc(name) : ''}`) + `
   <div class="card">
-    ${ownerIn ? `<p class="bad"><b>⚠️ هالموبايل مسجّل دخول بحساب المدير (${esc(info.email || '')}).</b><br>لحتى يصير نقطة بيع: اكبس «تسجيل الخروج» تحت، وبعدين سجّل دخول بإيميل المندوب.</p>` :
+    ${ownerIn ? `<p class="bad"><b>⚠️ هالموبايل مسجّل دخول بحساب المدير (${esc(info.email || '')}).</b><br>لحتى يصير نقطة بيع: اكبس «تسجيل الخروج» تحت، وبعدين سجّل دخول بإيميل المندوب.</p>${posDevice() ? `<p><button class="btn" id="posUnlock">↩️ هاد موبايل المدير — رجّع دفتر كامل</button></p>` : ''}` :
     `<p class="muted">سجّل دخول بإيميل المندوب وكلمة سره ← <b>دخول</b> (أو «إنشاء حساب جديد» إذا أول مرة). بعدين اكبس <b>📂 فتح</b> على اسم الشركة.<br>⚠️ <b>لا تكبس «إنشاء ورفع بياناتي»</b>.<br>إذا ما طلعت الشركة: من موبايل المدير ← الإعدادات ← 👤 إضافة مستخدم ← إيميل المندوب، وارجع لهون.</p>`}
     <div id="cloudCard"></div></div>`;
   if (window.Cloud) Cloud.card($('#cloudCard', view)); else $('#cloudCard', view).remove();
+  const ul = $('#posUnlock', view);
+  if (ul) ul.onclick = () => { localStorage.removeItem(POS_DEV_KEY); applySellerUI(); toast('✓ رجع دفتر كامل على هالموبايل'); go('#/'); };
 };
 
 /* ------------------------- الرئيسية ------------------------- */
