@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '6.41';
+const APP_VERSION = '6.42';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -1268,7 +1268,9 @@ V.invoice = (id, q, view) => {
   let draftPay = 0, restored = false;
   {
     try {
-      const d = JSON.parse(localStorage.getItem(DRAFT) || 'null');
+      let d = JSON.parse(localStorage.getItem(DRAFT) || 'null');
+      // مسودة الفاتورة الجديدة بتنتسى بعد 3 ساعات (ما بتضل تطلع كل ما تفتح فاتورة)
+      if (d && !orig && !(Date.now() - num(d.at) < 3 * 3600e3)) { localStorage.removeItem(DRAFT); d = null; }
       if (d && Array.isArray(d.lines) && d.lines.length) {
         Object.assign(inv, d.inv, { lines: d.lines.filter(l => db.items.some(x => x.id === l.item)) });
         draftPay = num(d.payment); restored = orig ? true : inv.lines.length > 0;
@@ -1395,7 +1397,7 @@ V.invoice = (id, q, view) => {
     {
       try {
         if (!dirty) localStorage.removeItem(DRAFT);
-        else localStorage.setItem(DRAFT, JSON.stringify({ lines: inv.lines, payment: val('payment'), inv: fields }));
+        else localStorage.setItem(DRAFT, JSON.stringify({ lines: inv.lines, payment: val('payment'), inv: fields, at: Date.now() }));
       } catch (e) { /* */ }
     }
     // عدد القطع: صغير فوق عاليسار (بشريط البرنامج)، وبالكمبيوتر جنب العنوان
