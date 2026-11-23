@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '6.2';
+const APP_VERSION = '6.3';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -155,6 +155,18 @@ const postable = () => db.accounts.filter(a => !isGroup(a)).sort(byCode);
 const cashAccounts = () => postable().filter(a => isUnder(a.id, 'cashGroup'));
 const customers = () => postable().filter(a => isUnder(a.id, 'customers'));
 const suppliers = () => postable().filter(a => isUnder(a.id, 'suppliers'));
+// «زبون عام»: زبون ثابت للبيع المباشر — دايماً نقدي وما بيصير عليه حساب (ما بيكون آجل أبداً)
+const WALKIN_NAME = 'زبون عام';
+const isWalkin = id => { const a = acc(id); return !!a && (a.walkin || a.id === 'walkin'); };
+function ensureWalkin() {
+  let a = customers().find(x => x.walkin || x.id === 'walkin')
+    || customers().find(x => String(x.name || '').replace(/\s+/g, ' ').trim() === WALKIN_NAME);
+  if (a) { if (!a.walkin) { a.walkin = true; save(); } return a; }
+  const p = acc('customers'); if (!p) return null;
+  a = { id: 'walkin', code: nextCode(p), name: WALKIN_NAME, type: p.type, parent: 'customers', group: false, walkin: true, phone: '', address: '', notes: 'زبون البيع المباشر — نقدي دائماً', aliases: [] };
+  db.accounts.push(a); save();
+  return a;
+}
 function treeOrder() { const out = []; const walk = (p, d) => children(p).forEach(a => { out.push({ a, d }); walk(a.id, d + 1); }); walk(null, 0); return out; }
 function nextCode(p) {
   const kids = children(p.id);
@@ -807,7 +819,7 @@ function zerosForm(gf) {
     localStorage.removeItem(UNDO); save(); $('#dlg').close(); toast('رجعت الأسعار'); route();
   };
 }
-function itemForm(it, defGroup) {
+function itemForm(it, defGroup, after) {
   const fl = [
     { k: 'code', l: 'رمز المادة' }, { k: 'name', l: 'اسم المادة', req: 1 },
     { k: 'group', l: 'المجموعة', t: 'select', opts: grpOpts(), full: 1 },
@@ -834,7 +846,8 @@ function itemForm(it, defGroup) {
       const aliasKeys = window.OrderPaste ? [...new Set(aliases.map(OrderPaste.keyOfText).filter(Boolean))] : [];
       const o = { code, barcodes, aliases, aliasKeys, group: d.group || null, name: d.name.trim(), unit: d.unit.trim(), minQty: num(d.minQty), buyPrice: num(d.buyPrice), sellPrice: num(d.sellPrice), consumerPrice: num(d.consumerPrice), openQty: num(d.openQty), openCost: num(d.openCost) };
       if (it) Object.assign(it, o); else db.items.push({ id: uid(), ...o });
-      save(); toast('تم الحفظ'); route();
+      save(); toast('تم الحفظ');
+      if (after) after(it); else route();
     },
   });
   const ta = $('[name=barcodes]', f);
@@ -946,7 +959,8 @@ V.invoice = (id, q, view) => {
   if (!inv.cur) inv.cur = 'base';
   if (!inv.rate) inv.rate = db.settings.rate || '';
   const sideSale = ['sale', 'saleReturn'].includes(inv.type);
-  const parties = sideSale ? customers() : suppliers();
+  const wk = sideSale ? ensureWalkin() : null;
+  const parties = sideSale ? [...(wk ? [wk] : []), ...customers().filter(a => a !== wk)] : suppliers();
   setTimeout(() => { const ps = $('[name=party]', view); if (ps) ps.dataset.kind = sideSale ? 'customers' : 'suppliers'; });
   const st = engine().stock;
   const items = [...db.items].sort(byCode);
@@ -975,7 +989,7 @@ V.invoice = (id, q, view) => {
       ${field({ k: 'date', l: 'التاريخ', t: 'date', req: 1 }, inv.date)}
       ${field({ k: 'pay', l: 'طريقة الدفع', t: 'select', opts: [['cash', 'نقدي'], ['credit', 'آجل (على الحساب)']] }, inv.pay)}
       <div id="cashWrap">${field({ k: 'cashAcc', l: 'الصندوق', t: 'select', opts: accOpts(cashAccounts()) }, inv.cashAcc)}</div>
-      ${field({ k: 'party', l: sideSale ? 'العميل' : 'المورد', t: 'select', opts: accOpts(parties, '— بدون —') }, inv.party)}
+      ${field({ k: 'party', l: sideSale ? 'العميل' : 'المورد', t: 'select', opts: accOpts(parties, sideSale ? '— اختر العميل —' : '— بدون —') }, inv.party)}
       ${field({ k: 'cur', l: 'عملة الفاتورة', t: 'select', opts: curOpts() }, inv.cur)}
       <div id="rateWrap">${field({ k: 'rate', l: `سعر الصرف (${cur()} لكل 1 ${FX().sym})`, t: 'number' }, inv.rate)}</div>
     </div>
@@ -1009,6 +1023,9 @@ V.invoice = (id, q, view) => {
   const val = n => $(`[name="${n}"]`, view).value;
   const rate = () => num(val('rate'));
   const toggles = () => {
+    const ps = $('[name=pay]', view), wkSel = sideSale && isWalkin(val('party'));
+    if (wkSel && ps.value !== 'cash') ps.value = 'cash';
+    const co = [...ps.options].find(o => o.value === 'credit'); if (co) co.disabled = wkSel;
     $('#cashWrap', view).style.visibility = val('pay') === 'cash' ? 'visible' : 'hidden';
     $('#payRow', view).style.display = $('#tRest', view).style.display = val('pay') === 'credit' ? '' : 'none';
     $('#rateWrap', view).style.visibility = inv.cur === 'fx' ? 'visible' : 'hidden';
@@ -1027,7 +1044,7 @@ V.invoice = (id, q, view) => {
     // رصيد الزبون الحالي وبعد الفاتورة (بالجديد والقديم)
     const tb = $('#tBal', view), pa = acc(val('party'));
     if (tb) {
-      if (!pa) tb.innerHTML = '';
+      if (!pa || isWalkin(pa.id)) tb.innerHTML = '';
       else {
         const sg = ['sale', 'purchase'].includes(inv.type) ? 1 : -1;
         let cb = partyBal(pa);
@@ -1072,6 +1089,7 @@ V.invoice = (id, q, view) => {
         <button class="qb" data-act="inc" data-id="${i}" aria-label="زيادة">＋</button>
         <button class="qb minus" data-act="dec" data-id="${i}" aria-label="إنقاص">−</button>
         <span class="ln-no">${i + 1}</span><b class="ln-name">${esc(it.name)}</b>
+        ${it.id ? `<button class="qb edit" data-act="editItem" data-id="${i}" aria-label="تعديل المادة" title="تعديل المادة">✏️</button>` : ''}
         <button class="qb del" data-act="rmLine" data-id="${i}" aria-label="حذف">✕</button>
       </div>
       <div class="ln-row">
@@ -1135,7 +1153,7 @@ V.invoice = (id, q, view) => {
     if (r.party) {
       const sel = $('[name="party"]', view);
       if (![...sel.options].some(o => o.value === r.party)) sel.add(new Option(accName(r.party), r.party));
-      sel.value = r.party; $('[name="pay"]', view).value = 'credit'; toggles();
+      sel.value = r.party; $('[name="pay"]', view).value = sideSale && isWalkin(r.party) ? 'cash' : 'credit'; toggles();
     }
     let hl = null;
     r.lines.forEach(({ item, qty }) => {
@@ -1327,8 +1345,14 @@ V.invoice = (id, q, view) => {
     else if (e.target.name === 'party') totals();
   };
   view.onchange = e => {
-    if (e.target.name === 'pay') { toggles(); totals(); }
-    else if (e.target.name === 'party' && sideSale && inv.lines.length) {
+    if (e.target.name === 'pay') {
+      if (e.target.value === 'credit' && sideSale && isWalkin(val('party'))) toast('«زبون عام» دايماً نقدي — للآجل اختار اسم الزبون', 1);
+      toggles(); totals();
+    }
+    else if (e.target.name === 'party' && sideSale) {
+      if (isWalkin(e.target.value)) { const wasCredit = val('pay') !== 'cash'; toggles(); totals(); if (wasCredit) toast('«زبون عام» = نقدي'); }
+      else toggles();
+      if (!inv.lines.length) return;
       let n = 0;
       inv.lines.forEach(l => { const it = db.items.find(x => x.id === l.item); if (!it) return; const np = toDoc(basePrice(it)); if (np && np !== num(l.price)) { l.price = np; n++; } });
       if (n) { draw(); toast(`💰 تغيّر سعر ${n} مادة حسب ${e.target.value ? 'آخر بيع لـ' + accName(e.target.value) : 'بطاقة المادة'}`); }
@@ -1350,6 +1374,8 @@ V.invoice = (id, q, view) => {
     const lines = inv.lines.filter(l => l.item && num(l.qty) > 0).map(l => ({ item: l.item, qty: num(l.qty), price: num(l.price), cp: num(l.cp) }));
     if (!lines.length) return toast('أضف مادة واحدة على الأقل بكمية صحيحة', 1);
     const pay = val('pay'), party = val('party'), cashAcc = val('cashAcc');
+    if (sideSale && !party) { const ps = $('[name=party]', view); ps.focus(); ps.scrollIntoView({ block: 'center' }); return toast(`لازم تختار اسم العميل قبل الحفظ (للبيع المباشر اختار «${WALKIN_NAME}»)`, 1); }
+    if (sideSale && isWalkin(party) && pay !== 'cash') return toast(`«${WALKIN_NAME}» دايماً نقدي — ما بينفع آجل`, 1);
     if (pay === 'credit' && !party) return toast(`الفاتورة الآجلة تحتاج ${sideSale ? 'عميلاً' : 'مورداً'}`, 1);
     if (pay === 'cash' && !cashAcc) return toast('اختر الصندوق', 1);
     if (!val('date')) return toast('أدخل التاريخ', 1);
@@ -1401,6 +1427,20 @@ V.invoice = (id, q, view) => {
     inc: i => step(i, 1),
     dec: i => step(i, -1),
     rmLine: i => { inv.lines.splice(+i, 1); draw(); },
+    // ✏️ تعديل بطاقة المادة من جوّا الفاتورة — بلا ما نطلع منها ولا تضيع المواد
+    editItem: i => {
+      const l = inv.lines[+i], it = l && db.items.find(x => x.id === l.item); if (!it) return;
+      const old = { sellPrice: num(it.sellPrice), buyPrice: num(it.buyPrice), consumerPrice: num(it.consumerPrice) };
+      itemForm(it, null, () => {
+        const pk = sideSale ? 'sellPrice' : 'buyPrice', pc = num(it[pk]) !== old[pk], cc = num(it.consumerPrice) !== old.consumerPrice;
+        inv.lines.forEach(x => {
+          if (x.item !== it.id) return;
+          if (pc && num(it[pk])) x.price = toDoc(num(it[pk]));
+          if (cc) x.cp = num(it.consumerPrice) ? toDoc(num(it.consumerPrice)) : '';
+        });
+        items.sort(byCode); draw(+i);
+      });
+    },
     discard: () => { dropDraft(); route(); },
     clearAll: () => { if (inv.lines.length && !confirm('تفريغ الفاتورة ومسح كل المواد اللي فيها؟')) return; dropDraft(); inv.lines = []; route(); },
     save: () => doSave(false),
@@ -1449,7 +1489,7 @@ V.invoice = (id, q, view) => {
 function voucherForm(v, type, preAcc) {
   type = v ? v.type : type;
   const isR = type === 'receipt';
-  const others = postable().filter(a => !isUnder(a.id, 'cashGroup') && a.id !== 'inventory');
+  const others = postable().filter(a => !isUnder(a.id, 'cashGroup') && a.id !== 'inventory' && (!isWalkin(a.id) || (v && v.acc === a.id)));
   const vals = v ? { cur: 'base', ...v } : { date: today(), acc: preAcc || '', cashAcc: cashAccounts()[0]?.id, amount: '', cur: 'base', rate: db.settings.rate || '' };
   if (!vals.rate) vals.rate = db.settings.rate || '';
   const fl = [
