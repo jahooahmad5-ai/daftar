@@ -101,9 +101,31 @@ drop policy if exists members_delete on public.members;
 create policy members_delete on public.members for delete to authenticated
   using (exists (select 1 from public.companies c where c.id = company_id and c.owner = auth.uid()));
 
+-- هل المستخدم الحالي صاحب الشركة؟
+create or replace function public.is_owner(c uuid) returns boolean
+language sql security definer stable set search_path = public as $$
+  select exists (select 1 from public.companies where id = c and owner = auth.uid());
+$$;
+
+-- السجلات: صاحب الشركة بيعمل كل شي. باقي الأعضاء (المندوبين) بيقروا،
+-- وبيكتبوا فواتيرهم وسنداتهم بس (لازم يكون عليها اسم مندوب)، وما بيمسحوا ولا بيعدّلوا شي مش إلهن
 drop policy if exists records_all on public.records;
-create policy records_all on public.records for all to authenticated
-  using (public.is_member(company_id)) with check (public.is_member(company_id));
+drop policy if exists records_select on public.records;
+create policy records_select on public.records for select to authenticated
+  using (public.is_member(company_id));
+drop policy if exists records_owner on public.records;
+create policy records_owner on public.records for all to authenticated
+  using (public.is_owner(company_id)) with check (public.is_owner(company_id));
+drop policy if exists records_rep_insert on public.records;
+create policy records_rep_insert on public.records for insert to authenticated
+  with check (public.is_member(company_id) and deleted = false and (
+    kind = 'seq' or (kind in ('invoices', 'vouchers') and coalesce(data->>'rep', '') <> '')));
+drop policy if exists records_rep_update on public.records;
+create policy records_rep_update on public.records for update to authenticated
+  using (public.is_member(company_id) and (
+    kind = 'seq' or (kind in ('invoices', 'vouchers') and updated_by = auth.uid() and deleted = false)))
+  with check (public.is_member(company_id) and deleted = false and (
+    kind = 'seq' or (kind in ('invoices', 'vouchers') and coalesce(data->>'rep', '') <> '')));
 
 grant usage on schema public to authenticated;
 grant select, insert, update on public.companies to authenticated;
@@ -112,6 +134,7 @@ grant select, insert, update, delete on public.records to authenticated;
 revoke execute on function public.add_member(uuid, text) from public, anon;
 grant execute on function public.add_member(uuid, text) to authenticated;
 grant execute on function public.is_member(uuid) to authenticated;
+grant execute on function public.is_owner(uuid) to authenticated;
 
 -- ===================== تفعيل موبايلات نقطة البيع =====================
 -- موبايل المندوب بيصوّر الباركود ← بيبعت طلب ← المدير بيكبس «تفعيل» من موبايله

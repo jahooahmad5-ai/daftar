@@ -99,8 +99,21 @@ const Cloud = (() => {
       sent[k] = cur[k];
       return { company_id: st.company, kind, id, data: cur[k] ? JSON.parse(cur[k]) : null, deleted: !cur[k] };
     });
+    const up = list => http('/rest/v1/records?on_conflict=company_id,kind,id', { method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=minimal' }, body: JSON.stringify(list) });
+    const denied = e => e && (e.status === 403 || e.status === 401 && /row-level|policy/i.test(e.message) || /row-level security|violates/i.test(e.message));
     for (let i = 0; i < rows.length; i += 400) {
-      await http('/rest/v1/records?on_conflict=company_id,kind,id', { method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=minimal' }, body: JSON.stringify(rows.slice(i, i + 400)) });
+      const part = rows.slice(i, i + 400);
+      try { await up(part); }
+      catch (e) {
+        if (!denied(e)) throw e;
+        // السيرفر رفض شي (مثلاً المندوب عم يعدّل فاتورة عدّلها المدير): منرفع وحدة وحدة، والمرفوض منرجّعه من السحابة
+        let bad = 0;
+        for (const r of part) {
+          try { await up([r]); }
+          catch (e2) { if (!denied(e2)) throw e2; bad++; delete st.dirty[r.kind + '/' + r.id]; sent[r.kind + '/' + r.id] = undefined; }
+        }
+        if (bad) { st.lastPull = null; saveSt(); toast(`⚠️ ${bad} تعديل ما انقبل بالسحابة (مسموح بس للمدير) — رجّعنا النسخة الأصلية`, 1); }
+      }
     }
     const now = recs();
     keys.forEach(k => { if (now[k] === sent[k]) delete st.dirty[k]; });
