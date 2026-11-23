@@ -268,23 +268,32 @@ const Receipt = (() => {
 
   /* ---------- تحويل لأوامر ESC/POS ---------- */
   // تحويل الصورة لأوامر ESC/POS — الأسطر البيضا ما منبعتها كصورة، منبعت «لفّ الورق» بس (أسرع بكتير)
-  function escpos(c) {
-    const W = c.width, H = c.height, bw = W / 8, px = c.getContext('2d').getImageData(0, 0, W, H).data;
-    const rows = new Array(H), blank = new Uint8Array(H);
-    for (let y = 0; y < H; y++) {
-      const r = new Uint8Array(bw); let any = 0;
+  // الطباعة السريعة: كل سطرين بالصورة منبعتهن سطر واحد، والطابعة بتطبعه بطول مضاعف (نص البيانات = ضعف السرعة)
+  const fastOn = () => db.settings.printFast !== '0';
+  function escpos(c, fast = fastOn()) {
+    const W = c.width, H0 = c.height, bw = W / 8, px = c.getContext('2d').getImageData(0, 0, W, H0).data;
+    let rows = new Array(H0);
+    for (let y = 0; y < H0; y++) {
+      const r = new Uint8Array(bw);
       for (let xx = 0; xx < W; xx++) {
         const i = (y * W + xx) * 4;
-        if (px[i + 3] > 0 && px[i] * 0.3 + px[i + 1] * 0.59 + px[i + 2] * 0.11 < 150) { r[xx >> 3] |= 0x80 >> (xx & 7); any = 1; }
+        if (px[i + 3] > 0 && px[i] * 0.3 + px[i + 1] * 0.59 + px[i + 2] * 0.11 < 150) r[xx >> 3] |= 0x80 >> (xx & 7);
       }
-      rows[y] = r; blank[y] = !any;
+      rows[y] = r;
     }
+    if (fast) { // دمج كل سطرين (أي نقطة سودا بأي واحد منهن بتضل) — ما بيضيع ولا خط رفيع
+      const m = []; for (let y = 0; y < H0; y += 2) { const a = rows[y], b = rows[y + 1]; if (b) for (let k = 0; k < bw; k++) a[k] |= b[k]; m.push(a); }
+      rows = m;
+    }
+    const H = rows.length, blank = new Uint8Array(H), dots = fast ? 2 : 1;
+    for (let y = 0; y < H; y++) blank[y] = rows[y].every(v => !v);
     const parts = [new Uint8Array([0x1b, 0x40])];
     const BAND = 128;
     let y = 0;
     while (y < H) {
       if (blank[y]) {
         let n = 0; while (y < H && blank[y]) { n++; y++; }
+        n *= dots;
         while (n > 0) { const k = Math.min(255, n); parts.push(new Uint8Array([0x1b, 0x4a, k])); n -= k; } // ESC J n = لفّ n نقطة
         continue;
       }
@@ -293,7 +302,7 @@ const Receipt = (() => {
       while (e < H && e - y < BAND) { if (blank[e]) { if (gapRun >= 6) break; gapRun++; } else gapRun = 0; e++; }
       e = Math.max(y + 1, e - gapRun);
       const h = e - y, buf = new Uint8Array(8 + bw * h);
-      buf.set([0x1d, 0x76, 0x30, 0x00, bw & 255, bw >> 8, h & 255, h >> 8]);
+      buf.set([0x1d, 0x76, 0x30, fast ? 0x02 : 0x00, bw & 255, bw >> 8, h & 255, h >> 8]); // 2 = طول مضاعف
       for (let k = 0; k < h; k++) buf.set(rows[y + k], 8 + k * bw);
       parts.push(buf); y = e;
     }
@@ -378,7 +387,7 @@ const Receipt = (() => {
         throw e;
       }
       i += part.length;
-      if (noResp) await sleep(12);
+      if (noResp) await sleep(Math.max(5, Math.round(part.length / 24))); // ~24 كيلوبايت بالثانية: أسرع وما بيطفّح ذاكرة الطابعة
       onProg && onProg(i / data.length);
     }
   }
