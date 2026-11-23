@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '6.53';
+const APP_VERSION = '6.54';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -640,6 +640,63 @@ function backupData() {
   const lines = []; db.invoices.forEach(i => i.lines.forEach(l => lines.push({ 'التاريخ': i.date, 'النوع': INV_TYPES[i.type] || i.type, 'رقم الفاتورة': i.no, 'الطرف': i.party ? accName(i.party) : '', 'المادة': db.items.find(x => x.id === l.item)?.name || '', 'الكمية': num(l.qty), 'السعر': num(l.price), 'المجموع': r2(num(l.qty) * num(l.price)) })));
   return { 'الزباين': partyRows(customers()), 'الموردين': partyRows(suppliers()), 'المواد': items, 'الفواتير': invs, 'تفاصيل الفواتير': lines };
 }
+/* ---- النسخة الاحتياطية الأوتوماتيكية: كل يوم نسخة على هالموبايل (آخر 7 أيام)، وبترجعلها بكبسة ---- */
+const AUTO_DAYS = 7;
+const bkOk = () => !!(window.Store && Store.info().idb) && !isSeller();
+async function autoBackup(force) {
+  if (!bkOk()) return;
+  try {
+    const key = 'bak:' + today(), have = await Store.keys('bak:');
+    if (!have.includes(key) || force) await Store.put(key, JSON.stringify({ at: Date.now(), db }));
+    const days = (await Store.keys('bak:')).filter(k => /^bak:\d{4}-\d\d-\d\d$/.test(k)).sort().reverse();
+    for (const k of days.slice(AUTO_DAYS)) await Store.del(k);
+  } catch (e) { /* ما منوقّف البرنامج إذا ما زبطت النسخة */ }
+}
+async function autoBackupList() {
+  if (!bkOk()) return [];
+  const ks = (await Store.keys('bak:')).sort().reverse();
+  const out = [];
+  for (const k of ks) {
+    const raw = await Store.get(k); if (!raw) continue;
+    let o = null; try { o = JSON.parse(raw); } catch (e) { continue; }
+    out.push({ k, at: o.at, size: raw.length, inv: (o.db.invoices || []).length, vch: (o.db.vouchers || []).length, items: (o.db.items || []).length, raw });
+  }
+  return out;
+}
+async function autoBackupCard(el) {
+  if (!el) return;
+  if (!bkOk()) { el.innerHTML = window.Store && !Store.info().idb ? '<p class="muted">النسخ الأوتوماتيكية بتحتاج تخزين IndexedDB، وهالموبايل ما بيدعمه.</p>' : ''; return; }
+  const list = await autoBackupList(); if (!el.isConnected) return;
+  const row = b => {
+    const t = new Date(b.at), when = b.k === 'bak:pre' ? '↩️ قبل آخر رجوع' : '📅 ' + b.k.slice(4) + ' ' + t.toTimeString().slice(0, 5);
+    return `<div class="bk-row"><div><b>${when}</b><br><small class="muted">${b.inv} فاتورة، ${b.vch} سند، ${b.items} مادة — ${mbTxt(b.size)}</small></div>
+      <div class="acts"><button class="btn" data-bk="back" data-k="${b.k}">↩️ رجوع</button><button class="btn" data-bk="dl" data-k="${b.k}">⬇️</button></div></div>`;
+  };
+  el.innerHTML = `<p style="margin-top:12px"><b>🗓 النسخ الأوتوماتيكية على هالموبايل</b> <small class="muted">(نسخة كل يوم، آخر ${AUTO_DAYS} أيام)</small></p>` +
+    (list.length ? list.map(row).join('') : '<p class="muted">لسا ما في — أول نسخة بتنعمل هلق.</p>');
+  el.onclick = async e => {
+    const b = e.target.closest('[data-bk]'); if (!b) return;
+    const it = list.find(x => x.k === b.dataset.k); if (!it) return;
+    if (b.dataset.bk === 'dl') {
+      const f = new File([it.raw.length ? JSON.stringify(JSON.parse(it.raw).db, null, 1) : ''], `دفتر-نسخة-${it.k.slice(4)}.json`, { type: 'application/json' });
+      const u = URL.createObjectURL(f), a = document.createElement('a'); a.href = u; a.download = f.name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(u), 3000);
+      return;
+    }
+    const label = it.k === 'bak:pre' ? 'الحالة يلي كانت قبل آخر رجوع' : 'يوم ' + it.k.slice(4);
+    if (!confirm(`رح يرجع كل شي متل ما كان ${label}:\n${it.inv} فاتورة، ${it.vch} سند، ${it.items} مادة.\n\nأي شي انعمل بعدها رح ينمسح — كمان من السحابة وموبايلات المندوبين.\n(الحالة الحالية بتنحفظ أول، وفيك ترجعلها)\n\nمتابعة؟`)) return;
+    b.disabled = true;
+    try {
+      if (it.k !== 'bak:pre') await Store.put('bak:pre', JSON.stringify({ at: Date.now(), db }));
+      const d = JSON.parse(it.raw).db, sd = seed();
+      db = { ...sd, ...d, settings: { ...sd.settings, ...d.settings } }; save();
+      toast('✓ رجعت البيانات ل' + label); go('#/');
+    } catch (err) { toast('ما زبط الرجوع: ' + (err && err.message || err), 1); b.disabled = false; }
+  };
+}
+// كل ما ينفتح البرنامج أو يرجع للواجهة: إذا اليوم لسا ما انعملت نسخة منعملها
+setTimeout(() => autoBackup(), 4000);
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') setTimeout(() => autoBackup(), 2000); });
+
 function backupShare() {
   const stamp = today(), data = backupData();
   const full = new File([JSON.stringify(db, null, 1)], `دفتر-نسخة-كاملة-${stamp}.txt`, { type: 'text/plain' });
@@ -2344,6 +2401,7 @@ V.settings = (id, q, view) => {
     <p class="muted">البيانات محفوظة على هذا الجهاز فقط داخل المتصفح. خذ نسخة احتياطية بانتظام واحفظها في مكان آمن، ويمكنك نقلها لجهاز آخر.</p>
     <div class="acts"><button class="btn pri" data-act="export">⬇️ تنزيل نسخة احتياطية</button>
     <label class="btn">⬆️ استعادة نسخة<input type="file" id="imp" accept=".json,.txt,application/json,text/plain" hidden></label></div>
+    <div id="autoBk"></div>
   </div>
   <div class="card"><h3>أخرى</h3>
     <div class="acts"><button class="btn" data-act="demo">🧪 تحميل بيانات تجريبية</button><button class="btn red" data-act="reset">🗑 مسح كل البيانات</button></div>
@@ -2353,6 +2411,7 @@ V.settings = (id, q, view) => {
   if (window.Cloud) Cloud.card($('#cloudCard', view)); else $('#cloudCard', view).remove();
   posDevsCard($('#posDevs', view));
   storeUseCard($('#storeUse', view));
+  autoBackup().then(() => autoBackupCard($('#autoBk', view)));
   $('#sf', view).onsubmit = e => {
     e.preventDefault();
     Object.assign(db.settings, Object.fromEntries(new FormData(e.target)));
@@ -2376,6 +2435,7 @@ V.settings = (id, q, view) => {
         const d = JSON.parse(r.result);
         if (!Array.isArray(d.accounts) || !Array.isArray(d.invoices)) throw 0;
         if (!confirm('سيتم استبدال كل البيانات الحالية بالنسخة المختارة. متابعة؟')) return;
+        if (bkOk()) Store.put('bak:pre', JSON.stringify({ at: Date.now(), db })).catch(() => {});
         const sd = seed(); db = { ...sd, ...d, settings: { ...sd.settings, ...d.settings } }; save(); toast('تمت الاستعادة'); go('#/');
       } catch (err) { toast('الملف غير صالح', 1); }
     };

@@ -25,6 +25,14 @@ const Store = (() => {
     tx.objectStore(OS).put(v, k);
     tx.oncomplete = () => res(); tx.onerror = () => rej(tx.error); tx.onabort = () => rej(tx.error || new Error('abort'));
   });
+  const del = k => new Promise((res, rej) => {
+    const tx = idb.transaction(OS, 'readwrite'); tx.objectStore(OS).delete(k);
+    tx.oncomplete = () => res(); tx.onerror = () => rej(tx.error);
+  });
+  const keys = () => new Promise((res, rej) => {
+    const q = idb.transaction(OS).objectStore(OS).getAllKeys();
+    q.onsuccess = () => res(q.result.map(String)); q.onerror = () => rej(q.error);
+  });
   const timeout = (p, ms) => Promise.race([p, new Promise((_, j) => setTimeout(() => j(new Error('timeout')), ms))]);
 
   async function init() {
@@ -73,6 +81,13 @@ const Store = (() => {
       next();
     });
   }
-  return { start, read, write, flush, usage, info: () => ({ idb: ok, err: lastErr }) };
+  // مفاتيح إضافية (للنسخ الاحتياطية الأوتوماتيكية) — بس إذا IndexedDB شغّال
+  const extra = {
+    get: k => (ok ? get(k) : Promise.resolve(null)),
+    put: (k, v) => (ok ? put(k, v) : Promise.reject(new Error('no idb'))),
+    del: k => (ok ? del(k) : Promise.resolve()),
+    keys: pre => (ok ? keys().then(l => l.filter(k => k.startsWith(pre))) : Promise.resolve([])),
+  };
+  return { start, read, write, flush, usage, ...extra, info: () => ({ idb: ok, err: lastErr }) };
 })();
 window.Store = Store;
