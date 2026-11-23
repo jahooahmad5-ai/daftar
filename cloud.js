@@ -87,7 +87,10 @@ const Cloud = (() => {
     // موبايل المندوب (وضع البيّاع) بيرفع فواتيره وسنداتها بس — ما بيلمس المواد ولا الحسابات ولا الإعدادات
     // (هيك ما بيرجّع سعر قديم فوق تعديلات المدير)
     if (typeof isSeller === 'function' && isSeller()) {
-      for (const k of Object.keys(st.dirty)) if (!/^(invoices|vouchers|seq)\//.test(k)) delete st.dirty[k];
+      let dropped = false;
+      for (const k of Object.keys(st.dirty)) if (!/^(invoices|vouchers|seq)\//.test(k)) { delete st.dirty[k]; dropped = true; }
+      // تنزيل كامل من جديد (مرة وحدة، أو إذا انشالت تعديلات محلية): هيك بياخد أسعار المدير يلي كانت متجاهلة
+      if (dropped || !st.fullPull1) { st.lastPull = null; st.fullPull1 = 1; saveSt(); }
     }
     const keys = Object.keys(st.dirty); if (!keys.length) return;
     const cur = recs(), sent = {};
