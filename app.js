@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '6.13';
+const APP_VERSION = '6.14';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -1283,6 +1283,7 @@ V.invoice = (id, q, view) => {
     modal('➕ مادة جديدة', fields([
       { k: 'name', l: 'اسم المادة', req: 1, full: 1 },
       { k: 'price', l: sideSale ? 'سعر المبيع' : 'سعر الشراء', t: 'number' },
+      { k: 'other', l: sideSale ? 'سعر الشراء' : 'سعر المبيع', t: 'number' },
       { k: 'consumerPrice', l: 'سعر المستهلك', t: 'number' },
       { k: 'unit', l: 'الوحدة' }, { k: 'qty', l: 'العدد بالفاتورة', t: 'number' },
     ], { name, unit: 'قطعة', qty }), {
@@ -1294,6 +1295,7 @@ V.invoice = (id, q, view) => {
         const it = { id: uid(), code: nextItemCode(), barcodes: [], aliases: [], aliasKeys: [], group: null, name: nm, unit: (d.unit || '').trim(), minQty: 0,
           buyPrice: 0, sellPrice: 0, consumerPrice: r2(num(d.consumerPrice) * R), openQty: 0, openCost: 0 };
         it[pk] = r2(num(d.price) * R);
+        it[sideSale ? 'buyPrice' : 'sellPrice'] = r2(num(d.other) * R);
         db.items.push(it); items.push(it); save();
         scanIn.value = '';
         fromPaste({ party: '', lines: [{ item: it.id, qty: num(d.qty) || 1 }], pay: payNow });
