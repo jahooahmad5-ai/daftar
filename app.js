@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '6.9';
+const APP_VERSION = '6.10';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -475,33 +475,47 @@ const lastBackup = () => { try { return +localStorage.getItem(BK_KEY) || 0; } ca
 const loadXlsx = () => window.XLSX ? Promise.resolve() : new Promise((ok, bad) => {
   const sc = document.createElement('script'); sc.src = 'lib/xlsx.full.min.js'; sc.onload = ok; sc.onerror = () => bad(new Error('ما قدر يحمّل مكتبة Excel')); document.head.appendChild(sc);
 });
-async function backupShare() {
-  const stamp = today(), files = [];
-  // 1) النسخة الكاملة (منها بترجّع كل شي لدفتر)
-  files.push(new File([JSON.stringify(db, null, 1)], `دفتر-نسخة-كاملة-${stamp}.json`, { type: 'application/json' }));
-  // 2) ملف إكسل للقراءة
-  try {
-    await loadXlsx();
-    const R = rollup(sums()), st = engine().stock, bal = a => r2(natural(a, R[a.id]));
-    const partyRows = list => list.map(a => ({ 'الرمز': a.code, 'الاسم': a.name, 'الهاتف': a.phone || '', 'العنوان': a.address || '', 'الرصيد': bal(a) }));
-    const items = [...db.items].sort(byCode).map(it => ({ 'الرمز': it.code || '', 'اسم المادة': it.name, 'الباركود': it.barcode || '', 'الوحدة': it.unit || '', 'المجموعة': it.group || '', 'سعر الشراء': num(it.buyPrice), 'سعر المبيع': num(it.sellPrice), 'سعر المستهلك': num(it.consumerPrice), 'الكمية الحالية': r2(st[it.id]?.qty || 0) }));
-    const invs = [...db.invoices].sort((a, b) => (a.date < b.date ? 1 : -1)).map(i => ({ 'النوع': INV_TYPES[i.type] || i.type, 'الرقم': i.no, 'التاريخ': i.date, 'الطرف': i.party ? accName(i.party) : '', 'الدفع': i.pay === 'cash' ? 'نقدي' : 'آجل', 'الصافي': invTotals(i).net, 'عدد المواد': i.lines.length, 'ملاحظة': i.note || '' }));
-    const lines = []; db.invoices.forEach(i => i.lines.forEach(l => lines.push({ 'التاريخ': i.date, 'النوع': INV_TYPES[i.type] || i.type, 'رقم الفاتورة': i.no, 'الطرف': i.party ? accName(i.party) : '', 'المادة': db.items.find(x => x.id === l.item)?.name || '', 'الكمية': num(l.qty), 'السعر': num(l.price), 'المجموع': r2(num(l.qty) * num(l.price)) })));
-    const wb = XLSX.utils.book_new();
-    const addSheet = (rows, name) => { const ws = XLSX.utils.json_to_sheet(rows.length ? rows : [{ '': 'لا توجد بيانات' }]); ws['!views'] = [{ RTL: true }]; XLSX.utils.book_append_sheet(wb, ws, name); };
-    wb.Workbook = { Views: [{ RTL: true }] };
-    addSheet(partyRows(customers()), 'الزباين'); addSheet(partyRows(suppliers()), 'الموردين'); addSheet(items, 'المواد'); addSheet(invs, 'الفواتير'); addSheet(lines, 'تفاصيل الفواتير');
-    const buf = XLSX.write(wb, { type: 'array', bookType: 'xlsx' });
-    files.unshift(new File([buf], `دفتر-${stamp}.xlsx`, { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
-  } catch (e) { toast('ما قدر يعمل ملف الإكسل — رح يشارك النسخة الكاملة بس', 1); }
-  const done = () => { try { localStorage.setItem(BK_KEY, String(Date.now())); } catch (e) { /* */ } if (/^#?\/?$/.test(location.hash)) route(); };
-  if (navigator.canShare && navigator.canShare({ files })) {
-    try { await navigator.share({ files, title: 'نسخة احتياطية — دفتر' }); done(); toast('✓ انحفظت النسخة الاحتياطية'); }
-    catch (e) { if (e && e.name !== 'AbortError') toast('ما زبطت المشاركة: ' + (e.message || e), 1); }
+// كروم عالموبايل بيرفض يشارك ملفات .json و .xlsx («Permission denied») — فمنشارك أنواع مسموحة:
+// النسخة الكاملة كـ .txt (منها بترجّع كل شي) + جداول CSV بتنفتح بالإكسل وGoogle Sheets
+const toCsv = rows => {
+  if (!rows.length) return '\ufeff';
+  const cols = Object.keys(rows[0]), q = v => { const t = String(v ?? ''); return /[",\n\r]/.test(t) ? '"' + t.replace(/"/g, '""') + '"' : t; };
+  return '\ufeff' + [cols.map(q).join(','), ...rows.map(r => cols.map(c => q(r[c])).join(','))].join('\r\n');
+};
+function backupData() {
+  const R = rollup(sums()), st = engine().stock, bal = a => r2(natural(a, R[a.id]));
+  const partyRows = list => list.map(a => ({ 'الرمز': a.code, 'الاسم': a.name, 'الهاتف': a.phone || '', 'العنوان': a.address || '', 'الرصيد': bal(a) }));
+  const items = [...db.items].sort(byCode).map(it => ({ 'الرمز': it.code || '', 'اسم المادة': it.name, 'الباركود': it.barcode || '', 'الوحدة': it.unit || '', 'المجموعة': it.group || '', 'سعر الشراء': num(it.buyPrice), 'سعر المبيع': num(it.sellPrice), 'سعر المستهلك': num(it.consumerPrice), 'الكمية الحالية': r2(st[it.id]?.qty || 0) }));
+  const invs = [...db.invoices].sort((a, b) => (a.date < b.date ? 1 : -1)).map(i => ({ 'النوع': INV_TYPES[i.type] || i.type, 'الرقم': i.no, 'التاريخ': i.date, 'الطرف': i.party ? accName(i.party) : '', 'الدفع': i.pay === 'cash' ? 'نقدي' : 'آجل', 'الصافي': invTotals(i).net, 'عدد المواد': i.lines.length, 'ملاحظة': i.note || '' }));
+  const lines = []; db.invoices.forEach(i => i.lines.forEach(l => lines.push({ 'التاريخ': i.date, 'النوع': INV_TYPES[i.type] || i.type, 'رقم الفاتورة': i.no, 'الطرف': i.party ? accName(i.party) : '', 'المادة': db.items.find(x => x.id === l.item)?.name || '', 'الكمية': num(l.qty), 'السعر': num(l.price), 'المجموع': r2(num(l.qty) * num(l.price)) })));
+  return { 'الزباين': partyRows(customers()), 'الموردين': partyRows(suppliers()), 'المواد': items, 'الفواتير': invs, 'تفاصيل الفواتير': lines };
+}
+function backupShare() {
+  const stamp = today(), data = backupData();
+  const full = new File([JSON.stringify(db, null, 1)], `دفتر-نسخة-كاملة-${stamp}.txt`, { type: 'text/plain' });
+  const csvs = Object.entries(data).map(([n, rows]) => new File([toCsv(rows)], `دفتر-${n}-${stamp}.csv`, { type: 'text/csv' }));
+  const files = [full, ...csvs];
+  const done = msg => { try { localStorage.setItem(BK_KEY, String(Date.now())); } catch (e) { /* */ } toast(msg); if (/^#?\/?$/.test(location.hash)) route(); };
+  const download = async () => {
+    // بديل: تنزيل الملفات عالموبايل (النسخة الكاملة + ملف إكسل واحد فيه كل الجداول)
+    const out = [new File([full], `دفتر-نسخة-كاملة-${stamp}.json`, { type: 'application/json' })];
+    try {
+      await loadXlsx();
+      const wb = XLSX.utils.book_new(); wb.Workbook = { Views: [{ RTL: true }] };
+      Object.entries(data).forEach(([n, rows]) => { const ws = XLSX.utils.json_to_sheet(rows.length ? rows : [{ '': 'لا توجد بيانات' }]); ws['!views'] = [{ RTL: true }]; XLSX.utils.book_append_sheet(wb, ws, n); });
+      out.push(new File([XLSX.write(wb, { type: 'array', bookType: 'xlsx' })], `دفتر-${stamp}.xlsx`));
+    } catch (e) { out.push(...csvs); }
+    out.forEach((f, k) => setTimeout(() => { const u = URL.createObjectURL(f), a = document.createElement('a'); a.href = u; a.download = f.name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(u), 3000); }, k * 500));
+    done('✓ نزلت ملفات النسخة الاحتياطية بالتنزيلات — ارفعها عالدرايف');
+  };
+  // المشاركة لازم تبلّش فوراً بعد الكبسة (بلا انتظار) وإلا كروم بيرفض
+  if (navigator.share && navigator.canShare && navigator.canShare({ files })) {
+    navigator.share({ files, title: 'نسخة احتياطية — دفتر' })
+      .then(() => done('✓ انحفظت النسخة الاحتياطية'))
+      .catch(e => { if (e && e.name === 'AbortError') return; download(); });
     return;
   }
-  files.forEach((f, k) => setTimeout(() => { const u = URL.createObjectURL(f), a = document.createElement('a'); a.href = u; a.download = f.name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(u), 3000); }, k * 400));
-  done(); toast('✓ نزلت ملفات النسخة الاحتياطية — ارفعها عالدرايف');
+  download();
 }
 
 /* ------------------------- الرئيسية ------------------------- */
@@ -1894,7 +1908,7 @@ V.settings = (id, q, view) => {
   <div class="card"><h3>النسخ الاحتياطي</h3>
     <p class="muted">البيانات محفوظة على هذا الجهاز فقط داخل المتصفح. خذ نسخة احتياطية بانتظام واحفظها في مكان آمن، ويمكنك نقلها لجهاز آخر.</p>
     <div class="acts"><button class="btn pri" data-act="export">⬇️ تنزيل نسخة احتياطية</button>
-    <label class="btn">⬆️ استعادة نسخة<input type="file" id="imp" accept=".json,application/json" hidden></label></div>
+    <label class="btn">⬆️ استعادة نسخة<input type="file" id="imp" accept=".json,.txt,application/json,text/plain" hidden></label></div>
   </div>
   <div class="card"><h3>أخرى</h3>
     <div class="acts"><button class="btn" data-act="demo">🧪 تحميل بيانات تجريبية</button><button class="btn red" data-act="reset">🗑 مسح كل البيانات</button></div>
