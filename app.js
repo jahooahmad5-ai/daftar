@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '6.15';
+const APP_VERSION = '6.16';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -160,6 +160,10 @@ const WALKIN_NAME = 'زبون عام';
 const MAX_UP = 0.10; // أعلى زيادة مسموحة على سعر المبيع ببطاقة المادة
 const AUTO_BUY = 0.80; // إذا نسيت سعر الشراء: سعر الشراء = سعر المبيع ناقص 20٪
 // تكميل أسعار البطاقة الناقصة: سعر المبيع من سعر فاتورة الزبون، وسعر الشراء من سعر المبيع
+// الفرق بين سعر الشراء وسعر المبيع ما بيزيد عن 20٪ من سعر المبيع (بالاتجاهين)
+const MAX_GAP = 0.20;
+const priceBad = (sell, buy) => num(sell) > 0 && num(buy) > 0 && Math.abs(num(sell) - num(buy)) > num(sell) * MAX_GAP + 0.001;
+const priceBadMsg = (name, sell, buy) => `لازم تتعدّل الأسعار${name ? ': ' + name : ''} — سعر الشراء ${fmt(num(buy))} وسعر المبيع ${fmt(num(sell))}، والفرق بينهن لازم ما يزيد عن 20٪ (سعر الشراء بين ${fmt(r2(num(sell) * (1 - MAX_GAP)))} و ${fmt(r2(num(sell) * (1 + MAX_GAP)))})`;
 function fillPrices(it, salePrice) {
   let ch = false;
   if (!num(it.sellPrice) && num(salePrice) > 0) { it.sellPrice = r2(num(salePrice)); ch = true; }
@@ -917,6 +921,7 @@ function itemForm(it, defGroup, after) {
       const aliasKeys = window.OrderPaste ? [...new Set(aliases.map(OrderPaste.keyOfText).filter(Boolean))] : [];
       const o = { code, barcodes, aliases, aliasKeys, group: d.group || null, name: d.name.trim(), unit: d.unit.trim(), minQty: num(d.minQty), buyPrice: num(d.buyPrice), sellPrice: num(d.sellPrice), consumerPrice: num(d.consumerPrice), openQty: num(d.openQty), openCost: num(d.openCost) };
       fillPrices(o);
+      if (priceBad(o.sellPrice, o.buyPrice)) { toast(priceBadMsg('', o.sellPrice, o.buyPrice), 1); return false; }
       if (it) Object.assign(it, o); else db.items.push({ id: uid(), ...o });
       save(); toast('تم الحفظ');
       if (after) after(it); else route();
@@ -1306,6 +1311,7 @@ V.invoice = (id, q, view) => {
         it[pk] = r2(num(d.price) * R);
         it[sideSale ? 'buyPrice' : 'sellPrice'] = r2(num(d.other) * R);
         fillPrices(it);
+        if (priceBad(it.sellPrice, it.buyPrice)) { toast(priceBadMsg('', it.sellPrice, it.buyPrice), 1); return false; }
         db.items.push(it); items.push(it); save();
         scanIn.value = '';
         fromPaste({ party: '', lines: [{ item: it.id, qty: num(d.qty) || 1 }], pay: payNow });
@@ -1482,7 +1488,20 @@ V.invoice = (id, q, view) => {
       }
     }
     // مواد بلا سعر مبيع ببطاقتها: بياخد سعرها من فاتورة الزبون (وسعر الشراء = المبيع − 20٪ إذا ناقص)
-    if (inv.type === 'sale') lines.forEach(l => { const it = db.items.find(x => x.id === l.item); if (it) fillPrices(it, toBase(l.price)); });
+    if (inv.type === 'sale') {
+      const badI = inv.lines.findIndex(l => {
+        const it = l.item && num(l.qty) > 0 && db.items.find(x => x.id === l.item); if (!it) return false;
+        const t = { sellPrice: it.sellPrice, buyPrice: it.buyPrice }; fillPrices(t, toBase(l.price));
+        return priceBad(t.sellPrice, t.buyPrice);
+      });
+      if (badI >= 0) {
+        const l = inv.lines[badI], it = db.items.find(x => x.id === l.item), t = { sellPrice: it.sellPrice, buyPrice: it.buyPrice }; fillPrices(t, toBase(l.price));
+        const card = $(`.ln-card[data-i="${badI}"]`, view);
+        if (card) { card.scrollIntoView({ block: 'center' }); card.classList.add('ln-bad'); setTimeout(() => card.classList.remove('ln-bad'), 4000); }
+        return toast(priceBadMsg(it.name, t.sellPrice, t.buyPrice) + ' — كبّس ✏️ جنب المادة', 1);
+      }
+      lines.forEach(l => { const it = db.items.find(x => x.id === l.item); if (it) fillPrices(it, toBase(l.price)); });
+    }
     const out = { ...inv, date: val('date'), pay, party, cashAcc: pay === 'cash' ? cashAcc : '', cur: inv.cur, rate: inv.cur === 'fx' ? rate() : '', discount: num(val('discount')), addition: num(val('addition')), addNote: val('addNote').trim(), note: val('note'), lines };
     if (!orig) { out.id = uid(); out.no = nextNo(out.type); out.created = Date.now(); db.invoices.push(out); }
     else {
