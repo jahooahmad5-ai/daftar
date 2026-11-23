@@ -348,3 +348,7 @@ body.seller .ph .acts a.btn:not([href*="type=sale"]){display:none}
 body.seller .tabs{display:none}
 .badge.rep{background:#fff4e0;color:#8a4b00;margin-top:3px;display:inline-block}
 body.seller .tabs.rep-tabs{display:none}
+.pp-list{display:flex;flex-direction:column;gap:6px;max-height:55vh;overflow:auto}
+.pp-item{display:flex;justify-content:space-between;align-items:center;gap:8px;text-align:right;padding:12px 14px;border:1px solid #d6e2ea;border-radius:12px;background:#fff;font:inherit;font-size:16px;cursor:pointer}
+.pp-item small{color:#6b7c8a;font-size:13px}
+.pp-item.wk{background:#e8f5ee;border-color:#bfe3cf}

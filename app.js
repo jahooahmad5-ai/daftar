@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '6.20';
+const APP_VERSION = '6.21';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -1286,7 +1286,31 @@ V.invoice = (id, q, view) => {
   // إضافة مادة: إذا كانت موجودة بالفاتورة تزيد الكمية
   // lastBase: كم كان عدد المادة قبل آخر إضافة — حتى «عدد 2» بعد تكرار الصنف تنضاف على القديم وما تمسحه
   let lastId = null, lastBase = 0;
+  // فاتورة المبيع: لازم تختار العميل قبل ما تنزل أي مادة
+  const needParty = () => sideSale && !val('party');
+  let picking = false;
+  const pickParty = then => {
+    if (picking) return; picking = true;
+    const list = parties;
+    modal('👤 اختار العميل أولاً', `<input class="search" id="ppQ" placeholder="🔎 ابحث بالاسم أو الهاتف" autocomplete="off" style="margin-bottom:8px">
+      <div id="ppList" class="pp-list">${list.map(a => `<button type="button" class="pp-item${isWalkin(a.id) ? ' wk' : ''}" data-id="${a.id}" data-name="${esc(normAr((a.name || '') + ' ' + (a.phone || '')))}"><b>${esc(a.name)}</b>${isWalkin(a.id) ? '<small>نقدي — بيع مباشر</small>' : a.phone ? `<small>${esc(a.phone)}</small>` : ''}</button>`).join('') || '<p class="muted">ما في عملاء — ضيفهم من صفحة العملاء</p>'}</div>`);
+    const d = $('#dlg'), q = $('#ppQ', d);
+    const done = () => { picking = false; d.removeEventListener('close', done); };
+    d.addEventListener('close', done);
+    q.oninput = () => { const t = normAr(q.value.trim()); $$('.pp-item', d).forEach(b => (b.style.display = !t || b.dataset.name.includes(t) ? '' : 'none')); };
+    q.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); const f = $$('.pp-item', d).find(b => b.style.display !== 'none'); if (f) f.click(); } };
+    $('#ppList', d).onclick = e => {
+      const b = e.target.closest('.pp-item'); if (!b) return;
+      const sel = $('[name="party"]', view);
+      if (![...sel.options].some(o => o.value === b.dataset.id)) sel.add(new Option(accName(b.dataset.id), b.dataset.id));
+      sel.value = b.dataset.id; sel.dispatchEvent(new Event('change', { bubbles: true }));
+      d.close(); toast('👤 ' + accName(b.dataset.id));
+      if (then) setTimeout(then, 50);
+    };
+    setTimeout(() => q.focus(), 100);
+  };
   const addItem = it => {
+    if (needParty()) { scanIn.value = ''; sugg.hidden = true; return pickParty(() => addItem(it)); }
     lastId = it.id;
     // الصنف المكرر بينضاف بسطر جديد لحاله (ما بيندمج مع القديم)
     const ex = inv.lines.find(l => l.item === it.id);
@@ -1300,6 +1324,7 @@ V.invoice = (id, q, view) => {
   if (orig) payNow = db.vouchers.filter(v => v.inv === orig.id).reduce((x, v) => x + num(v.amount), 0);
   const showPay = () => { $('[name=payment]', view).value = payNow || ''; if (payNow && val('pay') !== 'credit') { $('[name=pay]', view).value = 'credit'; toggles(); } totals(); };
   const fromPaste = r => {
+    if (!r.party && needParty()) return pickParty(() => fromPaste(r));
     if (r.party) {
       const sel = $('[name="party"]', view);
       if (![...sel.options].some(o => o.value === r.party)) sel.add(new Option(accName(r.party), r.party));
@@ -1651,6 +1676,8 @@ V.invoice = (id, q, view) => {
   if (draftPay) payNow = draftPay;
   $('[name=payment]', view).value = payNow || '';
   toggles(); draw();
+  if (sideSale && !orig && needParty()) setTimeout(() => pickParty(), 60);
+  scanIn.addEventListener('focus', () => { if (needParty()) { scanIn.blur(); pickParty(); } });
   // للأوامر الصوتية
   window.InvHook = {
     addSpoken: (t, raw) => {
