@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '6.51';
+const APP_VERSION = '6.52';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -489,6 +489,22 @@ function sellerSetup(preName) {
       applySellerUI(); toast('✓ تفعّل وضع البيّاع'); go('#/');
     },
   });
+}
+
+// مساحة التخزين على هالموبايل: بيانات البرنامج، والمستعمل من المسموح
+const mbTxt = b => (b >= 1e9 ? fmt(r2(b / 1e9)) + ' غيغا' : b >= 1e6 ? fmt(r2(b / 1e6)) + ' ميغا' : fmt(Math.max(1, Math.round(b / 1e3))) + ' كيلو');
+async function storeUseCard(el) {
+  if (!el) return;
+  const data = new Blob([JSON.stringify(db)]).size;
+  const u = window.Store ? await Store.usage() : null, idb = window.Store && Store.info().idb;
+  if (!el.isConnected) return;
+  const quota = u && u.quota ? u.quota : (idb ? 0 : 5e6), used = u && u.used ? Math.max(u.used, data) : data;
+  const pct = quota ? Math.min(100, used / quota * 100) : 0;
+  el.innerHTML = `<p><b>💾 مساحة التخزين على هالموبايل</b></p>
+    <div class="su-bar"><i style="width:${Math.max(pct, 0.5).toFixed(2)}%"></i></div>
+    <p class="muted" style="margin:6px 0 0">بيانات البرنامج: <b>${mbTxt(data)}</b> (${db.invoices.length} فاتورة، ${db.vouchers.length} سند، ${db.items.length} مادة)<br>
+    المستعمل: <b>${mbTxt(used)}</b>${quota ? ` من <b>${mbTxt(quota)}</b> مسموحة (${pct < 0.01 ? 'أقل من 0.01' : fmt(r2(pct))}٪)` : ''}<br>
+    ${idb ? '✅ التخزين: IndexedDB (مساحة كبيرة)' : '⚠️ التخزين: القديم (localStorage — حوالي 5 ميغا بس)'}</p>`;
 }
 
 /* ---- باركود نقطة البيع: بينطبع وبيتصوّر بكاميرا موبايل المندوب، بيفتح نقطة البيع بس ---- */
@@ -2342,10 +2358,12 @@ V.settings = (id, q, view) => {
   </div>
   <div class="card"><h3>أخرى</h3>
     <div class="acts"><button class="btn" data-act="demo">🧪 تحميل بيانات تجريبية</button><button class="btn red" data-act="reset">🗑 مسح كل البيانات</button></div>
+    <div id="storeUse" class="store-use"></div>
     <p class="muted" style="margin-top:10px">الإصدار: <b>${APP_VERSION}</b> — عدد الفواتير: ${db.invoices.length} — المواد: ${db.items.length} — السندات: ${db.vouchers.length} — القيود اليدوية: ${db.entries.length}</p>
   </div>`;
   if (window.Cloud) Cloud.card($('#cloudCard', view)); else $('#cloudCard', view).remove();
   posDevsCard($('#posDevs', view));
+  storeUseCard($('#storeUse', view));
   $('#sf', view).onsubmit = e => {
     e.preventDefault();
     Object.assign(db.settings, Object.fromEntries(new FormData(e.target)));

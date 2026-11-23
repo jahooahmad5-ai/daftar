@@ -381,3 +381,6 @@ body.locked .app{grid-template-columns:1fr}
 body.locked #calc{display:none}
 @media print{#calc{display:none!important}}
 .amt-old{margin-top:5px;font-size:14px;font-weight:700;color:#9a6700}
+.store-use{margin-top:12px;padding-top:10px;border-top:1px solid var(--line)}
+.su-bar{height:12px;border-radius:8px;background:#e7eeec;overflow:hidden}
+.su-bar i{display:block;height:100%;background:#0f766e;border-radius:8px}
