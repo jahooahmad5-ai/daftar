@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '6.42';
+const APP_VERSION = '6.43';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -1908,15 +1908,17 @@ function voucherForm(v, type, preAcc) {
     { k: 'note', l: 'البيان', full: 1 },
   ];
   const f = modal((isR ? 'سند قبض' : 'سند دفع') + (v ? ' رقم ' + v.no : ' جديد'), fields(fl, vals) + '<p class="muted" id="vEq"></p>', {
-    extra: v ? `<button type="button" class="btn" id="vPrint">🖨 طباعة</button><button type="button" class="btn red" id="vDel">حذف</button>` : '',
+    extra: v ? `${navigator.bluetooth ? '<button type="button" class="btn" id="vBt">🔵 بلوتوث</button>' : ''}<button type="button" class="btn" id="vRc">🧾 إيصال</button><button type="button" class="btn" id="vPrint">🖨 طباعة</button><button type="button" class="btn red" id="vDel">حذف</button>` : '',
     onSave: d => {
       const amount = r2(num(d.amount)), R = num(d.rate);
       if (amount <= 0) { toast('أدخل مبلغاً صحيحاً', 1); return false; }
       if (!d.acc) { toast('اختر الحساب', 1); return false; }
       if (d.cur === 'fx' && R <= 0) { toast('أدخل سعر الصرف', 1); return false; }
       const o = { date: d.date, amount, acc: d.acc, cashAcc: d.cashAcc, note: d.note, cur: d.cur, rate: d.cur === 'fx' ? R : '' };
-      if (v) Object.assign(v, o); else db.vouchers.push({ id: uid(), type, no: nextNo(type), created: Date.now(), ...o });
+      let nv = null;
+      if (v) Object.assign(v, o); else db.vouchers.push(nv = { id: uid(), type, no: nextNo(type), created: Date.now(), ...o });
       save(); toast('تم حفظ السند'); go('#/vouchers?t=' + type);
+      if (nv) setTimeout(() => voucherPrintAsk(nv, true), 80);
     },
   });
   const rateFld = $('[name=rate]', f).closest('.fld');
@@ -1930,13 +1932,15 @@ function voucherForm(v, type, preAcc) {
   if (v) {
     $('#vDel').onclick = () => { if (isSeller()) return toast('🔒 الحذف مسكّر بوضع البيّاع', 1); if (!confirm('حذف السند؟')) return; db.vouchers = db.vouchers.filter(x => x.id !== v.id); save(); $('#dlg').close(); route(); };
     $('#vPrint').onclick = () => { $('#dlg').close(); printDoc(voucherHtml(v)); };
+    const bt = $('#vBt'); if (bt) bt.onclick = () => { $('#dlg').close(); Receipt.printDirect(v); };
+    $('#vRc').onclick = () => { $('#dlg').close(); Receipt.open(v); };
   }
 }
 function voucherHtml(v) {
   const isR = v.type === 'receipt';
   return `<h3 class="ptitle">${isR ? 'سند قبض' : 'سند دفع'} رقم ${v.no}${repTag(v)}</h3>
   <table><tbody><tr><th>التاريخ</th><td>${v.date}</td></tr><tr><th>${isR ? 'استلمنا من' : 'دفعنا إلى'}</th><td>${esc(accName(v.acc))}</td></tr>
-  <tr><th>المبلغ</th><td>${fmt(v.amount)} ${esc(docSym(v))}${oldOn() ? ` — بالعملة القديمة: ${oldAmt(v.amount * docRate(v))}` : ''}</td></tr><tr><th>المبلغ كتابةً</th><td>${esc(moneyWords(v.amount, v))}</td></tr>
+  <tr><th>المبلغ</th><td>${fmt(v.amount)} ${esc(docSym(v))} — بالعملة القديمة: ${oldAmt(v.amount * docRate(v))}</td></tr><tr><th>المبلغ كتابةً</th><td>${esc(moneyWords(v.amount, v))}</td></tr>
   ${v.cur === 'fx' ? `<tr><th>سعر الصرف</th><td>${fmt(v.rate)} — المعادل: ${fmt(v.amount * num(v.rate))} ${esc(cur())}</td></tr>` : ''}
   <tr><th>البيان</th><td>${esc(v.note || '')}</td></tr><tr><th>${isR ? 'إلى الصندوق' : 'من الصندوق'}</th><td>${esc(accName(v.cashAcc))}</td></tr></tbody></table>
   <div class="psign"><span>${isR ? 'توقيع الدافع' : 'توقيع المستلم'}</span><span>توقيع المحاسب</span></div>`;
@@ -1948,9 +1952,17 @@ function sellerVouchers(q, view) {
     `<div class="card">${table(['الرقم', 'التاريخ', 'الزبون', 'المبلغ'], rows)}</div>`;
   onAct(view, {
     new: () => sellerReceipt(),
-    open: id => { const v = list.find(x => x.id === id); if (!v) return; modal('سند قبض رقم ' + v.no, voucherHtml(v), { extra: '<button type="button" class="btn pri" id="vPrint">🖨 طباعة</button>' }); $('#vPrint').onclick = () => { $('#dlg').close(); printDoc(voucherHtml(v)); }; },
+    open: id => { const v = list.find(x => x.id === id); if (v) voucherPrintAsk(v); },
   });
   if (q.new) { history.replaceState(null, '', '#/vouchers'); sellerReceipt(); }
+}
+// طباعة السند: بلوتوث مباشر (إيصال حراري بالجديد والقديم) أو طرق تانية
+function voucherPrintAsk(v, fresh) {
+  const f = modal((fresh ? '✓ انحفظ ' : '') + (v.type === 'receipt' ? 'سند قبض' : 'سند دفع') + ' رقم ' + v.no, voucherHtml(v),
+    { extra: `${navigator.bluetooth ? '<button type="button" class="btn pri" id="vBt">🔵 طباعة بلوتوث</button>' : ''}<button type="button" class="btn${navigator.bluetooth ? '' : ' pri'}" id="vRc">🧾 إيصال (طرق تانية)</button><button type="button" class="btn" id="vA4">🖨 A4</button>` });
+  const bt = $('#vBt', f); if (bt) bt.onclick = () => { $('#dlg').close(); Receipt.printDirect(v); };
+  $('#vRc', f).onclick = () => { $('#dlg').close(); Receipt.open(v); };
+  $('#vA4', f).onclick = () => { $('#dlg').close(); printDoc(voucherHtml(v)); };
 }
 // قبض من زبون (المندوب): المصاري بتنزل بصندوقه، وبلا ما يشوف رصيد الزبون
 function sellerReceipt() {
@@ -1972,7 +1984,7 @@ function sellerReceipt() {
       const rp = myRep();
       const v = { id: uid(), type: 'receipt', no: nextNo('receipt@' + rp), date: today(), acc: d.acc, cashAcc: box.id, amount, cur: d.cur, rate: d.cur === 'fx' ? R : '', note: d.note || '', rep: rp, created: Date.now() };
       db.vouchers.push(v); save(); toast('✓ انحفظ سند القبض');
-      setTimeout(() => { if (confirm('بدك تطبع السند؟')) printDoc(voucherHtml(v)); route(); }, 50);
+      setTimeout(() => { route(); voucherPrintAsk(v, true); }, 50);
     },
   });
   const sel = $('[name=acc]', f); if (typeof enhancePartySelect === 'function') enhancePartySelect(sel);

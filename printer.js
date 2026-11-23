@@ -111,6 +111,49 @@ const Receipt = (() => {
     return render(ops);
   }
 
+  // سند قبض / دفع: المبلغ بالعملة الجديدة والقديمة دايماً — وبلا رصيد الزبون
+  function buildVoucher(v) {
+    const s = db.settings, isR = v.type === 'receipt', a = acc(v.acc), cs = s.currency || 'ل.س';
+    const ops = [];
+    const txt = (text, o = {}) => ops.push({ k: 't', text: String(text ?? ''), ...o });
+    const line = () => ops.push({ k: 'hr' });
+    const gap = h => ops.push({ k: 'gap', h });
+    const tm = v.created ? new Date(v.created) : null;
+    const base = r2(num(v.amount) * docRate(v));
+    if (logoImg) ops.push({ k: 'img', img: logoImg, h: 130 });
+    txt(s.company, { size: 30, bold: 1, align: 'c' });
+    if (s.receiptHeader) txt(s.receiptHeader, { size: 20, align: 'c' });
+    if (s.address) txt(s.address, { size: 20, align: 'c' });
+    line();
+    txt(`${isR ? 'سند قبض' : 'سند دفع'} رقم ${v.no}`, { size: 28, bold: 1, align: 'c' });
+    if (v.rep) txt(`المندوب: ${v.rep}`, { size: 22, bold: 1, align: 'c' });
+    txt(`التاريخ: ${v.date}`, { size: 22 });
+    if (tm) txt(`الوقت: ${tm.toTimeString().slice(0, 8)}`, { size: 22 });
+    line();
+    txt(`${isR ? 'استلمنا من السيد' : 'دفعنا إلى السيد'} : ${a ? a.name : ''}`, { size: 26, bold: 1, align: 'c' });
+    gap(6);
+    if (v.cur === 'fx') txt(`المبلغ: ${fmt(v.amount)} ${FX().sym} × ${fmt(v.rate)}`, { size: 22, align: 'c' });
+    ops.push({ k: 'tri', l: '', m: `جديد ${cs}`, r: `قديم ${cs}`, size: 20, head: 1 });
+    ops.push({ k: 'tri', l: 'المبلغ', m: fmt(base), r: fmt(base * oldF()), size: 26, bold: 1, box: 1 });
+    gap(4);
+    try { txt(moneyWords(v.amount, v), { size: 20, align: 'c' }); } catch (e) { /* */ }
+    if (v.note) { line(); txt(`البيان: ${v.note}`, { size: 22 }); }
+    line();
+    gap(30);
+    ops.push({ k: 'p', l: isR ? 'توقيع المستلم' : 'توقيع المحاسب', r: isR ? 'توقيع الدافع' : 'توقيع المستلم', size: 20 });
+    gap(40);
+    if (s.phone) txt(`عند وجود أي استفسار يرجى التواصل مع هذا الرقم: ${s.phone}`, { size: 20, align: 'c' });
+    if (s.receiptStamp !== '0' && s.company && s.company !== 'اسم المنشأة') { gap(14); ops.push({ k: 'stamp', name: s.company, lines: String(s.receiptHeader || s.address || '').split(/\n/).map(t => t.trim()).filter(Boolean).slice(0, 4) }); }
+    gap(10);
+    const now = new Date();
+    txt(`تاريخ الطباعة ${today()} ${now.toTimeString().slice(0, 8)}`, { size: 18, align: 'c' });
+    gap(30);
+    return render(ops);
+  }
+  const isVoucher = d => !!d && !Array.isArray(d.lines) && 'acc' in d;
+  const docName = d => (isVoucher(d) ? (d.type === 'receipt' ? 'سند القبض' : 'سند الدفع') : 'الفاتورة') + ' رقم ' + d.no;
+  const make = d => (isVoucher(d) ? buildVoucher(d) : build(d));
+
   // الشعار (من الإعدادات) يتحمّل مرة وحدة
   let logoImg = null, logoSrc = '';
   function loadLogo() {
@@ -377,7 +420,7 @@ const Receipt = (() => {
   /* ---------- الواجهة ---------- */
   async function open(inv) {
     await loadLogo();
-    const canvas = build(inv);
+    const canvas = make(inv), isV = isVoucher(inv);
     const hasBT = !!(navigator.bluetooth);
     modal('🧾 إيصال حراري', `
       <div class="rc-prev"></div>
@@ -400,9 +443,9 @@ const Receipt = (() => {
         await connect(pick);
         msg.textContent = 'عم يطبع… 0%';
         await send(escpos(canvas), p => (msg.textContent = `عم يطبع… ${Math.round(p * 100)}%`));
-        msg.textContent = '✅ انطبع'; toast('✅ انطبعت الفاتورة رقم ' + inv.no);
+        msg.textContent = '✅ انطبع'; toast('✅ انطبع ' + docName(inv));
         // بعد الطباعة منرجع لقائمة الفواتير
-        setTimeout(() => { try { d.close(); } catch (e2) { /* */ } location.hash = '#/invoices'; }, 600);
+        setTimeout(() => { try { d.close(); } catch (e2) { /* */ } if (!isV) location.hash = '#/invoices'; }, 600);
       } catch (e) {
         if (e && e.name === 'NotFoundError') msg.textContent = 'ما اخترت طابعة.';
         else { msg.textContent = '❌ ما زبطت الطباعة: ' + (e && e.message || e); ch = null; }
@@ -413,9 +456,9 @@ const Receipt = (() => {
     $('#rcSys', d).onclick = () => sysPrint(canvas);
     const bt = $('#rcBt', d); if (bt) bt.onclick = () => go(false);
     const pk = $('#rcPick', d); if (pk) pk.onclick = () => { dev = null; ch = null; go(true); };
-    $('#rcPdf', d).onclick = () => { try { shareFile(pdfBlob(canvas), `فاتورة-${inv.no}.pdf`); } catch (e) { toast('ما زبط الـ PDF: ' + (e && e.message || e), 1); } };
+    $('#rcPdf', d).onclick = () => { try { shareFile(pdfBlob(canvas), `${isV ? 'سند' : 'فاتورة'}-${inv.no}.pdf`); } catch (e) { toast('ما زبط الـ PDF: ' + (e && e.message || e), 1); } };
     $('#rcShare', d).onclick = () => canvas.toBlob(async blob => {
-      const f = new File([blob], `فاتورة-${inv.no}.png`, { type: 'image/png' });
+      const f = new File([blob], `${isV ? 'سند' : 'فاتورة'}-${inv.no}.png`, { type: 'image/png' });
       if (navigator.canShare && navigator.canShare({ files: [f] })) { try { await navigator.share({ files: [f] }); } catch (e) {} }
       else { const u = URL.createObjectURL(blob), el = document.createElement('a'); el.href = u; el.download = f.name; el.click(); setTimeout(() => URL.revokeObjectURL(u), 3000); }
     }, 'image/png');
@@ -428,17 +471,18 @@ const Receipt = (() => {
       const conn = connect(false); // لازم يبلّش فوراً مع الكبسة حتى يقبل المتصفح يفتح قائمة الطابعات
       conn.catch(() => {});
       await loadLogo();
-      const canvas = build(inv);
+      const canvas = make(inv);
       await conn;
       await send(escpos(canvas), p => toast(`🖨 عم يطبع… ${Math.round(p * 100)}%`));
-      toast('✅ انحفظت وانطبعت الفاتورة رقم ' + inv.no);
-      location.hash = '#/'; // بعد الطباعة منرجع عالرئيسية
+      toast('✅ انطبع ' + docName(inv));
+      if (!isVoucher(inv)) location.hash = '#/'; // بعد طباعة الفاتورة منرجع عالرئيسية
     } catch (e) {
       ch = null;
-      if (e && e.name === 'NotFoundError') toast('ما اخترت طابعة — الفاتورة محفوظة', 1);
-      else { toast('❌ ما زبطت الطباعة بالبلوتوث — الفاتورة محفوظة، جرّب طريقة تانية', 1); open(inv); }
+      const nm = isVoucher(inv) ? 'السند' : 'الفاتورة';
+      if (e && e.name === 'NotFoundError') toast(`ما اخترت طابعة — ${nm} محفوظ${isVoucher(inv) ? '' : 'ة'}`, 1);
+      else { toast(`❌ ما زبطت الطباعة بالبلوتوث — ${nm} محفوظ${isVoucher(inv) ? '' : 'ة'}، جرّب طريقة تانية`, 1); open(inv); }
     }
   }
-  return { open, pdfBlob, printDirect, warm, pill, build: inv => build(inv), escpos, loadLogo, balances };
+  return { open, pdfBlob, printDirect, warm, pill, build: inv => make(inv), buildVoucher, escpos, loadLogo, balances };
 })();
 window.Receipt = Receipt;
