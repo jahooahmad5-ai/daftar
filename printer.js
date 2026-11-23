@@ -100,6 +100,8 @@ const Receipt = (() => {
     line();
     if (s.phone) txt(`عند وجود أي استفسار يرجى التواصل مع هذا الرقم: ${s.phone}`, { size: 20, align: 'c' });
     if (s.receiptFooter) { gap(8); txt(s.receiptFooter, { size: 22, bold: 1, align: 'c' }); }
+    // ختم الشركة بآخر الفاتورة (كأنها مختومة)
+    if (s.receiptStamp !== '0' && s.company && s.company !== 'اسم المنشأة') { gap(14); ops.push({ k: 'stamp', name: s.company, lines: String(s.receiptHeader || s.address || '').split(/\n/).map(t => t.trim()).filter(Boolean).slice(0, 4) }); }
     gap(10);
     const now = new Date();
     txt(`تاريخ الطباعة ${today()} ${now.toTimeString().slice(0, 8)}`, { size: 18, align: 'c' });
@@ -115,6 +117,25 @@ const Receipt = (() => {
     logoSrc = src; logoImg = null;
     if (!src) return Promise.resolve();
     return new Promise(ok => { const im = new Image(); im.onload = () => { logoImg = im; ok(); }; im.onerror = ok; im.src = src; });
+  }
+
+  // ختم: إطار مزدوج بزوايا مدوّرة ومايل شوي، وجواته اسم الشركة وسطور الختم
+  function drawStamp(x, o, W, y, h, k) {
+    const nameF = `bold ${Math.round(30 * k)}px ${FONT}`, lineF = `bold ${Math.round(19 * k)}px ${FONT}`;
+    x.save(); x.direction = 'rtl'; x.textAlign = 'center'; x.textBaseline = 'middle';
+    x.font = nameF; let tw = x.measureText(o.name).width;
+    x.font = lineF; o.lines.forEach(t => { tw = Math.max(tw, x.measureText(t).width); });
+    const bw = Math.min(W - 40, tw + 70 * k), bh = h - 24, cx = W / 2, cy = y + h / 2;
+    x.translate(cx, cy); x.rotate(-0.07);
+    const rr = (w, hh, r) => { x.beginPath(); x.moveTo(-w / 2 + r, -hh / 2); x.arcTo(w / 2, -hh / 2, w / 2, hh / 2, r); x.arcTo(w / 2, hh / 2, -w / 2, hh / 2, r); x.arcTo(-w / 2, hh / 2, -w / 2, -hh / 2, r); x.arcTo(-w / 2, -hh / 2, w / 2, -hh / 2, r); x.closePath(); x.stroke(); };
+    x.strokeStyle = '#000'; x.fillStyle = '#000';
+    x.lineWidth = 4; rr(bw, bh, 22 * k);
+    x.lineWidth = 2; rr(bw - 14 * k, bh - 14 * k, 16 * k);
+    const lh = 28 * k; let ty = -bh / 2 + 14 * k + 22 * k;
+    x.font = nameF; x.fillText(o.name, 0, ty); ty += 20 * k;
+    x.fillRect(-bw / 2 + 30 * k, ty, bw - 60 * k, 2); ty += 6 * k + lh / 2;
+    x.font = lineF; o.lines.forEach(t => { x.fillText(t, 0, ty); ty += lh; });
+    x.restore();
   }
 
   function render(ops) {
@@ -147,6 +168,7 @@ const Receipt = (() => {
         if (o.head) { x.fillRect(P, yy + lh - 4, W - 2 * P, 1); }
       }
       else if (o.k === 'box') { plan.push({ o, y: H, lh }); H += lh + 16; }
+      else if (o.k === 'stamp') { const k = W < 576 ? 0.82 : 1, h = Math.round((70 + o.lines.length * 28) * k) + 30; plan.push({ o, y: H, h, k }); H += h + 10; }
       else if (o.k === 'table') {
         const tw = W - 2 * P, cw = o.cols.map(cl => cl.w * tw), pad = 5;
         const rowsL = [o.cols.map(cl => [cl.h]), ...o.rows.map(r => r.map((v, i) => (i === 0 ? wrap(v, o, cw[i] - 2 * pad) : [v])))];
@@ -160,6 +182,7 @@ const Receipt = (() => {
       const { o, y, lh } = pl;
       if (o.k === 'hr') { x.fillRect(P, y + 8, W - 2 * P, 2); continue; }
       if (o.k === 'img') { x.drawImage(o.img, (W - pl.w) / 2, y, pl.w, pl.h); continue; }
+      if (o.k === 'stamp') { drawStamp(x, o, W, y, pl.h, pl.k); continue; }
       x.font = font(o); x.direction = 'rtl';
       if (o.k === 't') pl.ls.forEach((s, i) => { x.textAlign = o.align === 'c' ? 'center' : 'right'; x.fillText(s, o.align === 'c' ? W / 2 : W - P, y + i * lh); });
       else if (o.k === 'p') { x.textAlign = 'right'; x.fillText(o.l, W - P, y); x.textAlign = 'left'; x.fillText(o.r, P, y); }
