@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '6.18';
+const APP_VERSION = '6.19';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -429,9 +429,9 @@ function applySellerUI() {
     $('#nav').after(b);
   } else if (!on && b) b.remove();
 }
-function sellerSetup() {
+function sellerSetup(preName) {
   modal('🧑‍💼 تفعيل وضع البيّاع على هالموبايل', `<p class="muted">بوضع البيّاع بيقدر يعمل فواتير مبيع بس. ما بيشوف حسابات الزباين وأرصدتهم، ولا التقارير والأرباح والإعدادات، وما بيقدر يحذف ولا يعدّل المواد.<br>للخروج بيلزم الرمز السري يلي رح تحطه هلق — <b>لا تعطيه للشب</b>.</p>` +
-    fields([{ k: 'name', l: 'اسم المندوب (بيطلع عفواتيره)', req: 1, full: 1, ph: 'محمد صعوبي' }, { k: 'pin', l: 'رمز سري (4 أرقام أو أكتر)', t: 'password', req: 1 }, { k: 'pin2', l: 'أعد كتابة الرمز', t: 'password', req: 1 }]), {
+    fields([{ k: 'name', l: 'اسم المندوب (بيطلع عفواتيره)', req: 1, full: 1, ph: 'محمد صعوبي' }, { k: 'pin', l: 'رمز سري (4 أرقام أو أكتر)', t: 'password', req: 1 }, { k: 'pin2', l: 'أعد كتابة الرمز', t: 'password', req: 1 }], { name: preName || '' }), {
     saveText: 'تفعيل',
     onSave: d => {
       const p = String(d.pin || '').trim();
@@ -568,6 +568,21 @@ function backupShare() {
   download();
 }
 
+/* ------------------------- صفحة تجهيز موبايل المندوب (من الباركود الخاص فيه) ------------------------- */
+V.sellersetup = (id, q, view) => {
+  const name = (q.name || '').trim();
+  const linked = window.Cloud && Cloud.info().linked;
+  view.innerHTML = head(`🧑‍💼 تجهيز نقطة بيع${name ? ' — ' + esc(name) : ''}`) + `
+  <div class="card"><h3>١) اربط هالموبايل بالشركة ${linked ? '✅' : ''}</h3>
+    <p class="muted">${linked ? 'هالموبايل مربوط بالشركة ✓ — كمّل للخطوة ٢.' : 'اعمل حساب بإيميل الشب (إنشاء حساب جديد) — <b>لا تكبس «إنشاء ورفع بياناتي»</b>. بعدين من موبايل المدير: الإعدادات ← 👤 إضافة مستخدم ← إيميل الشب. وبعدها ارجع لهون واكبس «📂 فتح» على اسم الشركة.'}</p>
+    <div id="cloudCard"></div></div>
+  <div class="card"><h3>٢) فعّل وضع البيّاع</h3>
+    <p class="muted">بيحط اسم المندوب على فواتيره، وبيسكّر الحسابات والتقارير والإعدادات. الرمز السري بيحطه المدير ولا يعطيه للشب.</p>
+    <div class="acts"><button class="btn pri" data-act="go">🔒 تفعيل وضع البيّاع${name ? ' لـ ' + esc(name) : ''}</button></div></div>`;
+  if (window.Cloud) Cloud.card($('#cloudCard', view)); else $('#cloudCard', view).remove();
+  onAct(view, { go: () => { if (!(window.Cloud && Cloud.info().linked) && !confirm('هالموبايل لسا مش مربوط بالشركة، يعني فواتيره ما رح توصلك. بدك تفعّل وضع البيّاع هيك؟')) return; sellerSetup(name); } });
+};
+
 /* ------------------------- الرئيسية ------------------------- */
 function sellerHome(view) {
   const t = today(), mine = db.invoices.filter(i => i.type === 'sale' && i.date === t && i.rep === myRep());
@@ -578,7 +593,8 @@ function sellerHome(view) {
     <a href="#/invoices?t=sale" class="q"><i>📋</i>فواتيري</a>
   </div>
   <div class="kpis">${kpi('مبيعات اليوم', fmt(r2(tot)) + ' ' + esc(cur()))}${kpi('عدد فواتير اليوم', mine.length)}</div>`;
-  onAct(view, { sync: async () => { if (!window.Cloud || !Cloud.info().linked) return toast('المزامنة مش مربوطة — خلّي المدير يربطها', 1); await Cloud.sync(true); route(); } });
+  if (window.Cloud && !Cloud.info().linked) { const c = document.createElement('div'); c.className = 'card'; view.appendChild(c); Cloud.card(c); }
+  onAct(view, { sync: async () => { if (!window.Cloud || !Cloud.info().linked) return toast('المزامنة مش مربوطة — سجّل دخول من تحت', 1); await Cloud.sync(true); route(); } });
   if (window.Cloud) Cloud.pill();
 }
 
