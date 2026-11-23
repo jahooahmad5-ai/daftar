@@ -121,20 +121,24 @@ const Receipt = (() => {
 
   // ختم: إطار مزدوج بزوايا مدوّرة ومايل شوي، وجواته اسم الشركة وسطور الختم
   function drawStamp(x, o, W, y, h, k) {
-    const nameF = `bold ${Math.round(30 * k)}px ${FONT}`, lineF = `bold ${Math.round(19 * k)}px ${FONT}`;
+    const nameF = `bold ${Math.round(36 * k)}px ${FONT}`, lineF = `bold ${Math.round(24 * k)}px ${FONT}`;
     x.save(); x.direction = 'rtl'; x.textAlign = 'center'; x.textBaseline = 'middle';
     x.font = nameF; let tw = x.measureText(o.name).width;
     x.font = lineF; o.lines.forEach(t => { tw = Math.max(tw, x.measureText(t).width); });
-    const bw = Math.min(W - 40, tw + 70 * k), bh = h - 24, cx = W / 2, cy = y + h / 2;
-    x.translate(cx, cy); x.rotate(-0.07);
+    const bw = Math.min(W - 16, tw + 90 * k), bh = h - 24, cx = W / 2, cy = y + h / 2;
+    x.translate(cx, cy);
     const rr = (w, hh, r) => { x.beginPath(); x.moveTo(-w / 2 + r, -hh / 2); x.arcTo(w / 2, -hh / 2, w / 2, hh / 2, r); x.arcTo(w / 2, hh / 2, -w / 2, hh / 2, r); x.arcTo(-w / 2, hh / 2, -w / 2, -hh / 2, r); x.arcTo(-w / 2, -hh / 2, w / 2, -hh / 2, r); x.closePath(); x.stroke(); };
     x.strokeStyle = '#000'; x.fillStyle = '#000';
     x.lineWidth = 4; rr(bw, bh, 22 * k);
     x.lineWidth = 2; rr(bw - 14 * k, bh - 14 * k, 16 * k);
-    const lh = 28 * k; let ty = -bh / 2 + 14 * k + 22 * k;
-    x.font = nameF; x.fillText(o.name, 0, ty); ty += 20 * k;
-    x.fillRect(-bw / 2 + 30 * k, ty, bw - 60 * k, 2); ty += 6 * k + lh / 2;
-    x.font = lineF; o.lines.forEach(t => { x.fillText(t, 0, ty); ty += lh; });
+    const lh = 36 * k; let ty = -bh / 2 + 14 * k + 28 * k;
+    x.font = nameF; x.fillText(o.name, 0, ty); ty += 26 * k;
+    x.fillRect(-bw / 2 + 30 * k, ty, bw - 60 * k, 2); ty += 4 * k + lh / 2;
+    o.lines.forEach(t => {
+      let fs = Math.round(24 * k); x.font = `bold ${fs}px ${FONT}`;
+      while (fs > 14 && x.measureText(t).width > bw - 60 * k) { fs--; x.font = `bold ${fs}px ${FONT}`; }
+      x.fillText(t, 0, ty); ty += lh;
+    });
     x.restore();
   }
 
@@ -168,7 +172,7 @@ const Receipt = (() => {
         if (o.head) { x.fillRect(P, yy + lh - 4, W - 2 * P, 1); }
       }
       else if (o.k === 'box') { plan.push({ o, y: H, lh }); H += lh + 16; }
-      else if (o.k === 'stamp') { const k = W < 576 ? 0.82 : 1, h = Math.round((70 + o.lines.length * 28) * k) + 30; plan.push({ o, y: H, h, k }); H += h + 10; }
+      else if (o.k === 'stamp') { const k = W < 576 ? 0.82 : 1, h = Math.round((92 + o.lines.length * 36) * k) + 30; plan.push({ o, y: H, h, k }); H += h + 10; }
       else if (o.k === 'table') {
         const tw = W - 2 * P, cw = o.cols.map(cl => cl.w * tw), pad = 5;
         const rowsL = [o.cols.map(cl => [cl.h]), ...o.rows.map(r => r.map((v, i) => (i === 0 ? wrap(v, o, cw[i] - 2 * pad) : [v])))];
