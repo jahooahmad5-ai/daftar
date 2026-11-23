@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '6.37';
+const APP_VERSION = '6.38';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -431,6 +431,17 @@ function ensureRepBox(name) {
   db.accounts.push({ id: 'repbox_' + uid(), code: nextCode(p), name: 'صندوق المندوب: ' + name, type: p.type, parent: 'cashGroup', group: false, repBox: name });
   save(); return true;
 }
+// أي مندوب إله فواتير أو سندات: منعمله صندوق (للمندوبين يلي انضافوا قبل ميزة الصندوق)
+function ensureAllRepBoxes() {
+  if (isSeller() || !acc('cashGroup')) return;
+  [...new Set([...db.invoices, ...db.vouchers].map(x => x.rep).filter(Boolean))].forEach(n => ensureRepBox(n));
+}
+function repBoxDialog() {
+  modal('💰 صندوق لمندوب', '<p class="muted">اكتب اسم المندوب <b>متل ما بيطلع على فواتيره</b> بالضبط.</p>' + fields([{ k: 'name', l: 'اسم المندوب', req: 1, full: 1 }]), {
+    saveText: 'اعمل الصندوق',
+    onSave: d => { const n = String(d.name || '').trim(); if (!n) return false; if (!ensureRepBox(n)) { toast('في صندوق لهالمندوب من قبل', 1); return false; } toast('✓ انعمل صندوق ' + n); route(); },
+  });
+}
 const NO_BOX = '💰 صندوقك لسا ما وصل — اكبس 🔄 مزامنة. إذا ضل، خلّي المدير يفتح الإعدادات عنده';
 const SELLER_ROUTES = ['home', 'invoices', 'invoice', 'vouchers'];
 // موبايل انفتح من رابط/باركود نقطة البيع: بينقفل عليها من أول فتحة (حتى قبل تسجيل الدخول)
@@ -740,6 +751,7 @@ function sellerHome(view) {
 
 V.home = (id, q, view) => {
   if (isSeller()) return sellerHome(view);
+  ensureAllRepBoxes();
   const R = rollup(sums());
   const bal = i => natural(acc(i), R[i]);
   const mo = today().slice(0, 7), y = today().slice(0, 4);
@@ -2254,7 +2266,7 @@ V.settings = (id, q, view) => {
     <p class="muted">فعّله على موبايل الشب يلي بيشتغل معك (بعد ما تربطه بشركتك من المزامنة السحابية): بيصير يبيع بس، بلا حسابات زباين ولا تقارير ولا أرباح ولا إعدادات ولا حذف. بيتفعّل على هالموبايل بس.</p>
     <p class="muted">📷 <b>الباركود</b>: المندوب بيصوّره بموبايله ← بيوصلك طلب ← بتكبس «تفعيل» ← بتفتح عنده نقطة البيع بس. بلا إيميل ولا كلمة سر.</p>
     <div id="posDevs"></div>
-    <div class="acts"><button class="btn pri" data-act="posqr">📷 باركود نقطة البيع لموبايل المندوب</button><button class="btn" data-act="seller">🔒 تفعيل وضع البيّاع على هالموبايل</button></div>
+    <div class="acts"><button class="btn pri" data-act="posqr">📷 باركود نقطة البيع لموبايل المندوب</button><button class="btn" data-act="repbox">💰 صندوق لمندوب</button><button class="btn" data-act="seller">🔒 تفعيل وضع البيّاع على هالموبايل</button></div>
   </div>
   <div class="card"><h3>النسخ الاحتياطي</h3>
     <p class="muted">البيانات محفوظة على هذا الجهاز فقط داخل المتصفح. خذ نسخة احتياطية بانتظام واحفظها في مكان آمن، ويمكنك نقلها لجهاز آخر.</p>
@@ -2299,6 +2311,7 @@ V.settings = (id, q, view) => {
     noLogo: () => { db.settings.logo = ''; save(); route(); },
     seller: () => sellerSetup(),
     posqr: () => posQR(),
+    repbox: () => repBoxDialog(),
     export: () => {
       const blob = new Blob([JSON.stringify(db, null, 1)], { type: 'application/json' });
       const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `daftar-backup-${today()}.json`;
