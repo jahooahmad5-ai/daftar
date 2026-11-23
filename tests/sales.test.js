@@ -1,0 +1,132 @@
+'use strict';
+// المبيعات: صندوق المندوب، القبض، الترقيم، التسعير، المسودة، زر +
+const assert = require('assert');
+const { page, OWNER, REP } = require('./helpers');
+
+const setupRep = p => p.evaluate(() => {
+  db.accounts.push({ id: 'repbox_1', code: '1113', name: 'صندوق المندوب: محمد', type: 'asset', parent: 'cashGroup', group: false, repBox: 'محمد' },
+    { id: 'cust1', code: '112001', name: 'أحمد', type: 'asset', parent: 'customers', group: false });
+  db.items.push({ id: 'it1', code: '1', name: 'سكر', sellPrice: 1000, buyPrice: 900, openQty: 50 });
+  save(); route();
+});
+
+module.exports = [
+  {
+    name: 'تفعيل المندوب من موبايل المدير بيعمل صندوق باسمه',
+    fn: async base => {
+      const p = await page(base, { cloud: OWNER, hash: '#/settings', cloudOpts: { requests: [{ user_id: 'u-rep', name: 'محمد', approved: true }] } });
+      await p.waitForTimeout(600);
+      assert.deepStrictEqual(await p.evaluate(() => db.accounts.filter(a => a.repBox).map(a => a.name)), ['صندوق المندوب: محمد']);
+    },
+  },
+  {
+    name: 'المندوب بيقبض من زبون: بينزل بصندوقه، وبيبيّن العملة القديمة، وبلا رصيد',
+    fn: async base => {
+      const p = await page(base, { cloud: REP, ls: { daftar_rep_name: 'محمد' } });
+      await setupRep(p);
+      await p.click('a[href="#/vouchers?new=receipt"]'); await p.waitForTimeout(300);
+      await p.selectOption('#dlg [name=acc]', 'cust1');
+      await p.fill('#dlg [name=amount]', '1000'); await p.dispatchEvent('#dlg [name=amount]', 'input');
+      assert.match(await p.text('.amt-old'), /100,000/);
+      await p.click('#dlg button.pri'); await p.waitForTimeout(400);
+      const v = await p.evaluate(() => db.vouchers.slice(-1)[0]);
+      assert.strictEqual(v.cashAcc, 'repbox_1'); assert.strictEqual(v.rep, 'محمد'); assert.strictEqual(v.amount, 1000);
+      assert.doesNotMatch(await p.text('#dlg'), /الحساب القديم|رصيد الحساب/);
+      assert.deepStrictEqual(p.errors, []);
+    },
+  },
+  {
+    name: 'فاتورة المندوب ما فيها غير صندوقه',
+    fn: async base => {
+      const p = await page(base, { cloud: REP, ls: { daftar_rep_name: 'محمد' } });
+      await setupRep(p);
+      await p.go('#/invoice/new?type=sale'); await p.closeDlg();
+      assert.deepStrictEqual(await p.$$eval('[name=cashAcc] option', os => os.map(o => o.value)), ['repbox_1']);
+    },
+  },
+  {
+    name: 'المدير بيستلم من صندوق المندوب ورصيده بيصير صفر',
+    fn: async base => {
+      const p = await page(base, { cloud: OWNER });
+      await setupRep(p);
+      await p.evaluate(() => { db.vouchers.push({ id: 'v1', type: 'receipt', no: 1, date: today(), acc: 'cust1', cashAcc: 'repbox_1', amount: 5000, cur: 'base', rate: '', rep: 'محمد' }); save(); route(); });
+      assert.match(await p.text(), /صندوق المندوب: محمد 5,000/);
+      await p.click('[data-act=takeBox]'); await p.click('#dlg button.pri'); await p.waitForTimeout(300);
+      assert.match(await p.text(), /صندوق المندوب: محمد 0 /);
+    },
+  },
+  {
+    name: 'الترقيم: جهازين بنفس الوقت ما بياخدوا نفس الرقم',
+    fn: async base => {
+      const a = await page(base, { cloud: OWNER }), b = await page(base, { cloud: OWNER });
+      // السحابة الوهمية مشتركة بين الجهازين
+      b.cloud.counter = 0; await b.unroute(/supabase\.co/); await b.route(/supabase\.co/, a.cloud.handler);
+      const mk = p => p.evaluate(() => { const o = newNo('receipt'); db.vouchers.push({ id: uid(), type: 'receipt', ...o, date: today(), acc: 'cash', cashAcc: 'cash', amount: 1 }); save(); return o.no; });
+      await a.evaluate(() => reserveNo('receipt')); await b.evaluate(() => reserveNo('receipt')); await a.waitForTimeout(400);
+      const nums = [await mk(a), await mk(b)]; await a.waitForTimeout(500); nums.push(await mk(a), await mk(b));
+      assert.strictEqual(new Set(nums).size, 4, 'أرقام مكررة: ' + nums);
+    },
+  },
+  {
+    name: 'الترقيم: رقم انعمل بلا نت وطلع مكرر بيتصلّح لحاله',
+    fn: async base => {
+      const p = await page(base, { cloud: OWNER });
+      const r = await p.evaluate(async () => {
+        db.vouchers.push({ id: 'srv', type: 'receipt', no: 99, date: today(), acc: 'cash', cashAcc: 'cash', amount: 5, created: 1 },
+          { id: 'loc', type: 'receipt', no: 99, nl: 1, date: today(), acc: 'cash', cashAcc: 'cash', amount: 6, created: 2 }); save();
+        await Cloud.sync(true); return db.vouchers.filter(v => ['srv', 'loc'].includes(v.id)).map(v => v.no);
+      });
+      assert.strictEqual(r[0], 99); assert.notStrictEqual(r[1], 99);
+    },
+  },
+  {
+    name: 'التسعير: آخر سعر للزبون، وإلا سعر البطاقة، و«زبون عام» دايماً البطاقة',
+    fn: async base => {
+      const p = await page(base, { cloud: OWNER });
+      await p.evaluate(() => {
+        db.items.push({ id: 'it1', code: '1', name: 'سكر', unit: 'كغ', buyPrice: 900, sellPrice: 1000, openQty: 100 });
+        db.accounts.push({ id: 'c1', code: '112001', name: 'أحمد', type: 'asset', parent: 'customers', group: false }, { id: 'c2', code: '112002', name: 'سامر', type: 'asset', parent: 'customers', group: false });
+        ensureWalkin();
+        db.invoices.push({ id: 'old', type: 'sale', no: 1, date: '2026-01-01', pay: 'credit', party: 'c1', cur: 'base', rate: '', lines: [{ item: 'it1', qty: 1, price: 1080 }], discount: 0, created: 1 },
+          { id: 'w', type: 'sale', no: 2, date: '2026-01-02', pay: 'cash', party: 'walkin', cur: 'base', rate: '', lines: [{ item: 'it1', qty: 1, price: 1090 }], discount: 0, created: 2 }); save();
+      });
+      const priceFor = async party => {
+        await p.go('#/invoices'); await p.go('#/invoice/new?type=sale'); await p.closeDlg();
+        await p.selectOption('[name=party]', party); await p.dispatchEvent('[name=party]', 'change');
+        await p.click('#scanIn'); await p.keyboard.type('سكر'); await p.waitForTimeout(300);
+        return (await p.locator('.sg-meta').first().innerText()).match(/[\d,]+/)[0];
+      };
+      assert.strictEqual(await priceFor('c1'), '1,080');
+      assert.strictEqual(await priceFor('c2'), '1,000');
+      assert.strictEqual(await priceFor('walkin'), '1,000');
+    },
+  },
+  {
+    name: 'مسودة الفاتورة: بترجع إذا جديدة، وبتنتسى إذا قديمة',
+    fn: async base => {
+      const draft = at => JSON.stringify({ lines: [{ item: 'it1', qty: 1, price: 950 }], payment: '', inv: { date: '2026-01-01', pay: 'cash', cashAcc: 'cash', party: '' }, ...(at ? { at } : {}) });
+      for (const [at, want] of [[null, 0], [Date.now(), 1]]) {
+        const p = await page(base, { cloud: OWNER });
+        await p.evaluate(d => { db.items.push({ id: 'it1', name: 'بسكوت', sellPrice: 950 }); save(); localStorage.setItem('daftar_draft_sale', d); }, draft(at));
+        await p.go('#/invoice/new?type=sale');
+        assert.strictEqual(await p.locator('.draft-note').count(), want);
+      }
+    },
+  },
+  {
+    name: 'زر + بالمادة بيزيد الكمية وما بيطلّع الصفحة لفوق',
+    fn: async base => {
+      const p = await page(base, { cloud: OWNER });
+      await p.evaluate(() => { for (let i = 0; i < 8; i++) db.items.push({ id: 'i' + i, name: 'مادة ' + i, sellPrice: 1000, openQty: 50 }); ensureWalkin(); save();
+        localStorage.setItem('daftar_draft_sale', JSON.stringify({ lines: db.items.map(it => ({ item: it.id, qty: 1, price: 1000 })), payment: '', inv: { date: today(), pay: 'cash', cashAcc: 'cash', party: 'walkin' }, at: Date.now() })); });
+      await p.go('#/invoice/new?type=sale'); await p.closeDlg();
+      const btn = p.locator('.ln-card [data-act=inc]').nth(5);
+      await btn.scrollIntoViewIfNeeded(); await p.evaluate(() => window.scrollBy(0, 150)); await p.waitForTimeout(200);
+      const y0 = await p.evaluate(() => scrollY);
+      await p.focus('#scanIn'); await p.evaluate(() => window.dispatchEvent(new Event('touchmove')));
+      await btn.click(); await p.waitForTimeout(900);
+      assert.ok(await p.evaluate(() => scrollY) > y0 - 200, 'الصفحة طلعت لفوق');
+      assert.ok((await p.evaluate(() => JSON.parse(localStorage.getItem('daftar_draft_sale')).lines.map(l => l.qty))).includes(2));
+    },
+  },
+];

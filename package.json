@@ -1,0 +1,9 @@
+{
+  "name": "daftar",
+  "private": true,
+  "description": "دفتر — برنامج محاسبة بسيط بالعربي",
+  "scripts": {
+    "test": "node tests/run.js",
+    "test:db": "bash tests/sql/run.sh"
+  }
+}

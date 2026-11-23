@@ -1,0 +1,46 @@
+name: فحوصات
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  browser:
+    name: فحوصات البرنامج (متصفح)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: تنزيل Playwright و Chromium
+        run: |
+          npm install --no-save --no-package-lock playwright@1.49.1
+          npx playwright install --with-deps chromium
+      - name: تشغيل الفحوصات
+        run: node tests/run.js
+
+  database:
+    name: فحوصات قاعدة البيانات (الحماية والترقيم)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      PGHOST: localhost
+      PGPORT: 5432
+      PGUSER: postgres
+      PGPASSWORD: postgres
+    steps:
+      - uses: actions/checkout@v4
+      - name: تشغيل الفحوصات
+        run: bash tests/sql/run.sh
