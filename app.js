@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '6.6';
+const APP_VERSION = '6.7';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -980,12 +980,12 @@ V.invoice = (id, q, view) => {
   const stockOf = it => (st[it.id] ? st[it.id].qty : num(it.openQty));
 
   view.innerHTML = head(INV_TYPES[inv.type] + (orig ? ` رقم ${orig.no}` : ' جديدة'),
-    `${!orig ? '<button class="btn" data-act="paste">📋 لصق طلبية</button><button class="btn red" data-act="clearAll">🗑 تفريغ</button>' : ''}${orig ? `<button class="btn wa" data-act="wa">واتساب</button><button class="btn" data-act="receipt">🧾 إيصال</button><button class="btn" data-act="print">🖨 طباعة</button><button class="btn red" data-act="del">حذف</button>` : ''}<a class="btn" href="#/invoices">رجوع</a>`) + `
+    `${orig ? `<button class="btn wa" data-act="wa">واتساب</button><button class="btn" data-act="receipt">🧾 إيصال</button><button class="btn" data-act="print">🖨 طباعة</button><button class="btn red" data-act="del">حذف</button><a class="btn" href="#/invoices">رجوع</a>` : ''}`) + `
   ${orig && q.saved ? `<div class="saved-ok">✅ الفاتورة رقم ${orig.no} محفوظة — ${orig.lines.length} مادة، ${fmt(orig.lines.reduce((s, l) => s + num(l.qty), 0))} قطعة</div>` : ''}
   <div class="inv-count-d">القطع: <b id="cntPcs">0</b></div>
   <div id="dirtyNote" class="dirty-note" hidden>⚠️ في تغييرات على هالفاتورة <b>لسا ما انحفظت</b> — كبّس «💾 حفظ التعديلات» تحت</div>
   ${restored ? (orig ? '<div class="draft-note">↩️ رجّعتلك التعديلات اللي ما كانت محفوظة على هالفاتورة. <button class="btn" data-act="discard">تراجع عنها</button></div>'
-    : '<div class="draft-note">↩️ رجّعتلك الفاتورة اللي ما كانت محفوظة. إذا بدك تبلّش من جديد كبّس «🗑 تفريغ».</div>') : ''}
+    : '<div class="draft-note">↩️ رجّعتلك الفاتورة اللي ما كانت محفوظة. <button class="btn red" data-act="clearAll">🗑 بلّش من جديد</button></div>') : ''}
   <div class="search-wrap">
     <div class="scan-row">
       ${canScan() ? '<button class="sq-btn" data-act="cam" title="مسح بالكاميرا">▮▯▮</button>' : ''}
