@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '6.43';
+const APP_VERSION = '6.44';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -1926,9 +1926,9 @@ function voucherForm(v, type, preAcc) {
     const fx = $('[name=cur]', f).value === 'fx', a = num($('[name=amount]', f).value), R = num($('[name=rate]', f).value);
     rateFld.style.visibility = fx ? 'visible' : 'hidden';
     const base = fx ? a * R : a;
-    $('#vEq').textContent = [fx && a && R ? `المعادل: ${fmt(base)} ${cur()}` : '', oldOn() && base ? `بالعملة القديمة: ${oldAmt(base)}` : ''].filter(Boolean).join(' — ');
+    $('#vEq').textContent = ''; // المعادل صار تحت خانة المبلغ
   };
-  f.oninput = f.onchange = upd; upd();
+  f.oninput = f.onchange = upd; upd(); amountOldHint(f);
   if (v) {
     $('#vDel').onclick = () => { if (isSeller()) return toast('🔒 الحذف مسكّر بوضع البيّاع', 1); if (!confirm('حذف السند؟')) return; db.vouchers = db.vouchers.filter(x => x.id !== v.id); save(); $('#dlg').close(); route(); };
     $('#vPrint').onclick = () => { $('#dlg').close(); printDoc(voucherHtml(v)); };
@@ -1955,6 +1955,18 @@ function sellerVouchers(q, view) {
     open: id => { const v = list.find(x => x.id === id); if (v) voucherPrintAsk(v); },
   });
   if (q.new) { history.replaceState(null, '', '#/vouchers'); sellerReceipt(); }
+}
+// تحت خانة المبلغ: المعادل بالعملة القديمة (وبالليرة إذا المبلغ بالدولار) — بيتحدّث وإنت عم تكتب
+function amountOldHint(f) {
+  const am = $('[name=amount]', f); if (!am) return () => {};
+  const h = document.createElement('div'); h.className = 'amt-old'; am.closest('.fld').appendChild(h);
+  const upd = () => {
+    const a = num(am.value), fx = ($('[name=cur]', f) || {}).value === 'fx', R = num(($('[name=rate]', f) || {}).value);
+    const base = fx ? a * R : a;
+    h.textContent = !a ? '' : fx && !R ? 'اكتب سعر الصرف' : `${fx ? `= ${fmt(r2(base))} ${cur()} — ` : ''}بالعملة القديمة: ${oldAmt(base)}`;
+  };
+  f.addEventListener('input', upd); f.addEventListener('change', upd); upd();
+  return upd;
 }
 // طباعة السند: بلوتوث مباشر (إيصال حراري بالجديد والقديم) أو طرق تانية
 function voucherPrintAsk(v, fresh) {
@@ -1988,6 +2000,7 @@ function sellerReceipt() {
     },
   });
   const sel = $('[name=acc]', f); if (typeof enhancePartySelect === 'function') enhancePartySelect(sel);
+  amountOldHint(f);
   const rateFld = $('[name=rate]', f).closest('.fld');
   const upd = () => { rateFld.style.visibility = $('[name=cur]', f).value === 'fx' ? 'visible' : 'hidden'; };
   f.onchange = upd; upd();

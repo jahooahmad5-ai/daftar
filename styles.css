@@ -380,3 +380,4 @@ body.locked .app{grid-template-columns:1fr}
 .calc-put{width:100%;margin-top:8px;border:0;border-radius:10px;background:#f0b429;color:#16241f;font-weight:700;padding:11px 0;font-size:16px;direction:rtl}
 body.locked #calc{display:none}
 @media print{#calc{display:none!important}}
+.amt-old{margin-top:5px;font-size:14px;font-weight:700;color:#9a6700}
