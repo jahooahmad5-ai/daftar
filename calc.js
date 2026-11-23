@@ -100,9 +100,13 @@
   const fab = $c('#calcFab');
   function place() {
     const w = innerWidth, h = innerHeight, fw = 54;
-    const p = pos || { x: 14, y: h - fw - 90 };
+    let p = pos || { x: 14, y: h - fw - 90 };
     p.x = Math.min(Math.max(6, p.x), w - fw - 6); p.y = Math.min(Math.max(60, p.y), h - fw - 6);
-    fab.style.left = p.x + 'px'; fab.style.top = p.y + 'px';
+    // ما منغطّي شريط المجموع والحفظ تحت الفاتورة: منطلع فوقه
+    let y = p.y;
+    const bar = document.querySelector('.inv-bar');
+    if (bar && !root.closest('dialog')) { const r = bar.getBoundingClientRect(); if (r.height && y + fw > r.top - 6 && y < r.bottom) y = Math.max(60, r.top - fw - 10); }
+    fab.style.left = p.x + 'px'; fab.style.top = y + 'px'; p = { x: p.x, y };
     const box = $c('#calcBox'); if (box.hidden) return;
     const bw = Math.min(300, w - 12), bh = box.offsetHeight || 420;
     let bx = p.x + fw / 2 - bw / 2, by = p.y - bh - 8;
@@ -129,9 +133,11 @@
   root.addEventListener('pointerdown', e => { if (e.target.closest('#calcBox button')) e.preventDefault(); });
   root.addEventListener('click', e => { const b = e.target.closest('[data-k]'); if (b) press(b.dataset.k); });
   addEventListener('resize', place);
+  addEventListener('hashchange', () => setTimeout(place, 120));
+  let raf = 0; addEventListener('scroll', () => { if (!raf) raf = requestAnimationFrame(() => { raf = 0; place(); }); }, { passive: true });
 
   // النوافذ (dialog) بتطلع فوق كل شي — منحط الحاسبة جوّاها وهي مفتوحة
-  const home = () => { const d = document.querySelector('dialog[open]'); const want = d || document.body; if (root.parentNode !== want) want.appendChild(root); };
+  const home = () => { const d = document.querySelector('dialog[open]'); const want = d || document.body; if (root.parentNode !== want) { want.appendChild(root); place(); } };
   new MutationObserver(home).observe(document.body, { subtree: true, attributes: true, attributeFilter: ['open'] });
 
   document.body.appendChild(root); place();
