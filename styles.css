@@ -363,3 +363,20 @@ body.seller .app{grid-template-columns:1fr}
 body.locked #voiceBtn,body.locked .topbar a.icon-btn,body.locked a[href^="#/invoice/new"],body.locked #menuBtn,body.locked #side,body.locked #backdrop,body.locked #installBtn,body.locked #syncPill{display:none!important}
 body.locked .main-wrap{margin-right:0!important;margin-left:0!important}
 body.locked .app{grid-template-columns:1fr}
+/* آلة حاسبة عائمة */
+#calcFab{position:fixed;z-index:95;width:54px;height:54px;border-radius:50%;border:0;background:#0f766e;color:#fff;font-size:26px;box-shadow:0 6px 18px rgba(0,0,0,.28);touch-action:none;cursor:grab;opacity:.92}
+#calc.on #calcFab{opacity:1;outline:3px solid #f0b429}
+#calcBox{position:fixed;z-index:96;background:#fff;color:#16241f;border-radius:16px;box-shadow:0 12px 36px rgba(0,0,0,.3);padding:10px;direction:ltr}
+.calc-head{display:flex;justify-content:space-between;align-items:center;direction:rtl;font-weight:700;margin-bottom:6px}
+.calc-head button{border:0;background:#eef2f1;border-radius:8px;width:32px;height:32px;font-size:15px}
+.calc-exp{min-height:20px;text-align:right;color:#6b7f79;font-size:15px;word-break:break-all}
+.calc-out{text-align:right;font-size:30px;font-weight:700;margin-bottom:8px;word-break:break-all}
+.calc-keys{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+.calc-keys button{border:0;border-radius:10px;background:#f1f4f3;font-size:21px;padding:12px 0;color:#16241f}
+.calc-keys button:active{transform:scale(.96)}
+.calc-keys .op{background:#dcefeb;color:#0f766e;font-weight:700}
+.calc-keys .fn{background:#fdecec;color:#b42318}
+.calc-keys .eq{background:#0f766e;color:#fff}
+.calc-put{width:100%;margin-top:8px;border:0;border-radius:10px;background:#f0b429;color:#16241f;font-weight:700;padding:11px 0;font-size:16px;direction:rtl}
+body.locked #calc{display:none}
+@media print{#calc{display:none!important}}
