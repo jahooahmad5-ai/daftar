@@ -327,6 +327,30 @@ const Cloud = (() => {
       throw e;
     }
   }
+  /* ---------- حساب نقطة بيع تلقائي (بلا ما المندوب يكتب إيميل ولا كلمة سر) ---------- */
+  // المدير بيعمل حساب للمندوب لحاله وبيضيفه للشركة، والإيميل وكلمة السر بينحطّوا جوّا الباركود
+  async function makeRep() {
+    if (!linked() || !st.owner) throw new Error('لازم تكون مسجّل دخول بحساب المدير وفاتح الشركة (الإعدادات ← المزامنة السحابية)');
+    const rnd = n => Array.from(crypto.getRandomValues(new Uint8Array(n)), b => 'abcdefghijkmnpqrstuvwxyz23456789'[b % 32]).join('');
+    const email = `pos-${rnd(10)}@pos.daftar.app`, password = rnd(20);
+    const j = await http('/auth/v1/signup', { method: 'POST', body: JSON.stringify({ email, password }) }, false);
+    if (!j || !j.access_token) throw new Error('السيرفر طالب تأكيد إيميل — من Supabase: Authentication ← Sign In / Providers ← Email ← طفّي «Confirm email» وجرّب مرة تانية');
+    const r = await http('/rest/v1/rpc/add_member', { method: 'POST', body: JSON.stringify({ p_company: st.company, p_email: email }) });
+    if (r !== 'ok') throw new Error('ما قدرت ضيف حساب نقطة البيع للشركة');
+    return { e: email, p: password, c: st.company };
+  }
+  // موبايل المندوب: بيسجّل دخول وبيفتح الشركة لحاله من معلومات الباركود
+  async function posLogin(k) {
+    if (st.session && st.company && !st.owner) return false; // مربوط من قبل
+    if (st.session && st.owner) throw new Error('هالموبايل مسجّل بحساب المدير');
+    const j = await http('/auth/v1/token?grant_type=password', { method: 'POST', body: JSON.stringify({ email: k.e, password: k.p }) }, false);
+    setSession(j);
+    const list = await http('/rest/v1/companies?select=id,name,owner&id=eq.' + encodeURIComponent(k.c));
+    if (!list || !list.length) throw new Error('الشركة مش موجودة أو المندوب مش مضاف إلها');
+    await openCompany(list[0]);
+    return true;
+  }
+
   function logout() {
     const { url, key } = cfg();
     if (st.session) fetch(url + '/auth/v1/logout', { method: 'POST', headers: { apikey: key, Authorization: 'Bearer ' + st.session.access_token } }).catch(() => {});
@@ -348,7 +372,7 @@ const Cloud = (() => {
 
   // عضو بشركة مش صاحبها (متل المندوب) = وضع البيّاع تلقائياً على موبايله
   if (typeof applySellerUI === 'function') setTimeout(() => { applySellerUI(); if ((st.company && !st.owner) || /^#\/(pos|sellersetup)/.test(location.hash)) route(); }, 0);
-  return { track, card, sync, pill, info: () => ({ linked: linked(), pending: pending(), busy, lastSync: st.lastSync, member: !!(configured() && st.company && !st.owner), email: st.session?.email || '' }) };
+  return { track, card, sync, pill, makeRep, posLogin, info: () => ({ linked: linked(), pending: pending(), busy, lastSync: st.lastSync, member: !!(configured() && st.company && !st.owner), company: st.company || '', email: st.session?.email || '' }) };
 })();
 window.Cloud = Cloud;
 if (/^#\/settings/.test(location.hash)) route();

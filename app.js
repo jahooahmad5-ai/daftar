@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '6.30';
+const APP_VERSION = '6.31';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -465,18 +465,28 @@ function posQR() {
     onSave: d => { const n = String(d.name || '').trim(); if (!n) return false; setTimeout(() => posQRShow(n), 0); },
   });
 }
-function posQRShow(name) {
-  const url = location.origin + location.pathname + '#/pos?name=' + encodeURIComponent(name);
+const POS_REPS_KEY = 'daftar_pos_reps';
+async function posQRShow(name) {
   if (typeof qrcode !== 'function') return toast('مكتبة الباركود ما تحمّلت — حدّث الصفحة', 1);
+  if (!window.Cloud) return toast('المزامنة السحابية مش شغّالة', 1);
+  // نفس المندوب = نفس الحساب (إذا رجعت طبعت باركوده ما منعمل حساب جديد)
+  let reps = {}; try { reps = JSON.parse(localStorage.getItem(POS_REPS_KEY) || '{}'); } catch (e) { /* */ }
+  let k = reps[name];
+  if (!k || k.c !== (Cloud.info().company || k.c)) {
+    toast('⏳ عم جهّز حساب نقطة البيع…');
+    try { k = await Cloud.makeRep(); } catch (e) { return toast(e.message, 1); }
+    reps[name] = k; try { localStorage.setItem(POS_REPS_KEY, JSON.stringify(reps)); } catch (e) { /* */ }
+  }
+  const tok = btoa(unescape(encodeURIComponent(JSON.stringify(k)))).replace(/=+$/, '');
+  const url = location.origin + location.pathname + '#/pos?name=' + encodeURIComponent(name) + '&k=' + encodeURIComponent(tok);
   const qr = qrcode(0, 'M'); qr.addData(url); qr.make();
   const svg = qr.createSvgTag({ cellSize: 8, margin: 2, scalable: true });
   const box = `<div style="background:#fff;padding:10px;border-radius:12px;max-width:300px;margin:0 auto">${svg}</div>`;
   const f = modal('📷 باركود نقطة البيع — ' + name, `${box}
-    <p class="muted" style="margin-top:12px">صوّر هالباركود بكاميرا موبايل المندوب ← بيفتح <b>نقطة البيع بس</b>، وبينقفل عليها لحاله.<br>بعدين المندوب بيسجّل دخول بإيميله ← 📂 فتح الشركة.<br>⚠️ لازم يكون المندوب مضاف للشركة (المزامنة السحابية ← 👤 إضافة مستخدم).</p>
-    <p style="direction:ltr;word-break:break-all;font-size:12px" class="muted">${esc(url)}</p>`,
-    { extra: '<button type="button" class="btn pri" id="qrPrint">🖨 طباعة</button><button type="button" class="btn" id="qrCopy">📋 نسخ الرابط</button>' });
+    <p class="muted" style="margin-top:12px">صوّر هالباركود بكاميرا موبايل المندوب ← بيفتح <b>نقطة البيع بس</b> وبيدخل على الشركة لحاله — <b>بلا إيميل ولا كلمة سر</b>.</p>
+    <p class="bad">⚠️ هالباركود متل المفتاح: أي حدا بيصوّره بيقدر يبيع باسم المندوب. لا تنشره.</p>`,
+    { extra: '<button type="button" class="btn pri" id="qrPrint">🖨 طباعة</button>' });
   $('#qrPrint', f).onclick = () => { $('#dlg').close(); printDoc(`<h3 class="ptitle">باركود نقطة البيع — ${esc(name)}</h3><div style="width:260px;margin:20px auto">${svg}</div><p style="text-align:center">صوّر الباركود بكاميرا الموبايل لفتح نقطة البيع</p>`); };
-  $('#qrCopy', f).onclick = () => { (navigator.clipboard ? navigator.clipboard.writeText(url) : Promise.reject()).then(() => toast('✓ انتسخ الرابط')).catch(() => prompt('انسخ الرابط:', url)); };
 }
 
 let keepScrollY = null;
@@ -612,6 +622,17 @@ V.pos = V.sellersetup = (id, q, view) => {
   if (name) try { localStorage.setItem(REP_KEY, name); } catch (e) { /* */ }
   const info = window.Cloud ? Cloud.info() : {};
   if (info.member) return go('#/'); // حساب المندوب: دغري نقطة البيع
+  // باركود فيه حساب نقطة البيع: منسجّل دخول ومنفتح الشركة لحالنا
+  if (q.k && window.Cloud && !(info.linked && !info.member)) {
+    try { localStorage.setItem(POS_DEV_KEY, '1'); } catch (e) { /* */ }
+    applySellerUI();
+    view.innerHTML = head('🧑‍💼 نقطة البيع') + '<div class="card"><p>⏳ عم يفتح نقطة البيع ويحمّل البيانات… لحظة</p></div>';
+    let k; try { k = JSON.parse(decodeURIComponent(escape(atob(q.k)))); } catch (e) { k = null; }
+    if (!k || !k.e || !k.p || !k.c) { view.innerHTML = head('🧑‍💼 نقطة البيع') + '<div class="card"><p class="bad">الباركود مش صحيح — اطلب باركود جديد من المدير.</p></div>'; return; }
+    Cloud.posLogin(k).then(() => { history.replaceState(null, '', '#/'); route(); toast('✓ نقطة البيع جاهزة'); })
+      .catch(e => { view.innerHTML = head('🧑‍💼 نقطة البيع') + `<div class="card"><p class="bad">${esc(e.message)}</p><p class="muted">تأكد إنه في إنترنت وصوّر الباركود مرة تانية.</p></div>`; });
+    return;
+  }
   const ownerIn = info.linked && !info.member;
   if (!ownerIn) try { localStorage.setItem(POS_DEV_KEY, '1'); } catch (e) { /* */ }
   applySellerUI();
@@ -2096,6 +2117,7 @@ V.settings = (id, q, view) => {
   <div class="card" id="cloudCard"></div>
   <div class="card"><h3>🧑‍💼 وضع البيّاع (نقطة بيع)</h3>
     <p class="muted">فعّله على موبايل الشب يلي بيشتغل معك (بعد ما تربطه بشركتك من المزامنة السحابية): بيصير يبيع بس، بلا حسابات زباين ولا تقارير ولا أرباح ولا إعدادات ولا حذف. بيتفعّل على هالموبايل بس.</p>
+    <p class="muted">📷 <b>الباركود</b>: صوّره بموبايل المندوب، بيفتح نقطة البيع بس وبيدخل على شركتك لحاله، بلا إيميل ولا كلمة سر.</p>
     <div class="acts"><button class="btn pri" data-act="posqr">📷 باركود نقطة البيع لموبايل المندوب</button><button class="btn" data-act="seller">🔒 تفعيل وضع البيّاع على هالموبايل</button></div>
   </div>
   <div class="card"><h3>النسخ الاحتياطي</h3>
