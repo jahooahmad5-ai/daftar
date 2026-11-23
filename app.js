@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '6.50';
+const APP_VERSION = '6.51';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -128,7 +128,7 @@ function seed() {
 }
 function load() {
   try {
-    const d = JSON.parse(localStorage.getItem(KEY));
+    const d = JSON.parse(window.Store ? Store.read() : localStorage.getItem(KEY));
     if (d && Array.isArray(d.accounts)) { const s = seed(); return { ...s, ...d, settings: { ...s.settings, ...d.settings } }; }
   } catch (e) { /* بيانات تالفة */ }
   return seed();
@@ -137,7 +137,7 @@ let db = load();
 let _eng = null;
 function save() {
   _eng = null;
-  try { localStorage.setItem(KEY, JSON.stringify(db)); }
+  try { const j = JSON.stringify(db); if (window.Store) Store.write(j); else localStorage.setItem(KEY, j); }
   catch (e) { toast('تعذّر الحفظ: مساحة التخزين ممتلئة', 1); }
   $('#coName').textContent = db.settings.company;
   if (window.Cloud) Cloud.track();

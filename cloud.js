@@ -168,7 +168,7 @@ const Cloud = (() => {
     }
     st.lastPull = newest;
     if (changed) {
-      try { localStorage.setItem(DBKEY, JSON.stringify(db)); } catch (e) { /* */ }
+      try { const j = JSON.stringify(db); if (window.Store) Store.write(j); else localStorage.setItem(DBKEY, j); } catch (e) { /* */ }
       _eng = null;
       $('#coName').textContent = db.settings.company;
     }
@@ -372,7 +372,7 @@ const Cloud = (() => {
     try {
       await pull();
       if (!db.accounts.length) { db = { ...seed(), settings: { ...seed().settings, ...db.settings } }; markAllDirty(); }
-      localStorage.setItem(DBKEY, JSON.stringify(db)); _eng = null; snap = recs();
+      { const j = JSON.stringify(db); if (window.Store) Store.write(j); else localStorage.setItem(DBKEY, j); } _eng = null; snap = recs();
       $('#coName').textContent = db.settings.company;
       await sync();
       if (st.owner) ownerHere();
