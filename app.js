@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '6.36';
+const APP_VERSION = '6.37';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -760,6 +760,7 @@ V.home = (id, q, view) => {
     <a href="#/entry/new"><i>📝</i>قيد يومية</a>
     <a href="#/reports"><i>📊</i>التقارير</a>
   </div>
+  ${(() => { const bx = postable().filter(a => a.repBox); return bx.length ? `<div class="card"><h3>💰 صناديق المندوبين</h3>${table(['الصندوق', 'الرصيد', ''], bx.map(a => `<tr><td>${esc(a.name)}</td><td class="n">${fmt(bal(a.id))} ${esc(cur())}</td><td><button class="btn pri" data-act="takeBox" data-id="${a.id}">📥 استلام</button></td></tr>`).join(''))}</div>` : ''; })()}
   <div class="cols2">
     <div class="card"><h3>آخر الفواتير</h3>${table(['الرقم', 'النوع', 'التاريخ', 'الطرف', 'الصافي'],
       recent.map(i => `<tr data-act="open" data-id="${i.id}"><td>${i.no}</td><td><span class="badge ${i.type}">${INV_TYPES[i.type]}</span></td><td class="n">${i.date}</td><td>${esc(accName(i.party) || 'نقدي')}</td><td class="n">${fmt(invTotals(i).net)} <small class="muted">${esc(docSym(i))}</small></td></tr>`).join(''))}</div>
@@ -779,6 +780,7 @@ V.home = (id, q, view) => {
   </div>`;
   onAct(view, {
     open: id => go('#/invoice/' + id), rate: () => rateDialog(),
+    takeBox: id => takeFromRep(id, bal(id)),
     backup: () => backupShare(),
     sync: async () => {
       if (!window.Cloud || !Cloud.info().linked) { toast('المزامنة مش مربوطة — اربطها من الإعدادات', 1); return go('#/settings'); }
@@ -788,6 +790,27 @@ V.home = (id, q, view) => {
   });
   if (window.Cloud) Cloud.pill();
 };
+// استلام مصاري من المندوب: قيد من صندوق المندوب للصندوق الرئيسي (أو أي صندوق)
+function takeFromRep(boxId, balance) {
+  const box = acc(boxId); if (!box) return;
+  const to = cashAccounts().filter(a => !a.repBox);
+  modal('📥 استلام من ' + box.name.replace('صندوق المندوب: ', 'المندوب '), fields([
+    { k: 'amount', l: `المبلغ المستلم (${cur()})`, t: 'number', req: 1 },
+    { k: 'to', l: 'إلى الصندوق', t: 'select', opts: accOpts(to), req: 1 },
+    { k: 'date', l: 'التاريخ', t: 'date', req: 1 },
+    { k: 'note', l: 'ملاحظة', full: 1 },
+  ], { amount: balance > 0 ? r2(balance) : '', to: to[0]?.id, date: today() }) + `<p class="muted">رصيد صندوقه هلق: <b>${fmt(balance)} ${esc(cur())}</b></p>`, {
+    saveText: 'استلام',
+    onSave: d => {
+      const amt = r2(num(d.amount));
+      if (amt <= 0) { toast('أدخل مبلغاً صحيحاً', 1); return false; }
+      if (amt > r2(balance) && !confirm(`المبلغ أكبر من رصيد صندوقه (${fmt(balance)}). متابعة؟`)) return false;
+      db.entries.push({ id: uid(), no: nextNo('entry'), date: d.date, desc: 'استلام من ' + box.name + (d.note ? ' — ' + d.note : ''),
+        lines: [{ acc: d.to, dr: amt, cr: 0, note: '' }, { acc: box.id, dr: 0, cr: amt, note: '' }] });
+      save(); toast(`✓ استلمت ${fmt(amt)} ${cur()}`); route();
+    },
+  });
+}
 function rateDialog() {
   modal(`سعر صرف ${FX().name}`, fields([{ k: 'rate', l: `كم ${cur()} مقابل 1 ${FX().sym}؟`, t: 'number', req: 1, full: 1 }], { rate: db.settings.rate }) +
     '<p class="muted">يُستخدم كقيمة افتراضية للفواتير والسندات الجديدة بالدولار. الفواتير القديمة تحتفظ بسعرها.</p>', {
