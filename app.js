@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '6.29';
+const APP_VERSION = '6.30';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -456,6 +456,27 @@ function sellerSetup(preName) {
       applySellerUI(); toast('✓ تفعّل وضع البيّاع'); go('#/');
     },
   });
+}
+
+/* ---- باركود نقطة البيع: بينطبع وبيتصوّر بكاميرا موبايل المندوب، بيفتح نقطة البيع بس ---- */
+function posQR() {
+  modal('📷 باركود نقطة البيع', '<p class="muted">اكتب اسم المندوب — بيطلع على فواتيره.</p>' + fields([{ k: 'name', l: 'اسم المندوب', req: 1, full: 1, ph: 'محمد' }]), {
+    saveText: 'اعمل الباركود',
+    onSave: d => { const n = String(d.name || '').trim(); if (!n) return false; setTimeout(() => posQRShow(n), 0); },
+  });
+}
+function posQRShow(name) {
+  const url = location.origin + location.pathname + '#/pos?name=' + encodeURIComponent(name);
+  if (typeof qrcode !== 'function') return toast('مكتبة الباركود ما تحمّلت — حدّث الصفحة', 1);
+  const qr = qrcode(0, 'M'); qr.addData(url); qr.make();
+  const svg = qr.createSvgTag({ cellSize: 8, margin: 2, scalable: true });
+  const box = `<div style="background:#fff;padding:10px;border-radius:12px;max-width:300px;margin:0 auto">${svg}</div>`;
+  const f = modal('📷 باركود نقطة البيع — ' + name, `${box}
+    <p class="muted" style="margin-top:12px">صوّر هالباركود بكاميرا موبايل المندوب ← بيفتح <b>نقطة البيع بس</b>، وبينقفل عليها لحاله.<br>بعدين المندوب بيسجّل دخول بإيميله ← 📂 فتح الشركة.<br>⚠️ لازم يكون المندوب مضاف للشركة (المزامنة السحابية ← 👤 إضافة مستخدم).</p>
+    <p style="direction:ltr;word-break:break-all;font-size:12px" class="muted">${esc(url)}</p>`,
+    { extra: '<button type="button" class="btn pri" id="qrPrint">🖨 طباعة</button><button type="button" class="btn" id="qrCopy">📋 نسخ الرابط</button>' });
+  $('#qrPrint', f).onclick = () => { $('#dlg').close(); printDoc(`<h3 class="ptitle">باركود نقطة البيع — ${esc(name)}</h3><div style="width:260px;margin:20px auto">${svg}</div><p style="text-align:center">صوّر الباركود بكاميرا الموبايل لفتح نقطة البيع</p>`); };
+  $('#qrCopy', f).onclick = () => { (navigator.clipboard ? navigator.clipboard.writeText(url) : Promise.reject()).then(() => toast('✓ انتسخ الرابط')).catch(() => prompt('انسخ الرابط:', url)); };
 }
 
 let keepScrollY = null;
@@ -2075,7 +2096,7 @@ V.settings = (id, q, view) => {
   <div class="card" id="cloudCard"></div>
   <div class="card"><h3>🧑‍💼 وضع البيّاع (نقطة بيع)</h3>
     <p class="muted">فعّله على موبايل الشب يلي بيشتغل معك (بعد ما تربطه بشركتك من المزامنة السحابية): بيصير يبيع بس، بلا حسابات زباين ولا تقارير ولا أرباح ولا إعدادات ولا حذف. بيتفعّل على هالموبايل بس.</p>
-    <div class="acts"><button class="btn pri" data-act="seller">🔒 تفعيل وضع البيّاع على هالموبايل</button></div>
+    <div class="acts"><button class="btn pri" data-act="posqr">📷 باركود نقطة البيع لموبايل المندوب</button><button class="btn" data-act="seller">🔒 تفعيل وضع البيّاع على هالموبايل</button></div>
   </div>
   <div class="card"><h3>النسخ الاحتياطي</h3>
     <p class="muted">البيانات محفوظة على هذا الجهاز فقط داخل المتصفح. خذ نسخة احتياطية بانتظام واحفظها في مكان آمن، ويمكنك نقلها لجهاز آخر.</p>
@@ -2118,6 +2139,7 @@ V.settings = (id, q, view) => {
   onAct(view, {
     noLogo: () => { db.settings.logo = ''; save(); route(); },
     seller: () => sellerSetup(),
+    posqr: () => posQR(),
     export: () => {
       const blob = new Blob([JSON.stringify(db, null, 1)], { type: 'application/json' });
       const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `daftar-backup-${today()}.json`;
