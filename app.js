@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '6.34';
+const APP_VERSION = '6.35';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -700,14 +700,28 @@ function sellerHome(view) {
     <a href="#/invoices?t=sale" class="q"><i>📋</i>فواتيري</a>
   </div>
   <div class="kpis">${kpi('مبيعات اليوم', fmt(r2(tot)) + ' ' + esc(cur()))}${kpi('عدد فواتير اليوم', mine.length)}</div>
-  <p class="muted" style="text-align:center;margin-top:14px">الإصدار ${APP_VERSION}</p>`;
+  <p class="muted" style="text-align:center;margin-top:14px">الإصدار ${APP_VERSION}${window.Cloud && Cloud.info().email && !/@pos\.daftar\.app$/.test(Cloud.info().email) ? ` — ${esc(Cloud.info().email)}` : ''}</p>
+  <p style="text-align:center;margin-top:4px"><button class="btn" style="font-size:12px;opacity:.7" data-act="boss">🔑 دخول المدير</button></p>`;
   if (window.Cloud && !Cloud.info().linked) { const c = document.createElement('div'); c.className = 'card'; view.appendChild(c); Cloud.card(c); }
   if (!(sellerCfg() || {}).name && !repName()) {
     modal('🧑‍💼 اسم المندوب', '<p class="muted">اكتب اسمك مرة وحدة — بيطلع على كل فواتيرك.</p>' + fields([{ k: 'name', l: 'اسم المندوب', req: 1, full: 1 }]), {
       saveText: 'حفظ', onSave: d => { const n = String(d.name || '').trim(); if (!n) return false; localStorage.setItem(REP_KEY, n); route(); },
     });
   }
-  onAct(view, { sync: async () => { if (!window.Cloud || !Cloud.info().linked) return toast('المزامنة مش مربوطة — سجّل دخول من تحت', 1); await Cloud.sync(true); route(); } });
+  onAct(view, {
+    sync: async () => { if (!window.Cloud || !Cloud.info().linked) return toast('المزامنة مش مربوطة — سجّل دخول من تحت', 1); await Cloud.sync(true); route(); },
+    boss: () => {
+      if (!window.Cloud) return;
+      modal('🔑 دخول المدير', '<p class="muted">إيميل وكلمة سر <b>صاحب الشركة</b> — بيرجع هالموبايل دفتر كامل.</p>' + fields([{ k: 'email', l: 'الإيميل', t: 'email', req: 1, full: 1 }, { k: 'pw', l: 'كلمة السر', t: 'password', req: 1, full: 1 }]), {
+        saveText: 'دخول',
+        onSave: (d, f) => {
+          const b = $('button.pri', f); b.disabled = true;
+          Cloud.ownerSwitch(String(d.email).trim(), d.pw).then(() => $('#dlg').close()).catch(e => { toast(e.message, 1); b.disabled = false; });
+          return false;
+        },
+      });
+    },
+  });
   if (window.Cloud) Cloud.pill();
 }
 

@@ -331,6 +331,20 @@ const Cloud = (() => {
         },
       });
   }
+  // من شاشة نقطة البيع: المدير بيدخل بإيميله ← بيرجع الموبايل دفتر كامل (ما منلمس الجلسة إلا إذا الحساب صاحب شركة)
+  async function ownerSwitch(email, password) {
+    const j = await http('/auth/v1/token?grant_type=password', { method: 'POST', body: JSON.stringify({ email, password }) }, false);
+    const uid = j.user && j.user.id; if (!uid) throw new Error('ما زبط تسجيل الدخول');
+    const { url, key } = cfg();
+    const r = await fetch(url + '/rest/v1/companies?select=id,name,owner&owner=eq.' + uid + '&order=created_at', { headers: { apikey: key, Authorization: 'Bearer ' + j.access_token } });
+    const list = r.ok ? await r.json() : [];
+    if (!list.length) throw new Error('هالحساب مش صاحب شركة — جرّب إيميل المدير يلي عمل الشركة');
+    if (pending() && !confirm(`في ${pending()} تغيير لسا ما ارتفع من نقطة البيع. إذا كمّلت ممكن يضيع. متابعة؟`)) return;
+    setSession(j); st.posReq = null;
+    const same = list.find(c => c.id === st.company);
+    if (same) { st.owner = true; saveSt(); ownerHere(); return; }
+    await openCompany(list[0]);
+  }
   // موبايل المدير: بيرجع دفتر كامل (منشيل قفل نقطة البيع ووضع البيّاع عنه)
   function ownerHere() {
     try { localStorage.removeItem('daftar_seller'); localStorage.removeItem('daftar_pos_device'); localStorage.removeItem('daftar_rep_name'); } catch (e) { /* */ }
@@ -432,7 +446,7 @@ const Cloud = (() => {
 
   // عضو بشركة مش صاحبها (متل المندوب) = وضع البيّاع تلقائياً على موبايله
   if (typeof applySellerUI === 'function') setTimeout(() => { applySellerUI(); route(); }, 0); // كمان شاشة القفل بتحتاج Cloud جاهز
-  return { track, card, sync, pill, posJoin, posCheck, posList, posApprove, posRevoke, posNotify, info: () => ({ linked: linked(), pending: pending(), busy, lastSync: st.lastSync, configured: configured(), owner: !!(linked() && st.owner), member: !!(configured() && st.company && !st.owner), company: st.company || '', posReq: st.posReq || null, email: st.session?.email || '' }) };
+  return { track, card, sync, pill, posJoin, posCheck, ownerSwitch, posList, posApprove, posRevoke, posNotify, info: () => ({ linked: linked(), pending: pending(), busy, lastSync: st.lastSync, configured: configured(), owner: !!(linked() && st.owner), member: !!(configured() && st.company && !st.owner), company: st.company || '', posReq: st.posReq || null, email: st.session?.email || '' }) };
 })();
 window.Cloud = Cloud;
 if (/^#\/settings/.test(location.hash)) route();
