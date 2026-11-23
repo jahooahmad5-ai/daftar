@@ -77,7 +77,8 @@ const Receipt = (() => {
     // الحسابات بالترتيب: مجموع الفاتورة ← الحساب القديم ← كامل الحساب ← الدفعة ← رصيد الحساب الحالي
     const k = docRate(inv), netB = r2(t.net * k), sgn = ['sale', 'purchase'].includes(inv.type) ? 1 : -1;
     const paidB = inv.pay === 'cash' ? netB : paidFor(inv);
-    const B = balances(inv);
+    // بوضع البيّاع ما منطلّع حساب الزبون (القديم والرصيد) بالإيصال
+    const B = typeof isSeller === 'function' && isSeller() ? null : balances(inv);
     // رمز العملة (ل.س) مع المبالغ: براس العمودين إذا في جديد وقديم، وإلا جنب كل مبلغ
     const cs = db.settings.currency || 'ل.س';
     const row = (label, v, o = {}) => ops.push({ k: 'tri', l: label, m: oldOn() ? fmt(v) : `${fmt(v)} ${cs}`, r: oldOn() ? oldAmt(v) : '', ...o });

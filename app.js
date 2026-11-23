@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '6.16';
+const APP_VERSION = '6.17';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -411,6 +411,36 @@ function printDoc(html) {
 /* ------------------------- الموجّه ------------------------- */
 const V = {};
 const NAV_MAP = { invoice: 'invoices', entry: 'journal', report: 'reports' };
+/* ------------------------- وضع البيّاع (لهالموبايل بس) ------------------------- */
+// محفوظ عالجهاز (مش بالمزامنة) — هيك بيتفعّل على موبايل الشب بس
+const SELLER_KEY = 'daftar_seller';
+const sellerCfg = () => { try { return JSON.parse(localStorage.getItem(SELLER_KEY) || 'null'); } catch (e) { return null; } };
+const isSeller = () => !!sellerCfg();
+const SELLER_ROUTES = ['home', 'invoices', 'invoice'];
+function applySellerUI() {
+  const on = isSeller();
+  document.body.classList.toggle('seller', on);
+  let b = document.getElementById('sellerExit');
+  if (on && !b) {
+    b = document.createElement('button'); b.id = 'sellerExit'; b.className = 'install'; b.textContent = '🔓 خروج من وضع البيّاع';
+    b.onclick = () => { const p = prompt('الرمز السري للخروج من وضع البيّاع:'); if (p == null) return; if (p.trim() !== String(sellerCfg().pin)) return toast('الرمز غلط', 1); localStorage.removeItem(SELLER_KEY); applySellerUI(); toast('✓ رجعت لوضع المدير'); route(); };
+    $('#nav').after(b);
+  } else if (!on && b) b.remove();
+}
+function sellerSetup() {
+  modal('🧑‍💼 تفعيل وضع البيّاع على هالموبايل', `<p class="muted">بوضع البيّاع بيقدر يعمل فواتير مبيع بس. ما بيشوف حسابات الزباين وأرصدتهم، ولا التقارير والأرباح والإعدادات، وما بيقدر يحذف ولا يعدّل المواد.<br>للخروج بيلزم الرمز السري يلي رح تحطه هلق — <b>لا تعطيه للشب</b>.</p>` +
+    fields([{ k: 'pin', l: 'رمز سري (4 أرقام أو أكتر)', t: 'password', req: 1 }, { k: 'pin2', l: 'أعد كتابة الرمز', t: 'password', req: 1 }]), {
+    saveText: 'تفعيل',
+    onSave: d => {
+      const p = String(d.pin || '').trim();
+      if (p.length < 4) { toast('الرمز لازم يكون 4 أرقام أو أكتر', 1); return false; }
+      if (p !== String(d.pin2 || '').trim()) { toast('الرمزين مش متطابقين', 1); return false; }
+      localStorage.setItem(SELLER_KEY, JSON.stringify({ pin: p, at: Date.now() }));
+      applySellerUI(); toast('✓ تفعّل وضع البيّاع'); go('#/');
+    },
+  });
+}
+
 let keepScrollY = null;
 function go(h) { if (location.hash === h) route(); else location.hash = h; }
 function route() {
@@ -422,7 +452,12 @@ function route() {
   view.onclick = view.oninput = view.onchange = view.onsubmit = null;
   view.classList.remove('typing');
   { const tc = $('#topCnt'); if (tc) tc.hidden = true; }
-  const key = V[name] ? name : 'home';
+  let key = V[name] ? name : 'home';
+  if (isSeller()) {
+    const bad = !SELLER_ROUTES.includes(key)
+      || (key === 'invoice' && (id === 'new' ? (q.type || 'sale') !== 'sale' : (db.invoices.find(x => x.id === id)?.type || 'sale') !== 'sale'));
+    if (bad) { if (location.hash && location.hash !== '#/') { toast('🔒 هالصفحة مسكّرة بوضع البيّاع', 1); } history.replaceState(null, '', '#/'); key = 'home'; }
+  }
   const nav = NAV_MAP[key] || key;
   $$('#nav a').forEach(a => a.classList.toggle('on', a.dataset.r === nav));
   document.body.classList.remove('menu-open');
@@ -531,7 +566,21 @@ function backupShare() {
 }
 
 /* ------------------------- الرئيسية ------------------------- */
+function sellerHome(view) {
+  const t = today(), mine = db.invoices.filter(i => i.type === 'sale' && i.date === t);
+  const tot = mine.reduce((s2, i) => s2 + invTotals(i).net * docRate(i), 0);
+  view.innerHTML = head('🧑‍💼 نقطة البيع', `<button class="btn pri sync-btn" id="homeSync" data-act="sync">🔄 مزامنة</button><span class="muted">${t}</span>`) + `
+  <div class="quick">
+    <a href="#/invoice/new?type=sale" class="q"><i>🧾</i>فاتورة مبيع</a>
+    <a href="#/invoices?t=sale" class="q"><i>📋</i>فواتيري</a>
+  </div>
+  <div class="kpis">${kpi('مبيعات اليوم', fmt(r2(tot)) + ' ' + esc(cur()))}${kpi('عدد فواتير اليوم', mine.length)}</div>`;
+  onAct(view, { sync: async () => { if (!window.Cloud || !Cloud.info().linked) return toast('المزامنة مش مربوطة — خلّي المدير يربطها', 1); await Cloud.sync(true); route(); } });
+  if (window.Cloud) Cloud.pill();
+}
+
 V.home = (id, q, view) => {
+  if (isSeller()) return sellerHome(view);
   const R = rollup(sums());
   const bal = i => natural(acc(i), R[i]);
   const mo = today().slice(0, 7), y = today().slice(0, 4);
@@ -678,7 +727,7 @@ function partyForm(a, kind) {
   });
 }
 V.parties = (id, q, view) => {
-  const k = q.t === 's' ? 's' : 'c';
+  const k = q.t === 's' && !isSeller() ? 's' : 'c';
   const list = k === 'c' ? customers() : suppliers();
   const R = rollup(sums());
   let total = 0;
@@ -971,7 +1020,7 @@ V.items = (id, q, view) => {
 
 /* ------------------------- الفواتير ------------------------- */
 V.invoices = (id, q, view) => {
-  const t = q.t || 'all';
+  const t = isSeller() ? 'sale' : (q.t || 'all');
   const list = db.invoices.filter(i => t === 'all' || i.type === t).sort((a, b) => b.date.localeCompare(a.date) || (b.created || 0) - (a.created || 0));
   let tot = 0;
   const rows = list.map(i => {
@@ -1121,7 +1170,7 @@ V.invoice = (id, q, view) => {
     // رصيد الزبون الحالي وبعد الفاتورة (بالجديد والقديم)
     const tb = $('#tBal', view), pa = acc(val('party'));
     if (tb) {
-      if (!pa || isWalkin(pa.id)) tb.innerHTML = '';
+      if (!pa || isWalkin(pa.id) || isSeller()) tb.innerHTML = '';
       else {
         const sg = ['sale', 'purchase'].includes(inv.type) ? 1 : -1;
         let cb = partyBal(pa);
@@ -1292,6 +1341,7 @@ V.invoice = (id, q, view) => {
     return `<button type="button" class="sg sg-new" data-new="1"><b>➕ مادة جديدة: «${esc(name)}»</b><small class="muted">بتنضاف عالمواد وعالفاتورة فوراً</small></button>`;
   };
   const quickNew = () => {
+    if (isSeller()) { sugg.hidden = true; return toast('🔒 إضافة مواد جديدة مسكّرة بوضع البيّاع — خلّي المدير يضيفها', 1); }
     const { name, qty } = newSplit(scanIn.value); sugg.hidden = true;
     const pk = sideSale ? 'sellPrice' : 'buyPrice';
     modal('➕ مادة جديدة', fields([
@@ -1568,7 +1618,7 @@ V.invoice = (id, q, view) => {
     print: () => printDoc(invoiceHtml(orig)),
     wa: () => waSend(acc(orig.party), waInvoiceText(orig)),
     receipt: () => window.Receipt && Receipt.open(orig),
-    del: () => { if (!confirm('حذف الفاتورة نهائياً؟ سيتم عكس أثرها على الحسابات والمستودع.')) return; db.invoices = db.invoices.filter(x => x.id !== orig.id); db.vouchers = db.vouchers.filter(v => v.inv !== orig.id); save(); toast('تم الحذف'); go('#/invoices'); },
+    del: () => { if (isSeller()) return toast('🔒 الحذف مسكّر بوضع البيّاع', 1); if (!confirm('حذف الفاتورة نهائياً؟ سيتم عكس أثرها على الحسابات والمستودع.')) return; db.invoices = db.invoices.filter(x => x.id !== orig.id); db.vouchers = db.vouchers.filter(v => v.inv !== orig.id); save(); toast('تم الحذف'); go('#/invoices'); },
   });
   if (draftPay) payNow = draftPay;
   $('[name=payment]', view).value = payNow || '';
@@ -1641,7 +1691,7 @@ function voucherForm(v, type, preAcc) {
   };
   f.oninput = f.onchange = upd; upd();
   if (v) {
-    $('#vDel').onclick = () => { if (!confirm('حذف السند؟')) return; db.vouchers = db.vouchers.filter(x => x.id !== v.id); save(); $('#dlg').close(); route(); };
+    $('#vDel').onclick = () => { if (isSeller()) return toast('🔒 الحذف مسكّر بوضع البيّاع', 1); if (!confirm('حذف السند؟')) return; db.vouchers = db.vouchers.filter(x => x.id !== v.id); save(); $('#dlg').close(); route(); };
     $('#vPrint').onclick = () => { $('#dlg').close(); printDoc(voucherHtml(v)); };
   }
 }
@@ -1655,7 +1705,7 @@ function voucherHtml(v) {
   <div class="psign"><span>${isR ? 'توقيع الدافع' : 'توقيع المستلم'}</span><span>توقيع المحاسب</span></div>`;
 }
 V.vouchers = (id, q, view) => {
-  const t = q.t === 'payment' ? 'payment' : q.t === 'receipt' ? 'receipt' : 'all';
+  const t = isSeller() ? 'receipt' : q.t === 'payment' ? 'payment' : q.t === 'receipt' ? 'receipt' : 'all';
   const list = db.vouchers.filter(v => t === 'all' || v.type === t).sort((a, b) => b.date.localeCompare(a.date) || (b.created || 0) - (a.created || 0));
   const rows = list.map(v => `<tr data-act="open" data-id="${v.id}"><td class="n">${v.no}</td><td><span class="badge ${v.type === 'receipt' ? 'sale' : 'purchaseReturn'}">${v.type === 'receipt' ? 'قبض' : 'دفع'}</span></td>
     <td class="n">${v.date}</td><td>${esc(accName(v.acc))}</td><td>${esc(v.note || '')}</td><td class="n">${fmt(v.amount)} <small class="muted">${esc(docSym(v))}</small></td></tr>`).join('');
@@ -1664,8 +1714,8 @@ V.vouchers = (id, q, view) => {
     `<div class="tabs">${tab('all', 'الكل')}${tab('receipt', 'سندات القبض')}${tab('payment', 'سندات الدفع')}</div>
     <div class="card">${table(['الرقم', 'النوع', 'التاريخ', 'الحساب', 'البيان', 'المبلغ'], rows)}</div>`;
   onAct(view, {
-    new: type => voucherForm(null, type),
-    open: id => voucherForm(db.vouchers.find(v => v.id === id)),
+    new: type => voucherForm(null, isSeller() ? 'receipt' : type),
+    open: id => { const v = db.vouchers.find(x => x.id === id); if (isSeller() && v && v.type !== 'receipt') return; voucherForm(v); },
   });
   if (q.new) voucherForm(null, q.new === 'payment' ? 'payment' : 'receipt', q.acc);
 };
@@ -1939,6 +1989,10 @@ V.settings = (id, q, view) => {
     <div class="form-actions"><button class="btn pri">حفظ الإعدادات</button></div>
   </form>
   <div class="card" id="cloudCard"></div>
+  <div class="card"><h3>🧑‍💼 وضع البيّاع (نقطة بيع)</h3>
+    <p class="muted">فعّله على موبايل الشب يلي بيشتغل معك (بعد ما تربطه بشركتك من المزامنة السحابية): بيصير يبيع بس، بلا حسابات زباين ولا تقارير ولا أرباح ولا إعدادات ولا حذف. بيتفعّل على هالموبايل بس.</p>
+    <div class="acts"><button class="btn pri" data-act="seller">🔒 تفعيل وضع البيّاع على هالموبايل</button></div>
+  </div>
   <div class="card"><h3>النسخ الاحتياطي</h3>
     <p class="muted">البيانات محفوظة على هذا الجهاز فقط داخل المتصفح. خذ نسخة احتياطية بانتظام واحفظها في مكان آمن، ويمكنك نقلها لجهاز آخر.</p>
     <div class="acts"><button class="btn pri" data-act="export">⬇️ تنزيل نسخة احتياطية</button>
@@ -1979,6 +2033,7 @@ V.settings = (id, q, view) => {
   };
   onAct(view, {
     noLogo: () => { db.settings.logo = ''; save(); route(); },
+    seller: () => sellerSetup(),
     export: () => {
       const blob = new Blob([JSON.stringify(db, null, 1)], { type: 'application/json' });
       const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `daftar-backup-${today()}.json`;
@@ -2034,6 +2089,7 @@ $('#coName').textContent = db.settings.company;
 $('#menuBtn').onclick = () => document.body.classList.toggle('menu-open');
 $('#backdrop').onclick = () => document.body.classList.remove('menu-open');
 window.addEventListener('hashchange', route);
+applySellerUI();
 route();
 
 if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
