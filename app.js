@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '6.35';
+const APP_VERSION = '6.36';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -352,7 +352,7 @@ function waInvoiceText(inv) {
   if (inv.cur === 'fx') s += `(المعادل: ${fmt(t.net * num(inv.rate))} ${cur()})\n`;
   else if (oldOn()) s += `(بالقديم: ${oldAmt(t.net)})\n`;
   s += `الدفع: ${inv.pay === 'cash' ? 'نقدي' : 'آجل'}\n`;
-  if (a) {
+  if (a && !isSeller()) {
     const B = window.Receipt ? Receipt.balances(inv) : null;
     if (B) {
       const k = docRate(inv), netB = r2(t.net * k), sgn = ['sale', 'purchase'].includes(inv.type) ? 1 : -1;
@@ -423,7 +423,16 @@ const REP_KEY = 'daftar_rep_name';
 const repName = () => { try { return localStorage.getItem(REP_KEY) || ''; } catch (e) { return ''; } };
 const myRep = () => (isSeller() && ((sellerCfg() || {}).name || repName() || (window.Cloud && Cloud.info().email) || 'مندوب')) || '';
 const repTag = i => (i && i.rep ? ` — مندوب: ${i.rep}` : '');
-const SELLER_ROUTES = ['home', 'invoices', 'invoice'];
+// صندوق خاص لكل مندوب (بينعمل عند المدير لما يفعّل موبايله، وبيوصل للمندوب بالمزامنة)
+const myBox = () => { const n = myRep(); return n ? db.accounts.find(a => a.repBox === n) : null; };
+function ensureRepBox(name) {
+  name = String(name || '').trim(); const p = acc('cashGroup');
+  if (!name || !p || isSeller() || db.accounts.some(a => a.repBox === name)) return false;
+  db.accounts.push({ id: 'repbox_' + uid(), code: nextCode(p), name: 'صندوق المندوب: ' + name, type: p.type, parent: 'cashGroup', group: false, repBox: name });
+  save(); return true;
+}
+const NO_BOX = '💰 صندوقك لسا ما وصل — اكبس 🔄 مزامنة. إذا ضل، خلّي المدير يفتح الإعدادات عنده';
+const SELLER_ROUTES = ['home', 'invoices', 'invoice', 'vouchers'];
 // موبايل انفتح من رابط/باركود نقطة البيع: بينقفل عليها من أول فتحة (حتى قبل تسجيل الدخول)
 const POS_DEV_KEY = 'daftar_pos_device';
 // قفل البرنامج: الدفتر الكامل بيفتح بس على موبايل مسجّل دخول بحساب المدير وفاتح الشركة — غير هيك شاشة دخول بس
@@ -489,13 +498,14 @@ async function posDevsCard(el) {
   const info = Cloud.info(); if (!info.linked || info.member) { el.innerHTML = ''; return; }
   let list; try { list = await Cloud.posList(); } catch (e) { el.innerHTML = `<p class="bad">${esc(e.message)}</p>`; return; }
   if (!list.length) { el.innerHTML = '<p class="muted">ما في ولا موبايل نقطة بيع لسا.</p>'; return; }
+  list.filter(r => r.approved).forEach(r => ensureRepBox(r.name)); // صندوق لكل مندوب مفعّل
   el.innerHTML = '<p><b>📱 موبايلات نقطة البيع</b></p>' + list.map(r => `<div class="acts" style="align-items:center;margin-bottom:6px"><span>${r.approved ? '🟢' : '⏳'} ${esc(r.name || 'مندوب')}${r.approved ? '' : ' — <small class="muted">بانتظار التفعيل</small>'}</span>
     ${r.approved ? '' : `<button class="btn pri" data-pa="ok" data-u="${r.user_id}">✓ تفعيل</button>`}<button class="btn red" data-pa="no" data-u="${r.user_id}">${r.approved ? '⛔ إيقاف' : '✕ رفض'}</button></div>`).join('');
   el.onclick = async e => {
     const b = e.target.closest('[data-pa]'); if (!b) return;
     if (b.dataset.pa === 'no' && !confirm('أكيد؟ هالموبايل ما عاد يقدر يفتح نقطة البيع.')) return;
     b.disabled = true;
-    try { if (b.dataset.pa === 'ok') { await Cloud.posApprove(b.dataset.u); toast('✓ تفعّلت'); } else { await Cloud.posRevoke(b.dataset.u); toast('✓ توقّفت'); } }
+    try { if (b.dataset.pa === 'ok') { await Cloud.posApprove(b.dataset.u); ensureRepBox((list.find(r => r.user_id === b.dataset.u) || {}).name); toast('✓ تفعّلت'); } else { await Cloud.posRevoke(b.dataset.u); toast('✓ توقّفت'); } }
     catch (err) { toast(err.message, 1); }
     Cloud.posNotify(); posDevsCard(el);
   };
@@ -698,8 +708,11 @@ function sellerHome(view) {
   <div class="quick">
     <a href="#/invoice/new?type=sale" class="q"><i>🧾</i>فاتورة مبيع</a>
     <a href="#/invoices?t=sale" class="q"><i>📋</i>فواتيري</a>
+    <a href="#/vouchers?new=receipt" class="q"><i>📥</i>قبض من زبون</a>
+    <a href="#/vouchers" class="q"><i>🧾</i>سنداتي</a>
   </div>
-  <div class="kpis">${kpi('مبيعات اليوم', fmt(r2(tot)) + ' ' + esc(cur()))}${kpi('عدد فواتير اليوم', mine.length)}</div>
+  <div class="kpis">${kpi('مبيعات اليوم', fmt(r2(tot)) + ' ' + esc(cur()))}${kpi('عدد فواتير اليوم', mine.length)}${kpi('مقبوضات اليوم', fmt(r2(db.vouchers.filter(v => v.type === 'receipt' && v.date === t && v.rep === myRep() && !v.inv).reduce((x, v) => x + num(v.amount) * docRate(v), 0))) + ' ' + esc(cur()))}</div>
+  ${myBox() ? `<p class="muted" style="text-align:center">💰 ${esc(myBox().name)}</p>` : `<p class="bad" style="text-align:center">${NO_BOX}</p>`}
   <p class="muted" style="text-align:center;margin-top:14px">الإصدار ${APP_VERSION}${window.Cloud && Cloud.info().email && !/@pos\.daftar\.app$/.test(Cloud.info().email) ? ` — ${esc(Cloud.info().email)}` : ''}</p>
   <p style="text-align:center;margin-top:4px"><button class="btn" style="font-size:12px;opacity:.7" data-act="boss">🔑 دخول المدير</button></p>`;
   if (window.Cloud && !Cloud.info().linked) { const c = document.createElement('div'); c.className = 'card'; view.appendChild(c); Cloud.card(c); }
@@ -1213,7 +1226,7 @@ const canVoice = () => 'webkitSpeechRecognition' in window || 'SpeechRecognition
 V.invoice = (id, q, view) => {
   const orig = id === 'new' ? null : db.invoices.find(x => x.id === id);
   if (id !== 'new' && !orig) return go('#/invoices');
-  const inv = orig ? clone(orig) : { id: null, type: INV_TYPES[q.type] ? q.type : 'sale', date: today(), pay: 'cash', cashAcc: cashAccounts()[0]?.id || '', party: '', cur: 'base', rate: db.settings.rate || '', lines: [], discount: 0, note: '' };
+  const inv = orig ? clone(orig) : { id: null, type: INV_TYPES[q.type] ? q.type : 'sale', date: today(), pay: 'cash', cashAcc: isSeller() ? (myBox()?.id || '') : (cashAccounts()[0]?.id || ''), party: '', cur: 'base', rate: db.settings.rate || '', lines: [], discount: 0, note: '' };
   // مسودة الفاتورة الجديدة: بتنحفظ أول بأول حتى ما يضيع شي إذا انسكّر البرنامج أو عمل تحديث
   // الفاتورة الجديدة إلها مسودة، والفاتورة المحفوظة إلها مسودة تعديلات لحالها
   const DRAFT = orig ? 'daftar_draft_edit_' + orig.id : 'daftar_draft_' + inv.type;
@@ -1265,7 +1278,7 @@ V.invoice = (id, q, view) => {
     <div class="grid4">
       ${field({ k: 'date', l: 'التاريخ', t: 'date', req: 1 }, inv.date)}
       ${field({ k: 'pay', l: 'طريقة الدفع', t: 'select', opts: [['cash', 'نقدي'], ['credit', 'آجل (على الحساب)']] }, inv.pay)}
-      <div id="cashWrap">${field({ k: 'cashAcc', l: 'الصندوق', t: 'select', opts: accOpts(cashAccounts()) }, inv.cashAcc)}</div>
+      <div id="cashWrap">${field({ k: 'cashAcc', l: 'الصندوق', t: 'select', opts: accOpts(isSeller() ? [myBox()].filter(Boolean) : cashAccounts()) }, inv.cashAcc)}</div>
       ${field({ k: 'party', l: sideSale ? 'العميل' : 'المورد', t: 'select', opts: accOpts(parties, sideSale ? '— اختر العميل —' : '— بدون —') }, inv.party)}
       ${field({ k: 'cur', l: 'عملة الفاتورة', t: 'select', opts: curOpts() }, inv.cur)}
       <div id="rateWrap">${field({ k: 'rate', l: `سعر الصرف (${cur()} لكل 1 ${FX().sym})`, t: 'number' }, inv.rate)}</div>
@@ -1699,6 +1712,7 @@ V.invoice = (id, q, view) => {
     if (sideSale && !party) { const ps = $('[name=party]', view); ps.focus(); ps.scrollIntoView({ block: 'center' }); return toast(`لازم تختار اسم العميل قبل الحفظ (للبيع المباشر اختار «${WALKIN_NAME}»)`, 1); }
     if (sideSale && isWalkin(party) && pay !== 'cash') return toast(`«${WALKIN_NAME}» دايماً نقدي — ما بينفع آجل`, 1);
     if (pay === 'credit' && !party) return toast(`الفاتورة الآجلة تحتاج ${sideSale ? 'عميلاً' : 'مورداً'}`, 1);
+    if (isSeller() && (pay === 'cash' || num(val('payment')) > 0) && !myBox()) return toast(NO_BOX, 1);
     if (pay === 'cash' && !cashAcc) return toast('اختر الصندوق', 1);
     if (!val('date')) return toast('أدخل التاريخ', 1);
     if (inv.cur === 'fx' && rate() <= 0) return toast('أدخل سعر الصرف للفاتورة', 1);
@@ -1748,7 +1762,7 @@ V.invoice = (id, q, view) => {
       const vt = ['sale', 'purchaseReturn'].includes(out.type) ? 'receipt' : 'payment';
       const o = { date: out.date, acc: party, amount: pv, note: `دفعة على ${INV_TYPES[out.type]} رقم ${out.no}`, cur: 'base', rate: '' };
       if (linked[0]) Object.assign(linked[0], o, { type: vt });
-      else db.vouchers.push({ id: uid(), type: vt, no: nextNo(vt), cashAcc: cashAccounts()[0]?.id || 'cash', created: Date.now() + 1, inv: out.id, ...o });
+      else db.vouchers.push({ id: uid(), type: vt, no: nextNo(vt + (out.rep ? '@' + out.rep : '')), cashAcc: (isSeller() ? myBox()?.id : null) || cashAccounts()[0]?.id || 'cash', created: Date.now() + 1, inv: out.id, ...(out.rep ? { rep: out.rep } : {}), ...o });
     }
     const keep = pv > 0 ? linked[0] : null;
     if (linked.some(v => v !== keep)) db.vouchers = db.vouchers.filter(v => v.inv !== out.id || v === keep);
@@ -1881,14 +1895,54 @@ function voucherForm(v, type, preAcc) {
 }
 function voucherHtml(v) {
   const isR = v.type === 'receipt';
-  return `<h3 class="ptitle">${isR ? 'سند قبض' : 'سند دفع'} رقم ${v.no}</h3>
+  return `<h3 class="ptitle">${isR ? 'سند قبض' : 'سند دفع'} رقم ${v.no}${repTag(v)}</h3>
   <table><tbody><tr><th>التاريخ</th><td>${v.date}</td></tr><tr><th>${isR ? 'استلمنا من' : 'دفعنا إلى'}</th><td>${esc(accName(v.acc))}</td></tr>
   <tr><th>المبلغ</th><td>${fmt(v.amount)} ${esc(docSym(v))}${oldOn() ? ` — بالعملة القديمة: ${oldAmt(v.amount * docRate(v))}` : ''}</td></tr><tr><th>المبلغ كتابةً</th><td>${esc(moneyWords(v.amount, v))}</td></tr>
   ${v.cur === 'fx' ? `<tr><th>سعر الصرف</th><td>${fmt(v.rate)} — المعادل: ${fmt(v.amount * num(v.rate))} ${esc(cur())}</td></tr>` : ''}
   <tr><th>البيان</th><td>${esc(v.note || '')}</td></tr><tr><th>${isR ? 'إلى الصندوق' : 'من الصندوق'}</th><td>${esc(accName(v.cashAcc))}</td></tr></tbody></table>
   <div class="psign"><span>${isR ? 'توقيع الدافع' : 'توقيع المستلم'}</span><span>توقيع المحاسب</span></div>`;
 }
+function sellerVouchers(q, view) {
+  const list = db.vouchers.filter(v => v.type === 'receipt' && v.rep === myRep()).sort((a, b) => b.date.localeCompare(a.date) || (b.created || 0) - (a.created || 0));
+  const rows = list.map(v => `<tr data-act="open" data-id="${v.id}"><td class="n">${v.no}</td><td class="n">${v.date}</td><td>${esc(accName(v.acc))}</td><td class="n">${fmt(v.amount)} <small class="muted">${esc(docSym(v))}</small></td></tr>`).join('');
+  view.innerHTML = head('📥 سندات القبض — ' + esc(myRep()), '<button class="btn pri" data-act="new">📥 قبض من زبون</button>') +
+    `<div class="card">${table(['الرقم', 'التاريخ', 'الزبون', 'المبلغ'], rows)}</div>`;
+  onAct(view, {
+    new: () => sellerReceipt(),
+    open: id => { const v = list.find(x => x.id === id); if (!v) return; modal('سند قبض رقم ' + v.no, voucherHtml(v), { extra: '<button type="button" class="btn pri" id="vPrint">🖨 طباعة</button>' }); $('#vPrint').onclick = () => { $('#dlg').close(); printDoc(voucherHtml(v)); }; },
+  });
+  if (q.new) { history.replaceState(null, '', '#/vouchers'); sellerReceipt(); }
+}
+// قبض من زبون (المندوب): المصاري بتنزل بصندوقه، وبلا ما يشوف رصيد الزبون
+function sellerReceipt() {
+  const box = myBox(); if (!box) return toast(NO_BOX, 1);
+  const cs = customers().filter(a => !isWalkin(a.id));
+  const f = modal('📥 قبض من زبون', fields([
+    { k: 'acc', l: 'الزبون', t: 'select', opts: accOpts(cs, '— اختر الزبون —'), req: 1, full: 1 },
+    { k: 'amount', l: 'المبلغ', t: 'number', req: 1 },
+    { k: 'cur', l: 'العملة', t: 'select', opts: curOpts() },
+    { k: 'rate', l: `سعر الصرف (${cur()} لكل 1 ${FX().sym})`, t: 'number' },
+    { k: 'note', l: 'البيان', full: 1 },
+  ], { cur: 'base', rate: db.settings.rate || '' }) + `<p class="muted">💰 بتنزل بـ: <b>${esc(box.name)}</b></p>`, {
+    saveText: 'حفظ القبض',
+    onSave: d => {
+      const amount = r2(num(d.amount)), R = num(d.rate);
+      if (!d.acc) { toast('اختر الزبون', 1); return false; }
+      if (amount <= 0) { toast('أدخل مبلغاً صحيحاً', 1); return false; }
+      if (d.cur === 'fx' && R <= 0) { toast('أدخل سعر الصرف', 1); return false; }
+      const rp = myRep();
+      const v = { id: uid(), type: 'receipt', no: nextNo('receipt@' + rp), date: today(), acc: d.acc, cashAcc: box.id, amount, cur: d.cur, rate: d.cur === 'fx' ? R : '', note: d.note || '', rep: rp, created: Date.now() };
+      db.vouchers.push(v); save(); toast('✓ انحفظ سند القبض');
+      setTimeout(() => { if (confirm('بدك تطبع السند؟')) printDoc(voucherHtml(v)); route(); }, 50);
+    },
+  });
+  const sel = $('[name=acc]', f); if (typeof enhancePartySelect === 'function') enhancePartySelect(sel);
+  const rateFld = $('[name=rate]', f).closest('.fld');
+  const upd = () => { rateFld.style.visibility = $('[name=cur]', f).value === 'fx' ? 'visible' : 'hidden'; };
+  f.onchange = upd; upd();
+}
 V.vouchers = (id, q, view) => {
+  if (isSeller()) return sellerVouchers(q, view);
   const t = isSeller() ? 'receipt' : q.t === 'payment' ? 'payment' : q.t === 'receipt' ? 'receipt' : 'all';
   const list = db.vouchers.filter(v => t === 'all' || v.type === t).sort((a, b) => b.date.localeCompare(a.date) || (b.created || 0) - (a.created || 0));
   const rows = list.map(v => `<tr data-act="open" data-id="${v.id}"><td class="n">${v.no}</td><td><span class="badge ${v.type === 'receipt' ? 'sale' : 'purchaseReturn'}">${v.type === 'receipt' ? 'قبض' : 'دفع'}</span></td>

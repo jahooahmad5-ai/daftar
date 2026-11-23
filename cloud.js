@@ -418,7 +418,7 @@ const Cloud = (() => {
       const a = e.target.closest('[data-a]'); if (!a) return;
       a.disabled = true;
       try {
-        if (a.dataset.a === 'ok') { await posApprove(r.user_id); toast('✓ تفعّلت نقطة البيع على موبايل ' + (r.name || 'المندوب')); }
+        if (a.dataset.a === 'ok') { await posApprove(r.user_id); if (typeof ensureRepBox === 'function') ensureRepBox(r.name); toast('✓ تفعّلت نقطة البيع على موبايل ' + (r.name || 'المندوب')); }
         else { await posRevoke(r.user_id); toast('انرفض الطلب'); }
       } catch (err) { toast(err.message, 1); }
       bar.remove(); posNotify(); if (/^#\/settings/.test(location.hash)) route();
