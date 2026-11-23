@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '6.49';
+const APP_VERSION = '6.50';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -143,6 +143,16 @@ function save() {
   if (window.Cloud) Cloud.track();
 }
 const nextNo = k => (db.seq[k] = (db.seq[k] || 0) + 1);
+// رقم مستند جديد: المحجوز من السيرفر (ما بيتكرر بين الأجهزة)، وإذا ما في (بلا نت) رقم محلي معلّم (nl) بيتصلّح إذا تكرر
+const linkedCloud = () => !!(window.Cloud && Cloud.info().linked);
+function newNo(k) {
+  const n = window.Cloud && Cloud.take ? Cloud.take(k) : 0;
+  if (n) { db.seq[k] = Math.max(num(db.seq[k]), n); return { no: n }; }
+  const o = { no: nextNo(k) };
+  if (linkedCloud()) { o.nl = 1; setTimeout(() => Cloud.reserve(k), 300); }
+  return o;
+}
+const reserveNo = k => { if (window.Cloud && Cloud.reserve) Cloud.reserve(k); };
 
 /* ------------------------- الحسابات ------------------------- */
 const acc = id => db.accounts.find(a => a.id === id);
@@ -817,7 +827,7 @@ function takeFromRep(boxId, balance) {
       const amt = r2(num(d.amount));
       if (amt <= 0) { toast('أدخل مبلغاً صحيحاً', 1); return false; }
       if (amt > r2(balance) && !confirm(`المبلغ أكبر من رصيد صندوقه (${fmt(balance)}). متابعة؟`)) return false;
-      db.entries.push({ id: uid(), no: nextNo('entry'), date: d.date, desc: 'استلام من ' + box.name + (d.note ? ' — ' + d.note : ''),
+      db.entries.push({ id: uid(), no: newNo('entry').no, date: d.date, desc: 'استلام من ' + box.name + (d.note ? ' — ' + d.note : ''),
         lines: [{ acc: d.to, dr: amt, cr: 0, note: '' }, { acc: box.id, dr: 0, cr: amt, note: '' }] });
       save(); toast(`✓ استلمت ${fmt(amt)} ${cur()}`); route();
     },
@@ -1278,6 +1288,8 @@ V.invoice = (id, q, view) => {
     } catch (e) { /* */ }
   }
   const dropDraft = () => { try { localStorage.removeItem(DRAFT); } catch (e) { /* */ } };
+  // منحجز رقم الفاتورة (ورقم سند الدفعة) من السيرفر من هلق، حتى الحفظ يكون فوري
+  if (!orig) { const sfx = isSeller() ? '@' + myRep() : ''; reserveNo(inv.type + sfx); reserveNo((['sale', 'purchaseReturn'].includes(inv.type) ? 'receipt' : 'payment') + sfx); }
   // لمعرفة إذا في تغييرات على الفاتورة المحفوظة لسا ما انحفظت
   const sigOf = (lines, f) => JSON.stringify([lines.map(l => [l.item, num(l.qty), num(l.price), num(l.cp)]).sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0)),
     f.date, f.pay, f.party || '', num(f.discount), num(f.addition), String(f.note || ''), f.pay === 'credit' ? num(f.payment) : 0]);
@@ -1810,7 +1822,7 @@ V.invoice = (id, q, view) => {
     if (!orig) {
       // فواتير المندوب: معزولة بترقيم لحالها واسمه عليها
       if (isSeller()) out.rep = myRep();
-      out.id = uid(); out.no = nextNo(out.type + (out.rep ? '@' + out.rep : '')); out.created = Date.now(); db.invoices.push(out);
+      delete out.nl; out.id = uid(); Object.assign(out, newNo(out.type + (out.rep ? '@' + out.rep : ''))); out.created = Date.now(); db.invoices.push(out);
     }
     else {
       // منلاقي الفاتورة برقمها (id) مش بالكائن — حتى لو المزامنة جدّدتها بالخلفية ما يضيع الحفظ
@@ -1824,7 +1836,7 @@ V.invoice = (id, q, view) => {
       const vt = ['sale', 'purchaseReturn'].includes(out.type) ? 'receipt' : 'payment';
       const o = { date: out.date, acc: party, amount: pv, note: `دفعة على ${INV_TYPES[out.type]} رقم ${out.no}`, cur: 'base', rate: '' };
       if (linked[0]) Object.assign(linked[0], o, { type: vt });
-      else db.vouchers.push({ id: uid(), type: vt, no: nextNo(vt + (out.rep ? '@' + out.rep : '')), cashAcc: (isSeller() ? myBox()?.id : null) || cashAccounts()[0]?.id || 'cash', created: Date.now() + 1, inv: out.id, ...(out.rep ? { rep: out.rep } : {}), ...o });
+      else db.vouchers.push({ id: uid(), type: vt, ...newNo(vt + (out.rep ? '@' + out.rep : '')), cashAcc: (isSeller() ? myBox()?.id : null) || cashAccounts()[0]?.id || 'cash', created: Date.now() + 1, inv: out.id, ...(out.rep ? { rep: out.rep } : {}), ...o });
     }
     const keep = pv > 0 ? linked[0] : null;
     if (linked.some(v => v !== keep)) db.vouchers = db.vouchers.filter(v => v.inv !== out.id || v === keep);
@@ -1921,6 +1933,7 @@ function voucherForm(v, type, preAcc) {
   const others = postable().filter(a => !isUnder(a.id, 'cashGroup') && a.id !== 'inventory' && (!isWalkin(a.id) || (v && v.acc === a.id)));
   const vals = v ? { cur: 'base', ...v } : { date: today(), acc: preAcc || '', cashAcc: cashAccounts()[0]?.id, amount: '', cur: 'base', rate: db.settings.rate || '' };
   if (!vals.rate) vals.rate = db.settings.rate || '';
+  if (!v) reserveNo(type);
   const fl = [
     { k: 'date', l: 'التاريخ', t: 'date', req: 1 },
     { k: 'amount', l: 'المبلغ', t: 'number', req: 1 },
@@ -1939,7 +1952,7 @@ function voucherForm(v, type, preAcc) {
       if (d.cur === 'fx' && R <= 0) { toast('أدخل سعر الصرف', 1); return false; }
       const o = { date: d.date, amount, acc: d.acc, cashAcc: d.cashAcc, note: d.note, cur: d.cur, rate: d.cur === 'fx' ? R : '' };
       let nv = null;
-      if (v) Object.assign(v, o); else db.vouchers.push(nv = { id: uid(), type, no: nextNo(type), created: Date.now(), ...o });
+      if (v) Object.assign(v, o); else db.vouchers.push(nv = { id: uid(), type, ...newNo(type), created: Date.now(), ...o });
       save(); toast('تم حفظ السند'); go('#/vouchers?t=' + type);
       if (nv) setTimeout(() => voucherPrintAsk(nv, true), 80);
     },
@@ -2002,6 +2015,7 @@ function voucherPrintAsk(v, fresh) {
 // قبض من زبون (المندوب): المصاري بتنزل بصندوقه، وبلا ما يشوف رصيد الزبون
 function sellerReceipt() {
   const box = myBox(); if (!box) return toast(NO_BOX, 1);
+  reserveNo('receipt@' + myRep());
   const cs = customers().filter(a => !isWalkin(a.id));
   const f = modal('📥 قبض من زبون', fields([
     { k: 'acc', l: 'الزبون', t: 'select', opts: accOpts(cs, '— اختر الزبون —'), req: 1, full: 1 },
@@ -2017,7 +2031,7 @@ function sellerReceipt() {
       if (amount <= 0) { toast('أدخل مبلغاً صحيحاً', 1); return false; }
       if (d.cur === 'fx' && R <= 0) { toast('أدخل سعر الصرف', 1); return false; }
       const rp = myRep();
-      const v = { id: uid(), type: 'receipt', no: nextNo('receipt@' + rp), date: today(), acc: d.acc, cashAcc: box.id, amount, cur: d.cur, rate: d.cur === 'fx' ? R : '', note: d.note || '', rep: rp, created: Date.now() };
+      const v = { id: uid(), type: 'receipt', ...newNo('receipt@' + rp), date: today(), acc: d.acc, cashAcc: box.id, amount, cur: d.cur, rate: d.cur === 'fx' ? R : '', note: d.note || '', rep: rp, created: Date.now() };
       db.vouchers.push(v); save(); toast('✓ انحفظ سند القبض');
       setTimeout(() => { route(); voucherPrintAsk(v, true); }, 50);
     },
@@ -2116,7 +2130,7 @@ V.entry = (id, q, view) => {
       const date = $('[name=date]', view).value, desc = $('[name=desc]', view).value.trim();
       if (!date) return toast('أدخل التاريخ', 1);
       if (orig) Object.assign(orig, { date, desc, lines });
-      else db.entries.push({ id: uid(), no: nextNo('entry'), date, desc, lines });
+      else db.entries.push({ id: uid(), no: newNo('entry').no, date, desc, lines });
       save(); toast('تم حفظ القيد'); go('#/journal?src=manual');
     },
   });

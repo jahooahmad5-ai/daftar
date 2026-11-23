@@ -192,7 +192,7 @@ const Cloud = (() => {
       await push();
       // وإنت جوّا فاتورة أو قيد (أو نافذة مفتوحة) منرفع شغلك بس وما منلمس شي — منكمّل التنزيل لما تطلع
       let changed = false;
-      if (manual || !editingNow()) { changed = await pull(); pullLater = false; }
+      if (manual || !editingNow()) { changed = await pull(); pullLater = false; await fixDupNumbers(); }
       else pullLater = true;
       st.lastSync = Date.now(); lastErr = ''; saveSt();
       if (changed) refreshView();
@@ -438,6 +438,50 @@ const Cloud = (() => {
     };
   }
 
+  /* ---------- الترقيم: كل جهاز بيحجز الرقم الجاي من السيرفر سلفاً — ما بيتكرر رقم بين جهازين ---------- */
+  st.res = st.res || {};
+  const resBusy = {};
+  async function reserve(key) {
+    if (!key || !linked() || st.res[key] || resBusy[key] || !navigator.onLine) return;
+    resBusy[key] = 1;
+    try {
+      const n = await http('/rest/v1/rpc/take_no', { method: 'POST', body: JSON.stringify({ p_company: st.company, p_key: key, p_min: num(db.seq[key]) }) });
+      if (num(n) > 0) { st.res[key] = num(n); saveSt(); }
+    } catch (e) { /* الدالة لسا ما انعملت بالسيرفر، أو ما في نت — منرجع للترقيم المحلي */ }
+    resBusy[key] = 0;
+  }
+  // الرقم المحجوز (إذا في) — وبعدها منحجز يلي بعده بالخلفية
+  function take(key) {
+    const n = st.res[key]; if (!n) return 0;
+    delete st.res[key]; saveSt(); setTimeout(() => reserve(key), 300);
+    return n;
+  }
+  const seqKey = d => d.type + (d.rep ? '@' + d.rep : '');
+  // رقم انعمل بلا نت (محلي) وطلع مكرر مع جهاز تاني: منعطيه رقم جديد من السيرفر
+  async function fixDupNumbers() {
+    if (!linked()) return;
+    const fixed = [];
+    for (const kind of ['invoices', 'vouchers']) {
+      const groups = {};
+      for (const d of db[kind]) { const k = seqKey(d) + '#' + d.no; (groups[k] = groups[k] || []).push(d); }
+      for (const k in groups) {
+        const g = groups[k]; if (g.length < 2) continue;
+        const local = g.filter(d => d.nl).sort((a, b) => num(b.created) - num(a.created));
+        // منخلّي واحد (يلي رقمه من السيرفر، أو الأقدم) ومنغيّر رقم الباقي المحليين
+        const keep = g.find(d => !d.nl) || local[local.length - 1];
+        for (const d of local) {
+          if (d === keep) continue;
+          let n = 0;
+          try { n = num(await http('/rest/v1/rpc/take_no', { method: 'POST', body: JSON.stringify({ p_company: st.company, p_key: seqKey(d), p_min: num(db.seq[seqKey(d)]) }) })); } catch (e) { /* */ }
+          if (!n) continue;
+          const old = d.no; d.no = n; delete d.nl; db.seq[seqKey(d)] = Math.max(num(db.seq[seqKey(d)]), n);
+          fixed.push(`${kind === 'invoices' ? 'فاتورة' : 'سند'} ${old} ← ${n}`);
+        }
+      }
+    }
+    if (fixed.length) { save(); toast('🔢 تغيّر رقم مكرر (انعمل بلا نت): ' + fixed.join('، '), 1); }
+  }
+
   function logout() {
     const { url, key } = cfg();
     if (st.session) fetch(url + '/auth/v1/logout', { method: 'POST', headers: { apikey: key, Authorization: 'Bearer ' + st.session.access_token } }).catch(() => {});
@@ -459,7 +503,7 @@ const Cloud = (() => {
 
   // عضو بشركة مش صاحبها (متل المندوب) = وضع البيّاع تلقائياً على موبايله
   if (typeof applySellerUI === 'function') setTimeout(() => { applySellerUI(); route(); }, 0); // كمان شاشة القفل بتحتاج Cloud جاهز
-  return { track, card, sync, pill, posJoin, posCheck, ownerSwitch, posList, posApprove, posRevoke, posNotify, info: () => ({ linked: linked(), pending: pending(), busy, lastSync: st.lastSync, configured: configured(), owner: !!(linked() && st.owner), member: !!(configured() && st.company && !st.owner), company: st.company || '', posReq: st.posReq || null, email: st.session?.email || '' }) };
+  return { track, card, sync, pill, reserve, take, posJoin, posCheck, ownerSwitch, posList, posApprove, posRevoke, posNotify, info: () => ({ linked: linked(), pending: pending(), busy, lastSync: st.lastSync, configured: configured(), owner: !!(linked() && st.owner), member: !!(configured() && st.company && !st.owner), company: st.company || '', posReq: st.posReq || null, email: st.session?.email || '' }) };
 })();
 window.Cloud = Cloud;
 if (/^#\/settings/.test(location.hash)) route();

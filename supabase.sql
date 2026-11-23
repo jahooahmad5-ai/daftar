@@ -187,3 +187,25 @@ revoke execute on function public.approve_pos(uuid, uuid) from public, anon;
 revoke execute on function public.revoke_pos(uuid, uuid) from public, anon;
 grant execute on function public.approve_pos(uuid, uuid) to authenticated;
 grant execute on function public.revoke_pos(uuid, uuid) to authenticated;
+
+-- ===================== ترقيم الفواتير والسندات من السيرفر (ما بيتكرر بين الأجهزة) =====================
+create table if not exists public.counters (
+  company_id uuid not null references public.companies(id) on delete cascade,
+  key text not null,
+  n bigint not null default 0,
+  primary key (company_id, key)
+);
+alter table public.counters enable row level security;
+-- الرقم الجاي لهالنوع (وما بيكون أصغر من أكبر رقم موجود عند الجهاز)
+create or replace function public.take_no(p_company uuid, p_key text, p_min bigint default 0) returns bigint
+language plpgsql security definer set search_path = public as $$
+declare v bigint;
+begin
+  if not public.is_member(p_company) then raise exception 'not a member'; end if;
+  insert into public.counters (company_id, key, n) values (p_company, p_key, greatest(coalesce(p_min, 0), 0) + 1)
+  on conflict (company_id, key) do update set n = greatest(public.counters.n, coalesce(p_min, 0)) + 1
+  returning n into v;
+  return v;
+end $$;
+revoke execute on function public.take_no(uuid, text, bigint) from public, anon;
+grant execute on function public.take_no(uuid, text, bigint) to authenticated;
