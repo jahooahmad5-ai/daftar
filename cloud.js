@@ -254,7 +254,19 @@ const Cloud = (() => {
         <div class="form-actions"><button class="btn pri" id="cIn">دخول</button><button class="btn" id="cUp">إنشاء حساب جديد</button><button class="btn" id="cReset">تغيير رابط المشروع</button></div>`);
       const creds = () => ({ email: $('[name=email]', el).value.trim(), password: $('[name=password]', el).value });
       const run = async (btn, fn) => { btn.disabled = true; try { await fn(); } catch (e) { toast(e.message, 1); } btn.disabled = false; };
-      $('#cIn', el).onclick = e => run(e.target, async () => { const c = creds(); await http('/auth/v1/token?grant_type=password', { method: 'POST', body: JSON.stringify(c) }, false).then(setSession); toast('تم تسجيل الدخول'); rerender(); });
+      $('#cIn', el).onclick = e => run(e.target, async () => {
+        const c = creds(); await http('/auth/v1/token?grant_type=password', { method: 'POST', body: JSON.stringify(c) }, false).then(setSession);
+        toast('تم تسجيل الدخول');
+        // الشركة لسا محفوظة عالموبايل: منتأكد مين صاحبها (إذا المدير دخل بموبايل كان عليه نقطة بيع ← بيرجع دفتر كامل)
+        if (st.company) {
+          const l = await http('/rest/v1/companies?select=id,name,owner&id=eq.' + encodeURIComponent(st.company));
+          if (!l || !l.length) Object.assign(st, { company: null, companyName: null, owner: false, lastPull: null });
+          else st.owner = l[0].owner === st.session.uid;
+          saveSt();
+          if (st.owner) { ownerHere(); return; }
+        }
+        rerender();
+      });
       if (opt.gate) { $('#cUp', el).remove(); $('#cReset', el).remove(); }
       else $('#cUp', el).onclick = e => run(e.target, async () => {
         const c = creds(); if (c.password.length < 6) throw new Error('كلمة السر قصيرة (6 أحرف على الأقل)');
@@ -319,6 +331,13 @@ const Cloud = (() => {
         },
       });
   }
+  // موبايل المدير: بيرجع دفتر كامل (منشيل قفل نقطة البيع ووضع البيّاع عنه)
+  function ownerHere() {
+    try { localStorage.removeItem('daftar_seller'); localStorage.removeItem('daftar_pos_device'); localStorage.removeItem('daftar_rep_name'); } catch (e) { /* */ }
+    st.posReq = null; saveSt();
+    if (typeof applySellerUI === 'function') { applySellerUI(); location.hash = '#/'; route(); }
+    toast('✓ أهلاً — هاد موبايل المدير، رجع دفتر كامل');
+  }
   async function openCompany(c) {
     const backup = db;
     Object.assign(st, { company: c.id, companyName: c.name, owner: c.owner === st.session.uid, lastPull: null, dirty: {} });
@@ -329,7 +348,8 @@ const Cloud = (() => {
       localStorage.setItem(DBKEY, JSON.stringify(db)); _eng = null; snap = recs();
       $('#coName').textContent = db.settings.company;
       await sync();
-      if (typeof applySellerUI === 'function') { applySellerUI(); setTimeout(() => { if (!st.owner) location.hash = '#/'; route(); }, 50); }
+      if (st.owner) ownerHere();
+      else if (typeof applySellerUI === 'function') { applySellerUI(); setTimeout(() => { location.hash = '#/'; route(); }, 50); }
     } catch (e) {
       db = backup; Object.assign(st, { company: null, companyName: null, lastPull: null, dirty: {} }); saveSt(); snap = recs();
       throw e;
