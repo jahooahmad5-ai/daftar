@@ -184,10 +184,14 @@ const Cloud = (() => {
     if (st.owner && !st.fullPush1) { markAllDirty(); st.fullPush1 = 1; saveSt(); }
     busy = true; pill();
     try {
-      // موبايل نقطة بيع: إذا المدير وقّفه بيرجع لصفحة «بانتظار التفعيل»
-      if (!st.owner && st.posReq) {
+      // موبايل مندوب: إذا المدير وقّفه (ما عاد عضو بالشركة) منمسح بيانات الشركة من الموبايل كلها
+      if (!st.owner) {
         const l = await http('/rest/v1/companies?select=id&id=eq.' + encodeURIComponent(st.company));
-        if (!l || !l.length) { st.company = null; st.companyName = null; st.lastPull = null; st.dirty = {}; saveSt(); busy = false; pill(); route(); return; }
+        if (Array.isArray(l) && !l.length) {
+          Object.assign(st, { company: null, companyName: null, lastPull: null, lastSync: null, dirty: {}, res: {} }); saveSt();
+          if (typeof wipeLocalData === 'function') await wipeLocalData(true);
+          busy = false; pill(); route(); toast('⛔ هالموبايل انوقف من المدير — انمسحت بيانات الشركة منه', 1); return;
+        }
       }
       await push();
       // وإنت جوّا فاتورة أو قيد (أو نافذة مفتوحة) منرفع شغلك بس وما منلمس شي — منكمّل التنزيل لما تطلع
@@ -327,12 +331,27 @@ const Cloud = (() => {
 
     wrap(`<p>الشركة: <b>${esc(st.companyName || '')}</b><br>الحساب: ${esc(st.session.email || '')}<br>آخر مزامنة: ${ago(st.lastSync)}${pending() ? ` — <b>${pending()}</b> تغيير بانتظار الرفع` : ''}</p>
       ${lastErr && lastErr !== 'offline' ? `<p class="bad">${esc(lastErr)}</p>` : ''}
-      <div class="acts"><button class="btn pri" id="cSync">🔄 مزامنة الآن</button>${st.owner ? '<button class="btn" id="cAdd">👤 إضافة مستخدم</button>' : ''}<button class="btn red" id="cOut">تسجيل الخروج</button></div>
+      <div class="acts"><button class="btn pri" id="cSync">🔄 مزامنة الآن</button>${st.owner ? '<button class="btn" id="cAdd">👤 إضافة مستخدم</button>' : ''}<button class="btn red" id="cOut">تسجيل الخروج</button><button class="btn red" id="cWipe">🚪 خروج ومسح البيانات من هالموبايل</button></div>
       <p class="muted" style="margin-top:10px">التطبيق يعمل بدون إنترنت، وتُرفع التغييرات تلقائياً عند عودة الاتصال.</p>`);
     $('#cSync', el).onclick = async () => { await sync(true); rerender(); };
     $('#cOut', el).onclick = () => {
       if (pending() && !confirm(`يوجد ${pending()} تغيير لم يُرفع بعد. تسجيل الخروج الآن قد يفقدها من السحابة. متابعة؟`)) return;
       logout(); if (/^#\/(pos|sellersetup)/.test(location.hash)) route(); else rerender();
+    };
+    // خروج ومسح: بس بعد ما يتأكد إنه كل شي ارتفع عالسحابة (ما بيضيع شي)
+    $('#cWipe', el).onclick = async e => {
+      const b = e.target; b.disabled = true;
+      try {
+        if (!navigator.onLine) throw new Error('بدها نت — لازم نتأكد إنه كل شي ارتفع عالسحابة قبل المسح');
+        await sync(true);
+        if (pending()) throw new Error(`في ${pending()} تغيير لسا ما ارتفع — جرّب «🔄 مزامنة الآن» وبعدين ارجع`);
+        if (!confirm('رح يتسكّر البرنامج على هالموبايل وتنمسح منه كل البيانات (الفواتير والزباين والمواد والنسخ الأوتوماتيكية).\n\nبياناتك بتضل محفوظة بالسحابة، وبترجع إذا دخلت من جديد.\n\nمتابعة؟')) { b.disabled = false; return; }
+        logout();
+        if (typeof wipeLocalData === 'function') await wipeLocalData(false);
+        try { localStorage.removeItem(SKEY); } catch (er) { /* */ }
+        toast('✓ انمسحت البيانات من هالموبايل');
+        setTimeout(() => { location.hash = '#/'; location.reload(); }, 600);
+      } catch (err) { toast(err.message, 1); b.disabled = false; }
     };
     if (st.owner) $('#cAdd', el).onclick = () => modal('إضافة مستخدم للشركة',
       `<p class="muted">يجب أن يكون المستخدم قد أنشأ حساباً من التطبيق أولاً (من جهازه: الإعدادات ← إنشاء حساب جديد). بعد إضافته يسجّل الدخول ويختار الشركة.</p>` + fields([{ k: 'email', l: 'إيميل المستخدم', t: 'email', req: 1, full: 1 }]), {

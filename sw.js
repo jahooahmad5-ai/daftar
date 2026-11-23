@@ -1,6 +1,6 @@
 // Service Worker: يجعل التطبيق يعمل بدون إنترنت
 // الشبكة أولاً (مع تجاوز كاش المتصفح حتى تصل التحديثات فوراً)، والكاش عند انقطاع الإنترنت
-const CACHE = 'daftar-v108';
+const CACHE = 'daftar-v109';
 const FILES = ['./', 'index.html', 'store.js', 'styles.css', 'app.js', 'cloud.js', 'printer.js', 'import.js', 'order.js', 'voice.js', 'calc.js', 'config.js', 'manifest.json', 'icon.svg', 'icon-192.png', 'icon-512.png', 'lib/xlsx.full.min.js', 'lib/qrcode.js'];
 
 self.addEventListener('install', e => {

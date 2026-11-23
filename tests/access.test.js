@@ -69,4 +69,35 @@ module.exports = [
       assert.strictEqual(await own.evaluate(() => localStorage.getItem('daftar_seller')), null);
     },
   },
+  {
+    name: 'مندوب انوقف: أول مزامنة بتمسح بيانات الشركة من موبايله',
+    fn: async base => {
+      const p = await page(base, { cloud: REP, ls: { daftar_rep_name: 'محمد', daftar_pos_device: '1' } });
+      await p.evaluate(async () => { db.items.push({ id: 'x', name: 'سعر سري', buyPrice: 900 }); db.accounts.push({ id: 'cz', code: '112009', name: 'زبون مهم', type: 'asset', parent: 'customers' }); save(); await Store.flush(); });
+      p.cloud.companies.length = 0; // المدير وقّفه: ما عاد يشوف الشركة
+      await p.evaluate(() => Cloud.sync(true)); await p.waitForTimeout(800);
+      assert.deepStrictEqual(await p.evaluate(() => ({ items: db.items.length, cust: db.accounts.some(a => a.id === 'cz'), linked: Cloud.info().linked })), { items: 0, cust: false, linked: false });
+      await p.reload(); await p.waitForFunction(() => typeof db !== 'undefined' && window.Cloud, null, { timeout: 15000 });
+      assert.strictEqual(await p.evaluate(() => db.items.length), 0, 'لازم البيانات تكون انمسحت من التخزين كمان');
+      assert.match(p.url(), /#\/pos/, 'الموبايل بيضل نقطة بيع (بيقدر يطلب تفعيل من جديد)');
+    },
+  },
+  {
+    name: '«خروج ومسح البيانات»: بيمسح بعد ما يرفع كل شي، وبيمنع إذا في شي ما ارتفع',
+    fn: async base => {
+      const p = await page(base, { cloud: OWNER, hash: '#/settings' });
+      await p.evaluate(async () => { db.items.push({ id: 'x', name: 'مادة' }); save(); await Store.flush(); await autoBackup(); });
+      // السحابة رافضة الرفع ← لازم يمنع المسح
+      await p.unroute(/supabase\.co/);
+      await p.route(/supabase\.co/, r => (r.request().method() === 'POST' && r.request().url().includes('/records') ? r.fulfill({ status: 500, body: '{}' }) : p.cloud.handler(r)));
+      await p.click('#cWipe'); await p.waitForTimeout(1200);
+      assert.strictEqual(await p.evaluate(() => db.items.length), 1, 'ما لازم يمسح وفي تغييرات ما ارتفعت');
+      await p.unroute(/supabase\.co/); await p.route(/supabase\.co/, p.cloud.handler);
+      await p.click('#cWipe'); await p.waitForTimeout(2500);
+      await p.waitForFunction(() => typeof db !== 'undefined' && window.Cloud, null, { timeout: 15000 });
+      assert.strictEqual(await p.evaluate(() => db.items.length), 0);
+      assert.strictEqual(await p.evaluate(async () => (await Store.keys('bak:')).length), 0, 'النسخ الأوتوماتيكية لازم تنمسح');
+      assert.match(await p.text(), /البرنامج مقفول/);
+    },
+  },
 ];

@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '6.55';
+const APP_VERSION = '6.56';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -640,6 +640,21 @@ function backupData() {
   const lines = []; db.invoices.forEach(i => i.lines.forEach(l => lines.push({ 'التاريخ': i.date, 'النوع': INV_TYPES[i.type] || i.type, 'رقم الفاتورة': i.no, 'الطرف': i.party ? accName(i.party) : '', 'المادة': db.items.find(x => x.id === l.item)?.name || '', 'الكمية': num(l.qty), 'السعر': num(l.price), 'المجموع': r2(num(l.qty) * num(l.price)) })));
   return { 'الزباين': partyRows(customers()), 'الموردين': partyRows(suppliers()), 'المواد': items, 'الفواتير': invs, 'تفاصيل الفواتير': lines };
 }
+// مسح كل بيانات الشركة من هالموبايل (المندوب الموقوف، أو «خروج ومسح»)
+// keepPos: موبايل نقطة بيع منخلّيه نقطة بيع (بيقدر يبعت طلب تفعيل من جديد) بس بلا بيانات
+async function wipeLocalData(keepPos) {
+  db = seed(); _eng = null;
+  try {
+    const j = JSON.stringify(db);
+    if (window.Store) { Store.write(j); await Store.flush(); for (const k of await Store.keys('bak:')) await Store.del(k); }
+    else localStorage.setItem(KEY, j);
+  } catch (e) { /* */ }
+  try {
+    Object.keys(localStorage).filter(k => /^daftar_draft|^daftar_last_backup$|^daftar_pos_reps$/.test(k) || (!keepPos && /^daftar_(pos_device|rep_name)$/.test(k))).forEach(k => localStorage.removeItem(k));
+  } catch (e) { /* */ }
+  const co = document.getElementById('coName'); if (co) co.textContent = db.settings.company;
+}
+
 /* ---- النسخة الاحتياطية الأوتوماتيكية: كل يوم نسخة على هالموبايل (آخر 7 أيام)، وبترجعلها بكبسة ---- */
 const AUTO_DAYS = 7;
 const bkOk = () => !!(window.Store && Store.info().idb) && !isSeller();
