@@ -339,3 +339,4 @@ img,svg,video{max-width:100%}
 .sync-btn.ok{background:#e8f5ee;color:#0f6b3d;border-color:#bfe3cf}
 .sync-btn.warn{background:#d97706;border-color:#d97706;color:#fff}
 .sync-btn.bad{background:#c0392b;border-color:#c0392b;color:#fff}
+.ln-card.ln-bad{outline:3px solid #c0392b;outline-offset:2px}

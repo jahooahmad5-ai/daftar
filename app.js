@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '6.8';
+const APP_VERSION = '6.9';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -157,6 +157,7 @@ const customers = () => postable().filter(a => isUnder(a.id, 'customers'));
 const suppliers = () => postable().filter(a => isUnder(a.id, 'suppliers'));
 // «زبون عام»: زبون ثابت للبيع المباشر — دايماً نقدي وما بيصير عليه حساب (ما بيكون آجل أبداً)
 const WALKIN_NAME = 'زبون عام';
+const MAX_UP = 0.10; // أعلى زيادة مسموحة على سعر المبيع ببطاقة المادة
 const isWalkin = id => { const a = acc(id); return !!a && (a.walkin || a.id === 'walkin'); };
 function ensureWalkin() {
   let a = customers().find(x => x.walkin || x.id === 'walkin')
@@ -468,6 +469,41 @@ function enhancePartySelect(sel) {
 new MutationObserver(() => document.querySelectorAll('select[name=party]:not([data-sx])').forEach(enhancePartySelect))
   .observe(document.body, { childList: true, subtree: true });
 
+/* ------------------------- نسخة احتياطية (للدرايف) ------------------------- */
+const BK_KEY = 'daftar_last_backup';
+const lastBackup = () => { try { return +localStorage.getItem(BK_KEY) || 0; } catch (e) { return 0; } };
+const loadXlsx = () => window.XLSX ? Promise.resolve() : new Promise((ok, bad) => {
+  const sc = document.createElement('script'); sc.src = 'lib/xlsx.full.min.js'; sc.onload = ok; sc.onerror = () => bad(new Error('ما قدر يحمّل مكتبة Excel')); document.head.appendChild(sc);
+});
+async function backupShare() {
+  const stamp = today(), files = [];
+  // 1) النسخة الكاملة (منها بترجّع كل شي لدفتر)
+  files.push(new File([JSON.stringify(db, null, 1)], `دفتر-نسخة-كاملة-${stamp}.json`, { type: 'application/json' }));
+  // 2) ملف إكسل للقراءة
+  try {
+    await loadXlsx();
+    const R = rollup(sums()), st = engine().stock, bal = a => r2(natural(a, R[a.id]));
+    const partyRows = list => list.map(a => ({ 'الرمز': a.code, 'الاسم': a.name, 'الهاتف': a.phone || '', 'العنوان': a.address || '', 'الرصيد': bal(a) }));
+    const items = [...db.items].sort(byCode).map(it => ({ 'الرمز': it.code || '', 'اسم المادة': it.name, 'الباركود': it.barcode || '', 'الوحدة': it.unit || '', 'المجموعة': it.group || '', 'سعر الشراء': num(it.buyPrice), 'سعر المبيع': num(it.sellPrice), 'سعر المستهلك': num(it.consumerPrice), 'الكمية الحالية': r2(st[it.id]?.qty || 0) }));
+    const invs = [...db.invoices].sort((a, b) => (a.date < b.date ? 1 : -1)).map(i => ({ 'النوع': INV_TYPES[i.type] || i.type, 'الرقم': i.no, 'التاريخ': i.date, 'الطرف': i.party ? accName(i.party) : '', 'الدفع': i.pay === 'cash' ? 'نقدي' : 'آجل', 'الصافي': invTotals(i).net, 'عدد المواد': i.lines.length, 'ملاحظة': i.note || '' }));
+    const lines = []; db.invoices.forEach(i => i.lines.forEach(l => lines.push({ 'التاريخ': i.date, 'النوع': INV_TYPES[i.type] || i.type, 'رقم الفاتورة': i.no, 'الطرف': i.party ? accName(i.party) : '', 'المادة': db.items.find(x => x.id === l.item)?.name || '', 'الكمية': num(l.qty), 'السعر': num(l.price), 'المجموع': r2(num(l.qty) * num(l.price)) })));
+    const wb = XLSX.utils.book_new();
+    const addSheet = (rows, name) => { const ws = XLSX.utils.json_to_sheet(rows.length ? rows : [{ '': 'لا توجد بيانات' }]); ws['!views'] = [{ RTL: true }]; XLSX.utils.book_append_sheet(wb, ws, name); };
+    wb.Workbook = { Views: [{ RTL: true }] };
+    addSheet(partyRows(customers()), 'الزباين'); addSheet(partyRows(suppliers()), 'الموردين'); addSheet(items, 'المواد'); addSheet(invs, 'الفواتير'); addSheet(lines, 'تفاصيل الفواتير');
+    const buf = XLSX.write(wb, { type: 'array', bookType: 'xlsx' });
+    files.unshift(new File([buf], `دفتر-${stamp}.xlsx`, { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
+  } catch (e) { toast('ما قدر يعمل ملف الإكسل — رح يشارك النسخة الكاملة بس', 1); }
+  const done = () => { try { localStorage.setItem(BK_KEY, String(Date.now())); } catch (e) { /* */ } if (/^#?\/?$/.test(location.hash)) route(); };
+  if (navigator.canShare && navigator.canShare({ files })) {
+    try { await navigator.share({ files, title: 'نسخة احتياطية — دفتر' }); done(); toast('✓ انحفظت النسخة الاحتياطية'); }
+    catch (e) { if (e && e.name !== 'AbortError') toast('ما زبطت المشاركة: ' + (e.message || e), 1); }
+    return;
+  }
+  files.forEach((f, k) => setTimeout(() => { const u = URL.createObjectURL(f), a = document.createElement('a'); a.href = u; a.download = f.name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(u), 3000); }, k * 400));
+  done(); toast('✓ نزلت ملفات النسخة الاحتياطية — ارفعها عالدرايف');
+}
+
 /* ------------------------- الرئيسية ------------------------- */
 V.home = (id, q, view) => {
   const R = rollup(sums());
@@ -481,7 +517,7 @@ V.home = (id, q, view) => {
   const low = db.items.filter(i => num(i.minQty) > 0 && (st[i.id]?.qty || 0) <= num(i.minQty));
   const recent = [...db.invoices].sort((a, b) => b.date.localeCompare(a.date) || (b.created || 0) - (a.created || 0)).slice(0, 8);
 
-  view.innerHTML = head('الرئيسية', `<button class="btn pri sync-btn" id="homeSync" data-act="sync">🔄 مزامنة</button><span class="muted">${today()}</span>`) + `
+  view.innerHTML = head('الرئيسية', `<button class="btn pri sync-btn" id="homeSync" data-act="sync">🔄 مزامنة</button>${(() => { const lb = lastBackup(), old = Date.now() - lb > 864e5; return `<button class="btn sync-btn ${old ? 'warn pri' : 'ok'}" data-act="backup">💾 نسخة احتياطية${lb ? (old ? ' — صرلها أكتر من يوم' : ' — اليوم ✓') : ' — ما في ولا نسخة'}</button>`; })()}<span class="muted">${today()}</span>`) + `
   <div class="quick">
     <a href="#/invoice/new?type=sale"><i>🧾</i>فاتورة مبيع</a>
     <a href="#/invoice/new?type=purchase"><i>🛒</i>فاتورة شراء</a>
@@ -509,6 +545,7 @@ V.home = (id, q, view) => {
   </div>`;
   onAct(view, {
     open: id => go('#/invoice/' + id), rate: () => rateDialog(),
+    backup: () => backupShare(),
     sync: async () => {
       if (!window.Cloud || !Cloud.info().linked) { toast('المزامنة مش مربوطة — اربطها من الإعدادات', 1); return go('#/settings'); }
       await Cloud.sync(true);
@@ -1405,6 +1442,19 @@ V.invoice = (id, q, view) => {
     if (pay === 'cash' && !cashAcc) return toast('اختر الصندوق', 1);
     if (!val('date')) return toast('أدخل التاريخ', 1);
     if (inv.cur === 'fx' && rate() <= 0) return toast('أدخل سعر الصرف للفاتورة', 1);
+    // سعر المبيع ما بيزيد أكتر من 10٪ عن سعر المبيع ببطاقة المادة
+    if (inv.type === 'sale') {
+      const bad = inv.lines.findIndex(l => {
+        const it = l.item && num(l.qty) > 0 && db.items.find(x => x.id === l.item), sp = it ? num(it.sellPrice) : 0;
+        return sp > 0 && toBase(l.price) > r2(sp * (1 + MAX_UP)) + 0.001;
+      });
+      if (bad >= 0) {
+        const l = inv.lines[bad], it = db.items.find(x => x.id === l.item);
+        const card = $(`.ln-card[data-i="${bad}"]`, view);
+        if (card) { card.scrollIntoView({ block: 'center' }); card.classList.add('ln-bad'); setTimeout(() => card.classList.remove('ln-bad'), 4000); }
+        return toast(`يجب تعديل سعر مبيع المادة أولاً: ${it.name} — سعرها بالبطاقة ${fmt(num(it.sellPrice))}، وأعلى سعر مسموح ${fmt(r2(num(it.sellPrice) * (1 + MAX_UP)))}`, 1);
+      }
+    }
     const out = { ...inv, date: val('date'), pay, party, cashAcc: pay === 'cash' ? cashAcc : '', cur: inv.cur, rate: inv.cur === 'fx' ? rate() : '', discount: num(val('discount')), addition: num(val('addition')), addNote: val('addNote').trim(), note: val('note'), lines };
     if (!orig) { out.id = uid(); out.no = nextNo(out.type); out.created = Date.now(); db.invoices.push(out); }
     else {
