@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '6.47';
+const APP_VERSION = '6.48';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -1645,6 +1645,7 @@ V.invoice = (id, q, view) => {
       if (window.scrollY < y0 - 200) window.scrollTo(0, y0);
     };
     window.addEventListener('scroll', guard, { passive: true });
+    [150, 400, 800, 1300, 1900].forEach(t => setTimeout(guard, t));
     setTimeout(() => window.removeEventListener('scroll', guard), 2100);
   }, true);
   // لما تكبس على خانة رقم (كمية، سعر) بيتحدّد الرقم كله — بتكتب الجديد دغري بداله
@@ -1670,6 +1671,13 @@ V.invoice = (id, q, view) => {
   new MutationObserver(() => view.classList.toggle('typing', !sugg.hidden)).observe(sugg, { attributes: true, attributeFilter: ['hidden'] });
   // منطلّع البحث لفوق بس إذا إنت كبست عالبحث — مش إذا كنت عم تعدّل عدد مادة
   const toTopSafe = () => { if (Date.now() - lineActAt > 1500) toTop(); };
+  // الكيبورد مفتوح على البحث (الخانة ثابتة فوق) وبلّشت تنزل بإصبعك: منسكّر الكيبورد هلق
+  // — هيك لما تكبس + تحت ما بيرجع الموبايل يطلّعك لخانة البحث فوق
+  const blurOnScroll = () => {
+    if (!view.contains(scanIn)) return window.removeEventListener('touchmove', blurOnScroll);
+    if (document.activeElement === scanIn && sugg.hidden) scanIn.blur();
+  };
+  window.addEventListener('touchmove', blurOnScroll, { passive: true });
   scanIn.addEventListener('focus', () => { if (Date.now() - lineActAt < 1500) return; setTimeout(toTopSafe, 300); setTimeout(toTopSafe, 700); });
   if (window.visualViewport) {
     const onVV = () => { if (!view.contains(scanIn)) return window.visualViewport.removeEventListener('resize', onVV); fitSugg(); };
