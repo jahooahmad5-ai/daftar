@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '6.31';
+const APP_VERSION = '6.32';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -465,28 +465,37 @@ function posQR() {
     onSave: d => { const n = String(d.name || '').trim(); if (!n) return false; setTimeout(() => posQRShow(n), 0); },
   });
 }
-const POS_REPS_KEY = 'daftar_pos_reps';
-async function posQRShow(name) {
+function posQRShow(name) {
   if (typeof qrcode !== 'function') return toast('مكتبة الباركود ما تحمّلت — حدّث الصفحة', 1);
-  if (!window.Cloud) return toast('المزامنة السحابية مش شغّالة', 1);
-  // نفس المندوب = نفس الحساب (إذا رجعت طبعت باركوده ما منعمل حساب جديد)
-  let reps = {}; try { reps = JSON.parse(localStorage.getItem(POS_REPS_KEY) || '{}'); } catch (e) { /* */ }
-  let k = reps[name];
-  if (!k || k.c !== (Cloud.info().company || k.c)) {
-    toast('⏳ عم جهّز حساب نقطة البيع…');
-    try { k = await Cloud.makeRep(); } catch (e) { return toast(e.message, 1); }
-    reps[name] = k; try { localStorage.setItem(POS_REPS_KEY, JSON.stringify(reps)); } catch (e) { /* */ }
-  }
-  const tok = btoa(unescape(encodeURIComponent(JSON.stringify(k)))).replace(/=+$/, '');
-  const url = location.origin + location.pathname + '#/pos?name=' + encodeURIComponent(name) + '&k=' + encodeURIComponent(tok);
+  const info = window.Cloud ? Cloud.info() : {};
+  if (!info.linked || info.member) return toast('لازم تكون مسجّل دخول بحساب المدير وفاتح الشركة (الإعدادات ← المزامنة السحابية)', 1);
+  // الباركود ما فيه أي مفتاح: بس رقم الشركة واسم المندوب. الدخول ما بيصير إلا لما المدير يفعّل
+  const url = location.origin + location.pathname + '#/pos?name=' + encodeURIComponent(name) + '&c=' + encodeURIComponent(info.company);
   const qr = qrcode(0, 'M'); qr.addData(url); qr.make();
   const svg = qr.createSvgTag({ cellSize: 8, margin: 2, scalable: true });
   const box = `<div style="background:#fff;padding:10px;border-radius:12px;max-width:300px;margin:0 auto">${svg}</div>`;
   const f = modal('📷 باركود نقطة البيع — ' + name, `${box}
-    <p class="muted" style="margin-top:12px">صوّر هالباركود بكاميرا موبايل المندوب ← بيفتح <b>نقطة البيع بس</b> وبيدخل على الشركة لحاله — <b>بلا إيميل ولا كلمة سر</b>.</p>
-    <p class="bad">⚠️ هالباركود متل المفتاح: أي حدا بيصوّره بيقدر يبيع باسم المندوب. لا تنشره.</p>`,
+    <p class="muted" style="margin-top:12px">1. المندوب بيصوّر الباركود بكاميرا موبايله ← بيطلعله «بانتظار تفعيل المدير».<br>2. على موبايلك بيطلع شريط فوق: <b>📲 موبايل «${esc(name)}» بدو يفتح نقطة البيع</b> ← اكبس <b>✓ تفعيل</b>.<br>3. موبايل المندوب بيفتح نقطة البيع لحاله — بلا إيميل ولا كلمة سر.</p>
+    <p class="muted">🔒 إذا حدا غريب صوّر الباركود ما بيفوت إلا إذا إنت فعّلته.</p>`,
     { extra: '<button type="button" class="btn pri" id="qrPrint">🖨 طباعة</button>' });
   $('#qrPrint', f).onclick = () => { $('#dlg').close(); printDoc(`<h3 class="ptitle">باركود نقطة البيع — ${esc(name)}</h3><div style="width:260px;margin:20px auto">${svg}</div><p style="text-align:center">صوّر الباركود بكاميرا الموبايل لفتح نقطة البيع</p>`); };
+}
+// قائمة موبايلات نقطة البيع بالإعدادات (للمدير)
+async function posDevsCard(el) {
+  if (!el || !window.Cloud) return;
+  const info = Cloud.info(); if (!info.linked || info.member) { el.innerHTML = ''; return; }
+  let list; try { list = await Cloud.posList(); } catch (e) { el.innerHTML = `<p class="bad">${esc(e.message)}</p>`; return; }
+  if (!list.length) { el.innerHTML = '<p class="muted">ما في ولا موبايل نقطة بيع لسا.</p>'; return; }
+  el.innerHTML = '<p><b>📱 موبايلات نقطة البيع</b></p>' + list.map(r => `<div class="acts" style="align-items:center;margin-bottom:6px"><span>${r.approved ? '🟢' : '⏳'} ${esc(r.name || 'مندوب')}${r.approved ? '' : ' — <small class="muted">بانتظار التفعيل</small>'}</span>
+    ${r.approved ? '' : `<button class="btn pri" data-pa="ok" data-u="${r.user_id}">✓ تفعيل</button>`}<button class="btn red" data-pa="no" data-u="${r.user_id}">${r.approved ? '⛔ إيقاف' : '✕ رفض'}</button></div>`).join('');
+  el.onclick = async e => {
+    const b = e.target.closest('[data-pa]'); if (!b) return;
+    if (b.dataset.pa === 'no' && !confirm('أكيد؟ هالموبايل ما عاد يقدر يفتح نقطة البيع.')) return;
+    b.disabled = true;
+    try { if (b.dataset.pa === 'ok') { await Cloud.posApprove(b.dataset.u); toast('✓ تفعّلت'); } else { await Cloud.posRevoke(b.dataset.u); toast('✓ توقّفت'); } }
+    catch (err) { toast(err.message, 1); }
+    Cloud.posNotify(); posDevsCard(el);
+  };
 }
 
 let keepScrollY = null;
@@ -622,15 +631,36 @@ V.pos = V.sellersetup = (id, q, view) => {
   if (name) try { localStorage.setItem(REP_KEY, name); } catch (e) { /* */ }
   const info = window.Cloud ? Cloud.info() : {};
   if (info.member) return go('#/'); // حساب المندوب: دغري نقطة البيع
-  // باركود فيه حساب نقطة البيع: منسجّل دخول ومنفتح الشركة لحالنا
-  if (q.k && window.Cloud && !(info.linked && !info.member)) {
+  // باركود نقطة البيع (أو موبايل بعت طلب من قبل): منبعت طلب تفعيل ومنستنى المدير
+  const company = q.c || (info.posReq && info.posReq.company);
+  if (company && window.Cloud && !(info.linked && !info.member)) {
     try { localStorage.setItem(POS_DEV_KEY, '1'); } catch (e) { /* */ }
     applySellerUI();
-    view.innerHTML = head('🧑‍💼 نقطة البيع') + '<div class="card"><p>⏳ عم يفتح نقطة البيع ويحمّل البيانات… لحظة</p></div>';
-    let k; try { k = JSON.parse(decodeURIComponent(escape(atob(q.k)))); } catch (e) { k = null; }
-    if (!k || !k.e || !k.p || !k.c) { view.innerHTML = head('🧑‍💼 نقطة البيع') + '<div class="card"><p class="bad">الباركود مش صحيح — اطلب باركود جديد من المدير.</p></div>'; return; }
-    Cloud.posLogin(k).then(() => { history.replaceState(null, '', '#/'); route(); toast('✓ نقطة البيع جاهزة'); })
-      .catch(e => { view.innerHTML = head('🧑‍💼 نقطة البيع') + `<div class="card"><p class="bad">${esc(e.message)}</p><p class="muted">تأكد إنه في إنترنت وصوّر الباركود مرة تانية.</p></div>`; });
+    const repN = name || (info.posReq && info.posReq.name) || repName() || 'مندوب';
+    if (q.c) history.replaceState(null, '', '#/pos');
+    const show = (html) => { if (/^#\/(pos|sellersetup)/.test(location.hash)) view.innerHTML = head(`🧑‍💼 نقطة البيع — ${esc(repN)}`) + `<div class="card" style="text-align:center">${html}</div>`; };
+    const waitHtml = `<p style="font-size:42px;margin:6px 0">⏳</p><p><b>بانتظار تفعيل المدير</b></p><p class="muted">خلّي المدير يكبس «✓ تفعيل» من موبايله.<br>أول ما يفعّل بتفتح نقطة البيع لحالها.</p><div class="acts" style="justify-content:center"><button class="btn pri" id="posChk">🔄 تحقّق هلق</button></div>`;
+    const check = async () => {
+      try {
+        if (!Cloud.info().posReq || q.c) { await Cloud.posJoin(company, repN); q.c = ''; }
+        const r = await Cloud.posCheck();
+        if (r === 'ok') { clearInterval(window._posPoll); history.replaceState(null, '', '#/'); route(); toast('✓ تفعّلت نقطة البيع'); return; }
+        if (r === 'rejected') {
+          clearInterval(window._posPoll);
+          show(`<p style="font-size:42px;margin:6px 0">⛔</p><p><b>نقطة البيع مش مفعّلة على هالموبايل</b></p><p class="muted">المدير رفض الطلب أو وقّف هالموبايل.</p><div class="acts" style="justify-content:center"><button class="btn pri" id="posAgain">📲 ابعت طلب تفعيل من جديد</button></div>`);
+          const a = $('#posAgain', view); if (a) a.onclick = async () => { a.disabled = true; try { await Cloud.posJoin(company, repN); } catch (e) { toast(e.message, 1); } route(); };
+          return;
+        }
+        show(waitHtml); const b = $('#posChk', view); if (b) b.onclick = check;
+      } catch (e) {
+        show(`<p class="bad">${esc(e.message)}</p><p class="muted">تأكد إنه في إنترنت.</p><div class="acts" style="justify-content:center"><button class="btn pri" id="posChk">🔄 جرّب مرة تانية</button></div>`);
+        const b = $('#posChk', view); if (b) b.onclick = check;
+      }
+    };
+    show('<p>⏳ لحظة…</p>');
+    clearInterval(window._posPoll);
+    window._posPoll = setInterval(() => { if (!/^#\/(pos|sellersetup)/.test(location.hash) || Cloud.info().member) return clearInterval(window._posPoll); check(); }, 6000);
+    check();
     return;
   }
   const ownerIn = info.linked && !info.member;
@@ -2117,7 +2147,8 @@ V.settings = (id, q, view) => {
   <div class="card" id="cloudCard"></div>
   <div class="card"><h3>🧑‍💼 وضع البيّاع (نقطة بيع)</h3>
     <p class="muted">فعّله على موبايل الشب يلي بيشتغل معك (بعد ما تربطه بشركتك من المزامنة السحابية): بيصير يبيع بس، بلا حسابات زباين ولا تقارير ولا أرباح ولا إعدادات ولا حذف. بيتفعّل على هالموبايل بس.</p>
-    <p class="muted">📷 <b>الباركود</b>: صوّره بموبايل المندوب، بيفتح نقطة البيع بس وبيدخل على شركتك لحاله، بلا إيميل ولا كلمة سر.</p>
+    <p class="muted">📷 <b>الباركود</b>: المندوب بيصوّره بموبايله ← بيوصلك طلب ← بتكبس «تفعيل» ← بتفتح عنده نقطة البيع بس. بلا إيميل ولا كلمة سر.</p>
+    <div id="posDevs"></div>
     <div class="acts"><button class="btn pri" data-act="posqr">📷 باركود نقطة البيع لموبايل المندوب</button><button class="btn" data-act="seller">🔒 تفعيل وضع البيّاع على هالموبايل</button></div>
   </div>
   <div class="card"><h3>النسخ الاحتياطي</h3>
@@ -2130,6 +2161,7 @@ V.settings = (id, q, view) => {
     <p class="muted" style="margin-top:10px">الإصدار: <b>${APP_VERSION}</b> — عدد الفواتير: ${db.invoices.length} — المواد: ${db.items.length} — السندات: ${db.vouchers.length} — القيود اليدوية: ${db.entries.length}</p>
   </div>`;
   if (window.Cloud) Cloud.card($('#cloudCard', view)); else $('#cloudCard', view).remove();
+  posDevsCard($('#posDevs', view));
   $('#sf', view).onsubmit = e => {
     e.preventDefault();
     Object.assign(db.settings, Object.fromEntries(new FormData(e.target)));

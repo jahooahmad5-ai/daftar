@@ -171,6 +171,11 @@ const Cloud = (() => {
     if (st.owner && !st.fullPush1) { markAllDirty(); st.fullPush1 = 1; saveSt(); }
     busy = true; pill();
     try {
+      // موبايل نقطة بيع: إذا المدير وقّفه بيرجع لصفحة «بانتظار التفعيل»
+      if (!st.owner && st.posReq) {
+        const l = await http('/rest/v1/companies?select=id&id=eq.' + encodeURIComponent(st.company));
+        if (!l || !l.length) { st.company = null; st.companyName = null; st.lastPull = null; st.dirty = {}; saveSt(); busy = false; pill(); route(); return; }
+      }
       await push();
       // وإنت جوّا فاتورة أو قيد (أو نافذة مفتوحة) منرفع شغلك بس وما منلمس شي — منكمّل التنزيل لما تطلع
       let changed = false;
@@ -178,6 +183,7 @@ const Cloud = (() => {
       else pullLater = true;
       st.lastSync = Date.now(); lastErr = ''; saveSt();
       if (changed) refreshView();
+      if (st.owner) posNotify();
       if (manual) toast('تمت المزامنة ✓');
     } catch (e) {
       lastErr = e.message;
@@ -327,34 +333,66 @@ const Cloud = (() => {
       throw e;
     }
   }
-  /* ---------- حساب نقطة بيع تلقائي (بلا ما المندوب يكتب إيميل ولا كلمة سر) ---------- */
-  // المدير بيعمل حساب للمندوب لحاله وبيضيفه للشركة، والإيميل وكلمة السر بينحطّوا جوّا الباركود
-  async function makeRep() {
-    if (!linked() || !st.owner) throw new Error('لازم تكون مسجّل دخول بحساب المدير وفاتح الشركة (الإعدادات ← المزامنة السحابية)');
-    const rnd = n => Array.from(crypto.getRandomValues(new Uint8Array(n)), b => 'abcdefghijkmnpqrstuvwxyz23456789'[b % 32]).join('');
-    const email = `pos-${rnd(10)}@pos.daftar.app`, password = rnd(20);
-    const j = await http('/auth/v1/signup', { method: 'POST', body: JSON.stringify({ email, password }) }, false);
-    if (!j || !j.access_token) throw new Error('السيرفر طالب تأكيد إيميل — من Supabase: Authentication ← Sign In / Providers ← Email ← طفّي «Confirm email» وجرّب مرة تانية');
-    const r = await http('/rest/v1/rpc/add_member', { method: 'POST', body: JSON.stringify({ p_company: st.company, p_email: email }) });
-    if (r !== 'ok') throw new Error('ما قدرت ضيف حساب نقطة البيع للشركة');
-    return { e: email, p: password, c: st.company };
+  /* ---------- نقطة البيع: طلب تفعيل من موبايل المندوب، والمدير بيفعّل من موبايله ---------- */
+  const noTable = e => /pos_requests|approve_pos|revoke_pos|Could not find/i.test(e.message) ? new Error('لازم تحدّث قاعدة البيانات: شغّل ملف supabase.sql من جديد بـ Supabase ← SQL Editor') : e;
+  const rnd = n => Array.from(crypto.getRandomValues(new Uint8Array(n)), x => 'abcdefghijkmnpqrstuvwxyz23456789'[x % 32]).join('');
+  // موبايل المندوب: حساب لحاله (بلا إيميل ولا كلمة سر) + طلب تفعيل للشركة
+  async function posJoin(company, name) {
+    if (!configured()) throw new Error('رابط السحابة مش مضبوط بـ config.js');
+    if (st.session && st.owner && st.company) throw new Error('هالموبايل مسجّل بحساب المدير');
+    if (!st.session) {
+      const j = await http('/auth/v1/signup', { method: 'POST', body: JSON.stringify({ email: `pos-${rnd(10)}@pos.daftar.app`, password: rnd(24) }) }, false);
+      if (!j || !j.access_token) throw new Error('السيرفر طالب تأكيد إيميل — المدير لازم يطفّي «Confirm email» من Supabase ← Authentication ← Sign In / Providers ← Email');
+      setSession(j);
+    }
+    st.posReq = { company, name }; saveSt();
+    try {
+      await http('/rest/v1/pos_requests?on_conflict=company_id,user_id', { method: 'POST', headers: { Prefer: 'resolution=ignore-duplicates,return=minimal' }, body: JSON.stringify({ company_id: company, name }) });
+    } catch (e) { throw noTable(e); }
   }
-  // موبايل المندوب: بيسجّل دخول وبيفتح الشركة لحاله من معلومات الباركود
-  async function posLogin(k) {
-    if (st.session && st.company && !st.owner) return false; // مربوط من قبل
-    if (st.session && st.owner) throw new Error('هالموبايل مسجّل بحساب المدير');
-    const j = await http('/auth/v1/token?grant_type=password', { method: 'POST', body: JSON.stringify({ email: k.e, password: k.p }) }, false);
-    setSession(j);
-    const list = await http('/rest/v1/companies?select=id,name,owner&id=eq.' + encodeURIComponent(k.c));
-    if (!list || !list.length) throw new Error('الشركة مش موجودة أو المندوب مش مضاف إلها');
-    await openCompany(list[0]);
-    return true;
+  // موبايل المندوب: تفعّل؟ إذا إيه منفتح الشركة
+  async function posCheck() {
+    if (!st.posReq || !st.session) return 'none';
+    const list = await http('/rest/v1/companies?select=id,name,owner&id=eq.' + encodeURIComponent(st.posReq.company));
+    if (list && list.length) { await openCompany(list[0]); return 'ok'; }
+    const r = await http('/rest/v1/pos_requests?select=approved&company_id=eq.' + encodeURIComponent(st.posReq.company)).catch(e => { throw noTable(e); });
+    return r && r.length ? 'wait' : 'rejected'; // ما في طلب = المدير رفضه أو وقّفه
+  }
+  // موبايل المدير: الطلبات والموبايلات المفعّلة
+  async function posList() {
+    if (!linked() || !st.owner) return [];
+    try { return await http('/rest/v1/pos_requests?select=user_id,name,approved,created_at&order=created_at&company_id=eq.' + st.company) || []; }
+    catch (e) { throw noTable(e); }
+  }
+  const posApprove = uid => http('/rest/v1/rpc/approve_pos', { method: 'POST', body: JSON.stringify({ p_company: st.company, p_user: uid }) }).catch(e => { throw noTable(e); });
+  const posRevoke = uid => http('/rest/v1/rpc/revoke_pos', { method: 'POST', body: JSON.stringify({ p_company: st.company, p_user: uid }) }).catch(e => { throw noTable(e); });
+  // شريط فوق بموبايل المدير: «في موبايل بدو يفتح نقطة البيع»
+  let reqBusy = false;
+  async function posNotify() {
+    if (reqBusy || !linked() || !st.owner) return;
+    reqBusy = true;
+    let list = []; try { list = (await posList()).filter(r => !r.approved); } catch (e) { /* الجدول لسا ما انعمل */ }
+    reqBusy = false;
+    let bar = document.getElementById('posReqBar');
+    if (!list.length) { if (bar) bar.remove(); return; }
+    if (!bar) { bar = document.createElement('div'); bar.id = 'posReqBar'; document.body.appendChild(bar); }
+    const r = list[0];
+    bar.innerHTML = `<b>📲 موبايل «${esc(r.name || 'مندوب')}» بدو يفتح نقطة البيع</b>${list.length > 1 ? ` <small>(+${list.length - 1})</small>` : ''}<div><button class="btn pri" data-a="ok">✓ تفعيل</button><button class="btn red" data-a="no">✕ رفض</button></div>`;
+    bar.onclick = async e => {
+      const a = e.target.closest('[data-a]'); if (!a) return;
+      a.disabled = true;
+      try {
+        if (a.dataset.a === 'ok') { await posApprove(r.user_id); toast('✓ تفعّلت نقطة البيع على موبايل ' + (r.name || 'المندوب')); }
+        else { await posRevoke(r.user_id); toast('انرفض الطلب'); }
+      } catch (err) { toast(err.message, 1); }
+      bar.remove(); posNotify(); if (/^#\/settings/.test(location.hash)) route();
+    };
   }
 
   function logout() {
     const { url, key } = cfg();
     if (st.session) fetch(url + '/auth/v1/logout', { method: 'POST', headers: { apikey: key, Authorization: 'Bearer ' + st.session.access_token } }).catch(() => {});
-    Object.assign(st, { session: null, company: null, companyName: null, owner: false, lastPull: null, lastSync: null, dirty: {} });
+    Object.assign(st, { session: null, company: null, companyName: null, owner: false, lastPull: null, lastSync: null, dirty: {}, posReq: null });
     saveSt(); pill();
   }
 
@@ -372,7 +410,7 @@ const Cloud = (() => {
 
   // عضو بشركة مش صاحبها (متل المندوب) = وضع البيّاع تلقائياً على موبايله
   if (typeof applySellerUI === 'function') setTimeout(() => { applySellerUI(); if ((st.company && !st.owner) || /^#\/(pos|sellersetup)/.test(location.hash)) route(); }, 0);
-  return { track, card, sync, pill, makeRep, posLogin, info: () => ({ linked: linked(), pending: pending(), busy, lastSync: st.lastSync, member: !!(configured() && st.company && !st.owner), company: st.company || '', email: st.session?.email || '' }) };
+  return { track, card, sync, pill, posJoin, posCheck, posList, posApprove, posRevoke, posNotify, info: () => ({ linked: linked(), pending: pending(), busy, lastSync: st.lastSync, member: !!(configured() && st.company && !st.owner), company: st.company || '', posReq: st.posReq || null, email: st.session?.email || '' }) };
 })();
 window.Cloud = Cloud;
 if (/^#\/settings/.test(location.hash)) route();

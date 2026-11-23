@@ -112,3 +112,55 @@ grant select, insert, update, delete on public.records to authenticated;
 revoke execute on function public.add_member(uuid, text) from public, anon;
 grant execute on function public.add_member(uuid, text) to authenticated;
 grant execute on function public.is_member(uuid) to authenticated;
+
+-- ===================== تفعيل موبايلات نقطة البيع =====================
+-- موبايل المندوب بيصوّر الباركود ← بيبعت طلب ← المدير بيكبس «تفعيل» من موبايله
+create table if not exists public.pos_requests (
+  company_id uuid not null references public.companies(id) on delete cascade,
+  user_id uuid not null default auth.uid() references auth.users(id) on delete cascade,
+  name text,
+  approved boolean not null default false,
+  created_at timestamptz not null default now(),
+  primary key (company_id, user_id)
+);
+alter table public.pos_requests enable row level security;
+drop policy if exists pos_req_select on public.pos_requests;
+create policy pos_req_select on public.pos_requests for select to authenticated
+  using (user_id = auth.uid() or exists (select 1 from public.companies c where c.id = company_id and c.owner = auth.uid()));
+drop policy if exists pos_req_insert on public.pos_requests;
+create policy pos_req_insert on public.pos_requests for insert to authenticated
+  with check (user_id = auth.uid() and approved = false);
+drop policy if exists pos_req_delete on public.pos_requests;
+create policy pos_req_delete on public.pos_requests for delete to authenticated
+  using (user_id = auth.uid() or exists (select 1 from public.companies c where c.id = company_id and c.owner = auth.uid()));
+grant select, insert, delete on public.pos_requests to authenticated;
+
+-- المدير بيفعّل موبايل نقطة بيع (بيصير عضو بالشركة)
+create or replace function public.approve_pos(p_company uuid, p_user uuid) returns text
+language plpgsql security definer set search_path = public as $$
+begin
+  if not exists (select 1 from public.companies where id = p_company and owner = auth.uid()) then
+    raise exception 'فقط مالك الشركة يستطيع تفعيل نقطة بيع';
+  end if;
+  if not exists (select 1 from public.pos_requests where company_id = p_company and user_id = p_user) then return 'notfound'; end if;
+  insert into public.members (company_id, user_id) values (p_company, p_user) on conflict do nothing;
+  update public.pos_requests set approved = true where company_id = p_company and user_id = p_user;
+  return 'ok';
+end $$;
+
+-- المدير بيوقّف موبايل نقطة بيع (بيطلع من الشركة)
+create or replace function public.revoke_pos(p_company uuid, p_user uuid) returns text
+language plpgsql security definer set search_path = public as $$
+begin
+  if not exists (select 1 from public.companies where id = p_company and owner = auth.uid()) then
+    raise exception 'فقط مالك الشركة يستطيع إيقاف نقطة بيع';
+  end if;
+  if p_user = auth.uid() then return 'self'; end if;
+  delete from public.members where company_id = p_company and user_id = p_user;
+  delete from public.pos_requests where company_id = p_company and user_id = p_user;
+  return 'ok';
+end $$;
+revoke execute on function public.approve_pos(uuid, uuid) from public, anon;
+revoke execute on function public.revoke_pos(uuid, uuid) from public, anon;
+grant execute on function public.approve_pos(uuid, uuid) to authenticated;
+grant execute on function public.revoke_pos(uuid, uuid) to authenticated;

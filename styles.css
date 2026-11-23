@@ -356,3 +356,6 @@ body.seller .tabs.rep-tabs{display:none}
 body.seller #menuBtn,body.seller #side,body.seller #backdrop{display:none!important}
 body.seller .main-wrap{margin-right:0!important;margin-left:0!important}
 body.seller .app{grid-template-columns:1fr}
+/* شريط طلب تفعيل نقطة بيع (موبايل المدير) */
+#posReqBar{position:fixed;top:10px;left:50%;transform:translateX(-50%);z-index:90;background:#fff8e1;color:#16241f;border:2px solid #f0b429;border-radius:12px;padding:10px 14px;box-shadow:0 6px 20px rgba(0,0,0,.2);max-width:92vw;width:420px;text-align:center}
+#posReqBar div{display:flex;gap:8px;justify-content:center;margin-top:8px}
