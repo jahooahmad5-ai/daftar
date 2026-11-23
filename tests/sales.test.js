@@ -129,4 +129,39 @@ module.exports = [
       assert.ok((await p.evaluate(() => JSON.parse(localStorage.getItem('daftar_draft_sale')).lines.map(l => l.qty))).includes(2));
     },
   },
+  {
+    name: 'المستودع: الكمية ما بتكفي ← تنبيه، و«احفظ هيك» بيحفظ',
+    fn: async base => {
+      const p = await page(base, { cloud: OWNER });
+      await p.evaluate(() => { db.items.push({ id: 'it1', code: '1', name: 'بسكوت', sellPrice: 1000, buyPrice: 900, openQty: 2 }); ensureWalkin(); save();
+        localStorage.setItem('daftar_draft_sale', JSON.stringify({ lines: [{ item: 'it1', qty: 5, price: 1000 }], payment: '', inv: { date: today(), pay: 'cash', cashAcc: 'cash', party: 'walkin' }, at: Date.now() })); });
+      await p.go('#/invoice/new?type=sale'); await p.closeDlg();
+      const n0 = await p.evaluate(() => db.invoices.length);
+      await p.click('[data-act=save]'); await p.waitForTimeout(300);
+      assert.match(await p.text('#dlg'), /الكمية بالمستودع ما بتكفي.*بسكوت 5 2/);
+      assert.strictEqual(await p.evaluate(() => db.invoices.length), n0, 'لازم ما ينحفظ قبل الموافقة');
+      await p.click('#dlg button.pri'); await p.waitForTimeout(600);
+      assert.strictEqual(await p.evaluate(() => db.invoices.length), n0 + 1);
+    },
+  },
+  {
+    name: 'شرط الـ 10%: آخر سعر للزبون مقبول، وسعر عالي لزبون جديد ممنوع',
+    fn: async base => {
+      const p = await page(base, { cloud: OWNER });
+      await p.evaluate(() => {
+        db.items.push({ id: 'it1', code: '1', name: 'سكر', sellPrice: 1000, buyPrice: 900, openQty: 100 });
+        db.accounts.push({ id: 'c1', code: '112001', name: 'أحمد', type: 'asset', parent: 'customers', group: false }, { id: 'c2', code: '112002', name: 'سامر', type: 'asset', parent: 'customers', group: false });
+        db.invoices.push({ id: 'old', type: 'sale', no: 1, date: '2026-01-01', pay: 'credit', party: 'c1', cur: 'base', rate: '', lines: [{ item: 'it1', qty: 1, price: 1150 }], discount: 0, created: 1 }); save();
+      });
+      const trySave = async party => {
+        await p.evaluate(pt => localStorage.setItem('daftar_draft_sale', JSON.stringify({ lines: [{ item: 'it1', qty: 1, price: 1150 }], payment: '', inv: { date: today(), pay: 'credit', cashAcc: 'cash', party: pt }, at: Date.now() })), party);
+        await p.go('#/invoices'); await p.go('#/invoice/new?type=sale'); await p.closeDlg();
+        const n0 = await p.evaluate(() => db.invoices.length);
+        await p.click('[data-act=save]'); await p.waitForTimeout(500);
+        return (await p.evaluate(() => db.invoices.length)) - n0;
+      };
+      assert.strictEqual(await trySave('c1'), 1, 'آخر سعر لأحمد (1150) لازم ينقبل');
+      assert.strictEqual(await trySave('c2'), 0, 'سامر ما اشترى قبل — 1150 أعلى من البطاقة بـ 15٪ لازم ينرفض');
+    },
+  },
 ];
