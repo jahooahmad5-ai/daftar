@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '6.21';
+const APP_VERSION = '6.22';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -1544,6 +1544,8 @@ V.invoice = (id, q, view) => {
     }
     else if (e.target.name === 'party' && sideSale) {
       if (isWalkin(e.target.value)) { const wasCredit = val('pay') !== 'cash'; toggles(); totals(); if (wasCredit) toast('«زبون عام» = نقدي'); }
+      // زبون باسمه: آجل افتراضياً (وفيك ترجّعه نقدي من «طريقة الدفع»)
+      else if (e.target.value) { $('[name=pay]', view).value = 'credit'; toggles(); totals(); }
       else toggles();
       if (!inv.lines.length) return;
       let n = 0;
