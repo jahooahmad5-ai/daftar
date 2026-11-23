@@ -231,9 +231,9 @@ const Cloud = (() => {
   /* ---------- واجهة الإعدادات ---------- */
   const ago = ts => { if (!ts) return 'لم تتم بعد'; const s = Math.round((Date.now() - ts) / 1000); return s < 60 ? 'قبل لحظات' : s < 3600 ? `قبل ${Math.round(s / 60)} دقيقة` : new Date(ts).toLocaleString('ar-SY'); };
 
-  function card(el) {
+  function card(el, opt = {}) {
     if (!el) return;
-    const rerender = () => card(el);
+    const rerender = () => card(el, opt);
     const wrap = html => { el.innerHTML = `<h3>☁️ المزامنة السحابية</h3>${html}`; };
 
     if (!configured()) {
@@ -255,13 +255,14 @@ const Cloud = (() => {
       const creds = () => ({ email: $('[name=email]', el).value.trim(), password: $('[name=password]', el).value });
       const run = async (btn, fn) => { btn.disabled = true; try { await fn(); } catch (e) { toast(e.message, 1); } btn.disabled = false; };
       $('#cIn', el).onclick = e => run(e.target, async () => { const c = creds(); await http('/auth/v1/token?grant_type=password', { method: 'POST', body: JSON.stringify(c) }, false).then(setSession); toast('تم تسجيل الدخول'); rerender(); });
-      $('#cUp', el).onclick = e => run(e.target, async () => {
+      if (opt.gate) { $('#cUp', el).remove(); $('#cReset', el).remove(); }
+      else $('#cUp', el).onclick = e => run(e.target, async () => {
         const c = creds(); if (c.password.length < 6) throw new Error('كلمة السر قصيرة (6 أحرف على الأقل)');
         const j = await http('/auth/v1/signup', { method: 'POST', body: JSON.stringify(c) }, false);
         if (j && j.access_token) { setSession(j); toast('تم إنشاء الحساب'); rerender(); }
         else toast('تم إنشاء الحساب ✓ افتح بريدك واضغط رابط التأكيد، ثم اضغط «دخول»');
       });
-      $('#cReset', el).onclick = () => { st.url = ''; st.key = ''; saveSt(); rerender(); };
+      if (!opt.gate) $('#cReset', el).onclick = () => { st.url = ''; st.key = ''; saveSt(); rerender(); };
       return;
     }
 
@@ -272,7 +273,8 @@ const Cloud = (() => {
         ${fields([{ k: 'cname', l: 'اسم الشركة', full: 1 }], { cname: db.settings.company })}
         <div class="form-actions"><button class="btn pri" id="cNew">إنشاء ورفع بياناتي</button><button class="btn" id="cOut">تسجيل الخروج</button></div>`);
       $('#cOut', el).onclick = () => { logout(); if (/^#\/(pos|sellersetup)/.test(location.hash)) route(); else rerender(); };
-      $('#cNew', el).onclick = async e => {
+      if (opt.gate) { const n = $('#cNew', el); n.closest('.form-actions').previousElementSibling.remove(); n.closest('.form-actions').previousElementSibling.remove(); n.remove(); }
+      else $('#cNew', el).onclick = async e => {
         const name = $('[name=cname]', el).value.trim() || 'شركتي';
         e.target.disabled = true;
         try {
@@ -327,7 +329,7 @@ const Cloud = (() => {
       localStorage.setItem(DBKEY, JSON.stringify(db)); _eng = null; snap = recs();
       $('#coName').textContent = db.settings.company;
       await sync();
-      if (typeof applySellerUI === 'function') { applySellerUI(); if (!st.owner) setTimeout(() => { location.hash = '#/'; route(); }, 50); }
+      if (typeof applySellerUI === 'function') { applySellerUI(); setTimeout(() => { if (!st.owner) location.hash = '#/'; route(); }, 50); }
     } catch (e) {
       db = backup; Object.assign(st, { company: null, companyName: null, lastPull: null, dirty: {} }); saveSt(); snap = recs();
       throw e;
@@ -409,8 +411,8 @@ const Cloud = (() => {
   setTimeout(() => sync(), 800);
 
   // عضو بشركة مش صاحبها (متل المندوب) = وضع البيّاع تلقائياً على موبايله
-  if (typeof applySellerUI === 'function') setTimeout(() => { applySellerUI(); if ((st.company && !st.owner) || /^#\/(pos|sellersetup)/.test(location.hash)) route(); }, 0);
-  return { track, card, sync, pill, posJoin, posCheck, posList, posApprove, posRevoke, posNotify, info: () => ({ linked: linked(), pending: pending(), busy, lastSync: st.lastSync, member: !!(configured() && st.company && !st.owner), company: st.company || '', posReq: st.posReq || null, email: st.session?.email || '' }) };
+  if (typeof applySellerUI === 'function') setTimeout(() => { applySellerUI(); route(); }, 0); // كمان شاشة القفل بتحتاج Cloud جاهز
+  return { track, card, sync, pill, posJoin, posCheck, posList, posApprove, posRevoke, posNotify, info: () => ({ linked: linked(), pending: pending(), busy, lastSync: st.lastSync, configured: configured(), owner: !!(linked() && st.owner), member: !!(configured() && st.company && !st.owner), company: st.company || '', posReq: st.posReq || null, email: st.session?.email || '' }) };
 })();
 window.Cloud = Cloud;
 if (/^#\/settings/.test(location.hash)) route();

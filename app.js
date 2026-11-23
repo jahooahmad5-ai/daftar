@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '6.32';
+const APP_VERSION = '6.33';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -426,10 +426,13 @@ const repTag = i => (i && i.rep ? ` — مندوب: ${i.rep}` : '');
 const SELLER_ROUTES = ['home', 'invoices', 'invoice'];
 // موبايل انفتح من رابط/باركود نقطة البيع: بينقفل عليها من أول فتحة (حتى قبل تسجيل الدخول)
 const POS_DEV_KEY = 'daftar_pos_device';
+// قفل البرنامج: الدفتر الكامل بيفتح بس على موبايل مسجّل دخول بحساب المدير وفاتح الشركة — غير هيك شاشة دخول بس
+const needLogin = () => { if (!window.Cloud || isSeller() || posDevice()) return false; const i = Cloud.info(); return !!i.configured && !i.owner; };
 const posDevice = () => { try { return localStorage.getItem(POS_DEV_KEY) === '1'; } catch (e) { return false; } };
 function applySellerUI() {
   const on = isSeller();
   document.body.classList.toggle('seller', on || posDevice());
+  document.body.classList.toggle('locked', needLogin());
   // موبايل المندوب: بيبيّن «نقطة البيع» بس، بلا اسم دفتر ولا قائمة
   const tt = document.getElementById('topTitle');
   if (on || posDevice()) { if (tt) tt.textContent = '🧑‍💼 نقطة البيع'; document.title = 'نقطة البيع' + (myRep() ? ' — ' + myRep() : ''); }
@@ -510,10 +513,14 @@ function route() {
   view.classList.remove('typing');
   { const tc = $('#topCnt'); if (tc) tc.hidden = true; }
   let key = V[name] ? name : 'home';
+  // لسا السحابة ما تحمّلت: ما منفرجي شي لحتى نعرف إذا الموبايل مسموحله (ما في وميض للدفتر)
+  if (!window.Cloud && window.DAFTAR_CLOUD && window.DAFTAR_CLOUD.url) { view.innerHTML = '<p class="muted" style="text-align:center;margin-top:40px">⏳</p>'; return; }
   if (isSeller()) {
     const bad = !SELLER_ROUTES.includes(key)
       || (key === 'invoice' && (id === 'new' ? (q.type || 'sale') !== 'sale' : (() => { const iv = db.invoices.find(x => x.id === id); return !iv || iv.type !== 'sale' || iv.rep !== myRep(); })()));
     if (bad) { if (location.hash && location.hash !== '#/') { toast('🔒 هالصفحة مسكّرة بوضع البيّاع', 1); } history.replaceState(null, '', '#/'); key = 'home'; }
+  } else if (needLogin() && key !== 'pos' && key !== 'sellersetup') {
+    key = 'lock';
   } else if (posDevice() && key !== 'pos' && key !== 'sellersetup') {
     // موبايل نقطة بيع لسا ما سجّل دخول المندوب: ما بيشوف دفتر أبداً، بس صفحة التجهيز
     history.replaceState(null, '', '#/pos'); key = 'pos';
@@ -674,6 +681,13 @@ V.pos = V.sellersetup = (id, q, view) => {
   if (window.Cloud) Cloud.card($('#cloudCard', view)); else $('#cloudCard', view).remove();
   const ul = $('#posUnlock', view);
   if (ul) ul.onclick = () => { localStorage.removeItem(POS_DEV_KEY); applySellerUI(); toast('✓ رجع دفتر كامل على هالموبايل'); go('#/'); };
+};
+
+/* ------------------------- شاشة القفل (أي موبايل مش مسجّل بحساب المدير) ------------------------- */
+V.lock = (id, q, view) => {
+  applySellerUI();
+  view.innerHTML = `<div class="card" style="max-width:460px;margin:30px auto;text-align:center"><p style="font-size:46px;margin:4px 0">🔒</p><h2 style="margin:0 0 6px">دفتر</h2><p class="muted">البرنامج مقفول. سجّل دخول بإيميل المدير وكلمة سره ← بعدين اكبس <b>📂 فتح</b> على اسم الشركة.</p></div><div class="card" id="cloudCard" style="max-width:460px;margin:0 auto"></div>`;
+  Cloud.card($('#cloudCard', view), { gate: true });
 };
 
 /* ------------------------- الرئيسية ------------------------- */
