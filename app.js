@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '6.46';
+const APP_VERSION = '6.47';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -1632,6 +1632,21 @@ V.invoice = (id, q, view) => {
     requestAnimationFrame(fix); [120, 300, 600, 900].forEach(t => setTimeout(fix, t));
   };
   view.addEventListener('pointerdown', e => { const c = e.target.closest('.ln-card'); if (c && e.target.closest('.qb:not(.edit), input')) lineActAt = Date.now(); }, true);
+  // أزرار + و − بالمادة: ما منخلّي الكبسة تنقل التركيز (الكيبورد بيتسكّر بهدوء)،
+  // وإذا الموبايل نطّ بالصفحة لفوق خلال ثانيتين منرجّعها لنفس المكان
+  view.addEventListener('pointerdown', e => {
+    const b = e.target.closest('.ln-card .qb:not(.edit)'); if (!b) return;
+    e.preventDefault();
+    const ae = document.activeElement; if (ae && ae !== document.body && ae.matches('input, textarea, select')) ae.blur();
+    const y0 = window.scrollY; if (y0 < 250) return;
+    const until = Date.now() + 2000;
+    const guard = () => {
+      if (Date.now() > until) return window.removeEventListener('scroll', guard);
+      if (window.scrollY < y0 - 200) window.scrollTo(0, y0);
+    };
+    window.addEventListener('scroll', guard, { passive: true });
+    setTimeout(() => window.removeEventListener('scroll', guard), 2100);
+  }, true);
   // لما تكبس على خانة رقم (كمية، سعر) بيتحدّد الرقم كله — بتكتب الجديد دغري بداله
   view.addEventListener('focusin', e => {
     const t = e.target; if (!t.matches || !t.matches('.ln-card input[type=number]')) return;
