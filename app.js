@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '6.25';
+const APP_VERSION = '6.27';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -427,8 +427,13 @@ const SELLER_ROUTES = ['home', 'invoices', 'invoice'];
 function applySellerUI() {
   const on = isSeller();
   document.body.classList.toggle('seller', on);
+  // موبايل المندوب: بيبيّن «نقطة البيع» بس، بلا اسم دفتر ولا قائمة
+  const tt = document.getElementById('topTitle');
+  if (on) { if (tt) tt.textContent = '🧑‍💼 نقطة البيع'; document.title = 'نقطة البيع' + (myRep() ? ' — ' + myRep() : ''); }
+  else { if (tt) tt.textContent = 'دفتر'; document.title = 'دفتر'; }
   let b = document.getElementById('sellerExit');
-  if (on && !sellerCfg()) { if (b) b.remove(); document.body.classList.toggle('seller', true); return; }
+  // حساب المندوب (عضو بالشركة): ما في خروج أبداً
+  if (on && (!sellerCfg() || autoSeller())) { if (b) b.remove(); return; }
   if (on && !b) {
     b = document.createElement('button'); b.id = 'sellerExit'; b.className = 'install'; b.textContent = '🔓 خروج من وضع البيّاع';
     b.onclick = () => { const p = prompt('الرمز السري للخروج من وضع البيّاع:'); if (p == null) return; if (p.trim() !== String(sellerCfg().pin)) return toast('الرمز غلط', 1); localStorage.removeItem(SELLER_KEY); applySellerUI(); toast('✓ رجعت لوضع المدير'); route(); };
@@ -598,7 +603,8 @@ function sellerHome(view) {
     <a href="#/invoice/new?type=sale" class="q"><i>🧾</i>فاتورة مبيع</a>
     <a href="#/invoices?t=sale" class="q"><i>📋</i>فواتيري</a>
   </div>
-  <div class="kpis">${kpi('مبيعات اليوم', fmt(r2(tot)) + ' ' + esc(cur()))}${kpi('عدد فواتير اليوم', mine.length)}</div>`;
+  <div class="kpis">${kpi('مبيعات اليوم', fmt(r2(tot)) + ' ' + esc(cur()))}${kpi('عدد فواتير اليوم', mine.length)}</div>
+  <p class="muted" style="text-align:center;margin-top:14px">الإصدار ${APP_VERSION}</p>`;
   if (window.Cloud && !Cloud.info().linked) { const c = document.createElement('div'); c.className = 'card'; view.appendChild(c); Cloud.card(c); }
   if (!(sellerCfg() || {}).name && !repName()) {
     modal('🧑‍💼 اسم المندوب', '<p class="muted">اكتب اسمك مرة وحدة — بيطلع على كل فواتيرك.</p>' + fields([{ k: 'name', l: 'اسم المندوب', req: 1, full: 1 }]), {

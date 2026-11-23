@@ -352,3 +352,7 @@ body.seller .tabs.rep-tabs{display:none}
 .pp-item{display:flex;justify-content:space-between;align-items:center;gap:8px;text-align:right;padding:12px 14px;border:1px solid #d6e2ea;border-radius:12px;background:#fff;font:inherit;font-size:16px;cursor:pointer}
 .pp-item small{color:#6b7c8a;font-size:13px}
 .pp-item.wk{background:#e8f5ee;border-color:#bfe3cf}
+/* موبايل المندوب: بلا قائمة جانبية ولا اسم دفتر */
+body.seller #menuBtn,body.seller #side,body.seller #backdrop{display:none!important}
+body.seller .main-wrap{margin-right:0!important;margin-left:0!important}
+body.seller .app{grid-template-columns:1fr}
