@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '6.24';
+const APP_VERSION = '6.25';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -416,14 +416,19 @@ const NAV_MAP = { invoice: 'invoices', entry: 'journal', report: 'reports' };
 // محفوظ عالجهاز (مش بالمزامنة) — هيك بيتفعّل على موبايل الشب بس
 const SELLER_KEY = 'daftar_seller';
 const sellerCfg = () => { try { return JSON.parse(localStorage.getItem(SELLER_KEY) || 'null'); } catch (e) { return null; } };
-const isSeller = () => !!sellerCfg();
-const myRep = () => (isSeller() && (sellerCfg().name || 'مندوب')) || '';
+// وضع البيّاع: إما متفعّل يدوي عالموبايل، أو تلقائي لأي حساب عضو بالشركة مش صاحبها (المندوب)
+const autoSeller = () => !!(window.Cloud && Cloud.info && Cloud.info().member);
+const isSeller = () => !!sellerCfg() || autoSeller();
+const REP_KEY = 'daftar_rep_name';
+const repName = () => { try { return localStorage.getItem(REP_KEY) || ''; } catch (e) { return ''; } };
+const myRep = () => (isSeller() && ((sellerCfg() || {}).name || repName() || (window.Cloud && Cloud.info().email) || 'مندوب')) || '';
 const repTag = i => (i && i.rep ? ` — مندوب: ${i.rep}` : '');
 const SELLER_ROUTES = ['home', 'invoices', 'invoice'];
 function applySellerUI() {
   const on = isSeller();
   document.body.classList.toggle('seller', on);
   let b = document.getElementById('sellerExit');
+  if (on && !sellerCfg()) { if (b) b.remove(); document.body.classList.toggle('seller', true); return; }
   if (on && !b) {
     b = document.createElement('button'); b.id = 'sellerExit'; b.className = 'install'; b.textContent = '🔓 خروج من وضع البيّاع';
     b.onclick = () => { const p = prompt('الرمز السري للخروج من وضع البيّاع:'); if (p == null) return; if (p.trim() !== String(sellerCfg().pin)) return toast('الرمز غلط', 1); localStorage.removeItem(SELLER_KEY); applySellerUI(); toast('✓ رجعت لوضع المدير'); route(); };
@@ -595,6 +600,11 @@ function sellerHome(view) {
   </div>
   <div class="kpis">${kpi('مبيعات اليوم', fmt(r2(tot)) + ' ' + esc(cur()))}${kpi('عدد فواتير اليوم', mine.length)}</div>`;
   if (window.Cloud && !Cloud.info().linked) { const c = document.createElement('div'); c.className = 'card'; view.appendChild(c); Cloud.card(c); }
+  if (!(sellerCfg() || {}).name && !repName()) {
+    modal('🧑‍💼 اسم المندوب', '<p class="muted">اكتب اسمك مرة وحدة — بيطلع على كل فواتيرك.</p>' + fields([{ k: 'name', l: 'اسم المندوب', req: 1, full: 1 }]), {
+      saveText: 'حفظ', onSave: d => { const n = String(d.name || '').trim(); if (!n) return false; localStorage.setItem(REP_KEY, n); route(); },
+    });
+  }
   onAct(view, { sync: async () => { if (!window.Cloud || !Cloud.info().linked) return toast('المزامنة مش مربوطة — سجّل دخول من تحت', 1); await Cloud.sync(true); route(); } });
   if (window.Cloud) Cloud.pill();
 }

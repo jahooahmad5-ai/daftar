@@ -321,6 +321,7 @@ const Cloud = (() => {
       localStorage.setItem(DBKEY, JSON.stringify(db)); _eng = null; snap = recs();
       $('#coName').textContent = db.settings.company;
       await sync();
+      if (typeof applySellerUI === 'function') applySellerUI();
     } catch (e) {
       db = backup; Object.assign(st, { company: null, companyName: null, lastPull: null, dirty: {} }); saveSt(); snap = recs();
       throw e;
@@ -345,7 +346,9 @@ const Cloud = (() => {
   pill();
   setTimeout(() => sync(), 800);
 
-  return { track, card, sync, pill, info: () => ({ linked: linked(), pending: pending(), busy, lastSync: st.lastSync }) };
+  // عضو بشركة مش صاحبها (متل المندوب) = وضع البيّاع تلقائياً على موبايله
+  if (typeof applySellerUI === 'function') setTimeout(() => { applySellerUI(); if (st.company && !st.owner) route(); }, 0);
+  return { track, card, sync, pill, info: () => ({ linked: linked(), pending: pending(), busy, lastSync: st.lastSync, member: !!(configured() && st.company && !st.owner), email: st.session?.email || '' }) };
 })();
 window.Cloud = Cloud;
 if (/^#\/settings/.test(location.hash)) route();
