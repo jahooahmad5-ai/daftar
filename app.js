@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '6.38';
+const APP_VERSION = '6.39';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -1446,11 +1446,13 @@ V.invoice = (id, q, view) => {
   // تحويل سعر من الليرة إلى عملة الفاتورة الحالية
   const toDoc = base => (inv.cur === 'fx' && rate() ? r2(base / rate()) : base);
   // سعر المبيع: آخر سعر بعناه لهالزبون بنفس المادة، وإذا ما في منرجع لسعر بطاقة المادة
+  // سياسة التسعير: آخر سعر مبيع لهالزبون بهالمادة — وإذا ما في (أو «زبون عام») سعر بطاقة المادة
+  // (مرتجع المبيع بياخد آخر سعر مبيع للزبون)
   const lastFor = (party, itemId) => {
-    if (!sideSale || !party) return 0;
+    if (!sideSale || !party || isWalkin(party)) return 0;
     let best = null;
     for (const d of db.invoices) {
-      if (d.type !== inv.type || d.party !== party || (orig && d.id === orig.id)) continue;
+      if (d.type !== 'sale' || d.party !== party || (orig && d.id === orig.id)) continue;
       const l = d.lines.find(x => x.item === itemId); if (!l || !num(l.price)) continue;
       const k = (d.date || '') + String(d.created || 0).padStart(15, '0');
       if (!best || k > best.k) best = { k, p: num(l.price) * docRate(d) };
@@ -1552,7 +1554,7 @@ V.invoice = (id, q, view) => {
       const s = stockOf(it), low = s <= 0 || (num(it.minQty) > 0 && s <= num(it.minQty));
       return `<button type="button" class="sg" data-i="${i}">
         <b>${esc(it.name)}</b>
-        <span class="sg-meta"><span>💰 ${fmt(toDoc(basePrice(it)))}${oldOn() ? ` <small class="muted">(${oldAmt(basePrice(it))} قديم)</small>` : ''}</span><span class="${s <= 0 ? 'bad' : ''}">📦 ${fmt(s)} ${esc(it.unit || '')}</span></span>
+        <span class="sg-meta"><span>💰 ${fmt(toDoc(basePrice(it)))}${oldOn() ? ` <small class="muted">(${oldAmt(basePrice(it))} قديم)</small>` : ''}${sideSale && lastFor(val('party'), it.id) ? ' <small class="muted">· آخر سعر إله</small>' : ''}</span><span class="${s <= 0 ? 'bad' : ''}">📦 ${fmt(s)} ${esc(it.unit || '')}</span></span>
         ${low ? `<small class="bad">${s <= 0 ? 'نفدت المادة' : 'قاربت المادة على النفاد'}</small>` : ''}
       </button>`;
     }).join('') + newBtn() : smartHtml() + newBtn();
@@ -1725,7 +1727,7 @@ V.invoice = (id, q, view) => {
       if (!inv.lines.length) return;
       let n = 0;
       inv.lines.forEach(l => { const it = db.items.find(x => x.id === l.item); if (!it) return; const np = toDoc(basePrice(it)); if (np && np !== num(l.price)) { l.price = np; n++; } });
-      if (n) { draw(); toast(`💰 تغيّر سعر ${n} مادة حسب ${e.target.value ? 'آخر بيع لـ' + accName(e.target.value) : 'بطاقة المادة'}`); }
+      if (n) { draw(); toast(`💰 تغيّر سعر ${n} مادة حسب ${e.target.value && !isWalkin(e.target.value) ? 'آخر بيع لـ' + accName(e.target.value) : 'بطاقة المادة'}`); }
     }
     else if (e.target.name === 'cur') {
       const to = e.target.value, R = rate();
