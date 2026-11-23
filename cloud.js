@@ -97,6 +97,11 @@ const Cloud = (() => {
     keys.forEach(k => { if (now[k] === sent[k]) delete st.dirty[k]; });
     saveSt();
   }
+  // مقارنة بغض النظر عن ترتيب المفاتيح (السيرفر بيرجّع المفاتيح بترتيب تاني)
+  const canon = v => Array.isArray(v) ? '[' + v.map(canon).join(',') + ']'
+    : v && typeof v === 'object' ? '{' + Object.keys(v).sort().map(k => JSON.stringify(k) + ':' + canon(v[k])).join(',') + '}'
+    : JSON.stringify(v ?? null);
+  const same = (a, b) => canon(a) === canon(b);
   function apply(r) {
     const k = r.kind + '/' + r.id;
     if (r.kind === 'seq') {
@@ -106,13 +111,17 @@ const Cloud = (() => {
     }
     if (st.dirty[k]) return false; // تعديلي المحلي له الأولوية وسيُرفع
     if (r.kind === 'settings') {
-      if (!r.data || JSON.stringify(r.data) === JSON.stringify(db.settings)) return false;
+      if (!r.data || same(r.data, db.settings)) return false;
       db.settings = { ...db.settings, ...r.data }; return true;
     }
     if (!KINDS.includes(r.kind)) return false;
     const arr = db[r.kind], i = arr.findIndex(x => x.id === r.id);
     if (r.deleted || !r.data) { if (i < 0) return false; arr.splice(i, 1); return true; }
-    if (i >= 0) { if (JSON.stringify(arr[i]) === JSON.stringify(r.data)) return false; arr[i] = r.data; }
+    if (i >= 0) {
+      if (same(arr[i], r.data)) return false;
+      // منعدّل نفس الكائن بمكانه (مش منبدّله بكائن جديد) — هيك أي شاشة مفتوحة عليه (فاتورة، سند…) بتضل مربوطة فيه وما بيضيع حفظها
+      const o = arr[i]; Object.keys(o).forEach(x => delete o[x]); Object.assign(o, r.data);
+    }
     else arr.push(r.data);
     return true;
   }

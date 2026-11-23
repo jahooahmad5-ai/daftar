@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '6.3';
+const APP_VERSION = '6.4';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -1392,7 +1392,11 @@ V.invoice = (id, q, view) => {
     }
     const out = { ...inv, date: val('date'), pay, party, cashAcc: pay === 'cash' ? cashAcc : '', cur: inv.cur, rate: inv.cur === 'fx' ? rate() : '', discount: num(val('discount')), addition: num(val('addition')), addNote: val('addNote').trim(), note: val('note'), lines };
     if (!orig) { out.id = uid(); out.no = nextNo(out.type); out.created = Date.now(); db.invoices.push(out); }
-    else db.invoices[db.invoices.indexOf(orig)] = out;
+    else {
+      // منلاقي الفاتورة برقمها (id) مش بالكائن — حتى لو المزامنة جدّدتها بالخلفية ما يضيع الحفظ
+      const ix = db.invoices.findIndex(x => x.id === orig.id);
+      if (ix >= 0) db.invoices[ix] = out; else db.invoices.push(out);
+    }
     // الدفعة مع الفاتورة = سند قبض/دفع مربوط فيها
     const pv = pay === 'credit' && party ? r2(num(val('payment'))) : 0;
     const linked = db.vouchers.filter(v => v.inv === out.id);
@@ -1449,7 +1453,7 @@ V.invoice = (id, q, view) => {
     print: () => printDoc(invoiceHtml(orig)),
     wa: () => waSend(acc(orig.party), waInvoiceText(orig)),
     receipt: () => window.Receipt && Receipt.open(orig),
-    del: () => { if (!confirm('حذف الفاتورة نهائياً؟ سيتم عكس أثرها على الحسابات والمستودع.')) return; db.invoices = db.invoices.filter(x => x !== orig); db.vouchers = db.vouchers.filter(v => v.inv !== orig.id); save(); toast('تم الحذف'); go('#/invoices'); },
+    del: () => { if (!confirm('حذف الفاتورة نهائياً؟ سيتم عكس أثرها على الحسابات والمستودع.')) return; db.invoices = db.invoices.filter(x => x.id !== orig.id); db.vouchers = db.vouchers.filter(v => v.inv !== orig.id); save(); toast('تم الحذف'); go('#/invoices'); },
   });
   if (draftPay) payNow = draftPay;
   $('[name=payment]', view).value = payNow || '';
@@ -1522,7 +1526,7 @@ function voucherForm(v, type, preAcc) {
   };
   f.oninput = f.onchange = upd; upd();
   if (v) {
-    $('#vDel').onclick = () => { if (!confirm('حذف السند؟')) return; db.vouchers = db.vouchers.filter(x => x !== v); save(); $('#dlg').close(); route(); };
+    $('#vDel').onclick = () => { if (!confirm('حذف السند؟')) return; db.vouchers = db.vouchers.filter(x => x.id !== v.id); save(); $('#dlg').close(); route(); };
     $('#vPrint').onclick = () => { $('#dlg').close(); printDoc(voucherHtml(v)); };
   }
 }
@@ -1613,7 +1617,7 @@ V.entry = (id, q, view) => {
   onAct(view, {
     addLine: () => { en.lines.push({ acc: '', dr: '', cr: '', note: '' }); draw(); },
     rm: i => { en.lines.splice(+i, 1); draw(); },
-    del: () => { if (!confirm('حذف القيد؟')) return; db.entries = db.entries.filter(x => x !== orig); save(); go('#/journal'); },
+    del: () => { if (!confirm('حذف القيد؟')) return; db.entries = db.entries.filter(x => x.id !== orig.id); save(); go('#/journal'); },
     save: () => {
       const lines = en.lines.filter(l => l.acc && (num(l.dr) || num(l.cr))).map(l => ({ acc: l.acc, dr: r2(num(l.dr)), cr: r2(num(l.cr)), note: l.note || '' }));
       if (lines.length < 2) return toast('القيد يحتاج سطرين على الأقل', 1);
