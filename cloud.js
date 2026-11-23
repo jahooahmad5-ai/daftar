@@ -28,10 +28,11 @@ const Cloud = (() => {
   }
   function track() {
     const now = recs();
-    if (snap && linked()) {
+    // منسجّل التغييرات حتى لو انتهى تسجيل الدخول (الشركة لسا مربوطة) — هيك بترتفع أول ما ترجع تسجّل دخول
+    if (snap && configured() && st.company) {
       for (const k in now) if (now[k] !== snap[k]) st.dirty[k] = 1;
       for (const k in snap) if (!(k in now)) st.dirty[k] = 1;
-      saveSt(); schedule(1500);
+      saveSt(); if (linked()) schedule(1500);
     }
     snap = now; pill();
   }
@@ -158,6 +159,8 @@ const Cloud = (() => {
   async function sync(manual) {
     if (!linked() || busy) return;
     if (!navigator.onLine) { lastErr = 'offline'; pill(); if (manual) toast('لا يوجد اتصال بالإنترنت — التغييرات محفوظة على الجهاز', 1); return; }
+    // مرة وحدة على موبايل صاحب الشركة: رفع كل البيانات (يلي تعدّلت وقت كان تسجيل الدخول منتهي وما ارتفعت)
+    if (st.owner && !st.fullPush1) { markAllDirty(); st.fullPush1 = 1; saveSt(); }
     busy = true; pill();
     try {
       await push();
