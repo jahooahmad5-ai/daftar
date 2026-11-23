@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '6.5';
+const APP_VERSION = '6.6';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -481,7 +481,7 @@ V.home = (id, q, view) => {
   const low = db.items.filter(i => num(i.minQty) > 0 && (st[i.id]?.qty || 0) <= num(i.minQty));
   const recent = [...db.invoices].sort((a, b) => b.date.localeCompare(a.date) || (b.created || 0) - (a.created || 0)).slice(0, 8);
 
-  view.innerHTML = head('الرئيسية', `<span class="muted">${today()}</span>`) + `
+  view.innerHTML = head('الرئيسية', `<button class="btn pri sync-btn" id="homeSync" data-act="sync">🔄 مزامنة</button><span class="muted">${today()}</span>`) + `
   <div class="quick">
     <a href="#/invoice/new?type=sale"><i>🧾</i>فاتورة مبيع</a>
     <a href="#/invoice/new?type=purchase"><i>🛒</i>فاتورة شراء</a>
@@ -507,7 +507,15 @@ V.home = (id, q, view) => {
     ${kpi(`سعر صرف ${FX().name}`, `<button class="mini" data-act="rate" style="float:left">تعديل</button>${FX().rate ? fmt(FX().rate) + ' ' + cur() : '<span class="bad" style="font-size:15px">غير محدد</span>'}`, 'a')}
     ${kpi('صافي ربح السنة', `<span class="${profit < 0 ? 'neg' : 'pos'}">${fmt(profit)}</span>`, 'p')}
   </div>`;
-  onAct(view, { open: id => go('#/invoice/' + id), rate: () => rateDialog() });
+  onAct(view, {
+    open: id => go('#/invoice/' + id), rate: () => rateDialog(),
+    sync: async () => {
+      if (!window.Cloud || !Cloud.info().linked) { toast('المزامنة مش مربوطة — اربطها من الإعدادات', 1); return go('#/settings'); }
+      await Cloud.sync(true);
+      if (/^#\/?$/.test(location.hash) || location.hash === '') route();
+    },
+  });
+  if (window.Cloud) Cloud.pill();
 };
 function rateDialog() {
   modal(`سعر صرف ${FX().name}`, fields([{ k: 'rate', l: `كم ${cur()} مقابل 1 ${FX().sym}؟`, t: 'number', req: 1, full: 1 }], { rate: db.settings.rate }) +
@@ -1267,6 +1275,16 @@ V.invoice = (id, q, view) => {
   sugg.addEventListener('mousedown', e => e.preventDefault());
   // أزرار ＋ − ✕ ما بتشيل التركيز (الكيبورد بيضل متل ما هو)
   view.addEventListener('mousedown', e => { if (e.target.closest('.ln-card .qb')) e.preventDefault(); });
+  // تثبيت الصفحة عالمادة يلي عم تعدّلها: لما تكبس ＋ − أو تغيّر العدد والكيبورد مفتوح ما بتنط الصفحة لفوق
+  let lineActAt = 0;
+  const anchorCard = card => {
+    if (!card) return;
+    lineActAt = Date.now();
+    const top0 = card.getBoundingClientRect().top;
+    const fix = () => { if (!card.isConnected) return; const d = card.getBoundingClientRect().top - top0; if (Math.abs(d) > 2) window.scrollBy(0, d); };
+    requestAnimationFrame(fix); [120, 300, 600, 900].forEach(t => setTimeout(fix, t));
+  };
+  view.addEventListener('pointerdown', e => { const c = e.target.closest('.ln-card'); if (c && e.target.closest('.qb:not(.edit), input')) lineActAt = Date.now(); }, true);
   // لما تكبس على خانة رقم (كمية، سعر) بيتحدّد الرقم كله — بتكتب الجديد دغري بداله
   view.addEventListener('focusin', e => {
     const t = e.target; if (!t.matches || !t.matches('.ln-card input[type=number]')) return;
@@ -1288,7 +1306,9 @@ V.invoice = (id, q, view) => {
   // وقت الكتابة منخبّي شريط المجموع تحت حتى ما يغطّي الاقتراحات
   // (بس طول ما قائمة الاقتراحات ظاهرة — أول ما تختفي برجع الشريط وزر الحفظ)
   new MutationObserver(() => view.classList.toggle('typing', !sugg.hidden)).observe(sugg, { attributes: true, attributeFilter: ['hidden'] });
-  scanIn.addEventListener('focus', () => { setTimeout(toTop, 300); setTimeout(toTop, 700); });
+  // منطلّع البحث لفوق بس إذا إنت كبست عالبحث — مش إذا كنت عم تعدّل عدد مادة
+  const toTopSafe = () => { if (Date.now() - lineActAt > 1500) toTop(); };
+  scanIn.addEventListener('focus', () => { if (Date.now() - lineActAt < 1500) return; setTimeout(toTopSafe, 300); setTimeout(toTopSafe, 700); });
   if (window.visualViewport) {
     const onVV = () => { if (!view.contains(scanIn)) return window.visualViewport.removeEventListener('resize', onVV); fitSugg(); };
     window.visualViewport.addEventListener('resize', onVV);
@@ -1342,6 +1362,7 @@ V.invoice = (id, q, view) => {
   view.oninput = e => {
     const card = e.target.closest('.ln-card');
     if (card && e.target.dataset.f) {
+      lineActAt = Date.now();
       const l = inv.lines[card.dataset.i]; l[e.target.dataset.f] = e.target.value;
       $('[data-tot]', card).textContent = fmt(num(l.qty) * num(l.price)); $('[data-old]', card).textContent = lineOld(l); totals();
     } else if (e.target.name === 'payment') { payNow = num(e.target.value); totals(); }
@@ -1429,6 +1450,7 @@ V.invoice = (id, q, view) => {
     if (nq <= 0) { inv.lines.splice(+i, 1); draw(); return; }
     l.qty = nq;
     const card = $(`.ln-card[data-i="${i}"]`, view);
+    anchorCard(card);
     $('[data-f=qty]', card).value = nq; $('[data-tot]', card).textContent = fmt(nq * num(l.price)); $('[data-old]', card).textContent = lineOld(l); totals();
   };
   onAct(view, {

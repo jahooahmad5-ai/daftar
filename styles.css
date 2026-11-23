@@ -335,3 +335,7 @@ img,svg,video{max-width:100%}
 .sugg .sg-new{background:#f0fbf9}
 .sugg .sg-new b{color:#0f766e}
 .dash-title{margin:18px 4px 8px}
+.sync-btn{font-weight:700}
+.sync-btn.ok{background:#e8f5ee;color:#0f6b3d;border-color:#bfe3cf}
+.sync-btn.warn{background:#d97706;border-color:#d97706;color:#fff}
+.sync-btn.bad{background:#c0392b;border-color:#c0392b;color:#fff}

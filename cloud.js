@@ -161,7 +161,10 @@ const Cloud = (() => {
     busy = true; pill();
     try {
       await push();
-      const changed = await pull();
+      // وإنت جوّا فاتورة أو قيد (أو نافذة مفتوحة) منرفع شغلك بس وما منلمس شي — منكمّل التنزيل لما تطلع
+      let changed = false;
+      if (manual || !editingNow()) { changed = await pull(); pullLater = false; }
+      else pullLater = true;
       st.lastSync = Date.now(); lastErr = ''; saveSt();
       if (changed) refreshView();
       if (manual) toast('تمت المزامنة ✓');
@@ -171,6 +174,8 @@ const Cloud = (() => {
     }
     busy = false; pill();
   }
+  const editingNow = () => $('#dlg').open || /^#\/(invoice|entry)\//.test(location.hash);
+  let pullLater = false;
   function schedule(ms) { clearTimeout(debounce); debounce = setTimeout(() => sync(), ms); }
   function refreshView() {
     const h = location.hash;
@@ -180,9 +185,20 @@ const Cloud = (() => {
   }
 
   /* ---------- مؤشر الحالة ---------- */
+  // زر المزامنة بالرئيسية: بيبيّن الحالة وكم تغيير لسا ما انرفع
+  function homeBtn() {
+    const b = document.getElementById('homeSync'); if (!b) return;
+    const n = pending();
+    if (!linked()) { b.textContent = '🔄 مزامنة (مش مربوطة)'; b.className = 'btn sync-btn'; return; }
+    b.disabled = busy;
+    if (busy) { b.textContent = '⏳ عم يزامن…'; b.className = 'btn sync-btn'; }
+    else if (n) { b.textContent = `🔄 مزامنة — ${n} تغيير لسا ما انرفع`; b.className = 'btn pri sync-btn warn'; }
+    else if (lastErr && lastErr !== 'offline') { b.textContent = '⚠️ فشلت آخر مزامنة — كبّس لتعيد'; b.className = 'btn pri sync-btn bad'; }
+    else { b.textContent = `☁️ متزامن${st.lastSync ? ' — ' + ago(st.lastSync) : ''}`; b.className = 'btn sync-btn ok'; }
+  }
   function pill() {
-    const p = $('#syncPill'); if (!p) return;
-    if (!linked()) { p.hidden = true; return; }
+    const p = $('#syncPill'); if (!p) { homeBtn(); return; }
+    if (!linked()) { p.hidden = true; homeBtn(); return; }
     p.hidden = false;
     const n = pending();
     let t, c = '';
@@ -192,6 +208,7 @@ const Cloud = (() => {
     else if (n) t = `⏳ ${n} تغيير بانتظار الرفع`;
     else { t = '☁️ متزامن'; c = 'ok'; }
     p.textContent = t; p.className = 'sync-pill ' + c; p.title = lastErr && lastErr !== 'offline' ? lastErr : '';
+    homeBtn();
   }
 
   /* ---------- واجهة الإعدادات ---------- */
@@ -310,12 +327,14 @@ const Cloud = (() => {
   window.addEventListener('online', () => { lastErr = ''; sync(); });
   window.addEventListener('offline', pill);
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') sync(); });
+  // أول ما تطلع من الفاتورة/القيد: منزّل يلي فاتك
+  window.addEventListener('hashchange', () => { if (!editingNow() && (pullLater || pending())) schedule(400); });
   setInterval(() => sync(), 30000);
   $('#syncPill').onclick = () => go('#/settings');
   pill();
   setTimeout(() => sync(), 800);
 
-  return { track, card, sync };
+  return { track, card, sync, pill, info: () => ({ linked: linked(), pending: pending(), busy, lastSync: st.lastSync }) };
 })();
 window.Cloud = Cloud;
 if (/^#\/settings/.test(location.hash)) route();
