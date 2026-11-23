@@ -367,7 +367,7 @@ const Receipt = (() => {
       await conn;
       await send(escpos(canvas), p => toast(`🖨 عم يطبع… ${Math.round(p * 100)}%`));
       toast('✅ انحفظت وانطبعت الفاتورة رقم ' + inv.no);
-      location.hash = '#/invoices'; // بعد الطباعة منرجع لقائمة الفواتير
+      location.hash = '#/'; // بعد الطباعة منرجع عالرئيسية
     } catch (e) {
       ch = null;
       if (e && e.name === 'NotFoundError') toast('ما اخترت طابعة — الفاتورة محفوظة', 1);

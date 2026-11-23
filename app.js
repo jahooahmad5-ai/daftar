@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '6.4';
+const APP_VERSION = '6.5';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -398,6 +398,7 @@ function printDoc(html) {
 /* ------------------------- الموجّه ------------------------- */
 const V = {};
 const NAV_MAP = { invoice: 'invoices', entry: 'journal', report: 'reports' };
+let keepScrollY = null;
 function go(h) { if (location.hash === h) route(); else location.hash = h; }
 function route() {
   const h = location.hash.replace(/^#\/?/, '');
@@ -413,7 +414,9 @@ function route() {
   $$('#nav a').forEach(a => a.classList.toggle('on', a.dataset.r === nav));
   document.body.classList.remove('menu-open');
   V[key](id, q, view);
-  window.scrollTo(0, 0);
+  // بعد «حفظ» منضل بنفس المكان بالصفحة؛ غير هيك منطلع لفوق
+  if (keepScrollY != null) { const y = keepScrollY; keepScrollY = null; window.scrollTo(0, y); requestAnimationFrame(() => window.scrollTo(0, y)); }
+  else window.scrollTo(0, 0);
 }
 
 /* ---- بحث بقائمة الزباين/الموردين: خانة بحث فوق كل قائمة «العميل/المورد» ---- */
@@ -478,16 +481,7 @@ V.home = (id, q, view) => {
   const low = db.items.filter(i => num(i.minQty) > 0 && (st[i.id]?.qty || 0) <= num(i.minQty));
   const recent = [...db.invoices].sort((a, b) => b.date.localeCompare(a.date) || (b.created || 0) - (a.created || 0)).slice(0, 8);
 
-  view.innerHTML = head('لوحة التحكم', `<span class="muted">${today()}</span>`) + `
-  <div class="kpis">
-    ${kpi('النقدية (صندوق + بنك)', fmt(bal('cashGroup')) + ' ' + cur(), 'p')}
-    ${kpi('ذمم العملاء (لنا)', fmt(bal('customers')), 'g')}
-    ${kpi('ذمم الموردين (علينا)', fmt(bal('suppliers')), 'r')}
-    ${kpi('قيمة المخزون', fmt(bal('inventory')), 'a')}
-    ${kpi('مبيعات هذا الشهر', fmt(monthSales), 'g')}
-    ${kpi(`سعر صرف ${FX().name}`, `<button class="mini" data-act="rate" style="float:left">تعديل</button>${FX().rate ? fmt(FX().rate) + ' ' + cur() : '<span class="bad" style="font-size:15px">غير محدد</span>'}`, 'a')}
-    ${kpi('صافي ربح السنة', `<span class="${profit < 0 ? 'neg' : 'pos'}">${fmt(profit)}</span>`, 'p')}
-  </div>
+  view.innerHTML = head('الرئيسية', `<span class="muted">${today()}</span>`) + `
   <div class="quick">
     <a href="#/invoice/new?type=sale"><i>🧾</i>فاتورة مبيع</a>
     <a href="#/invoice/new?type=purchase"><i>🛒</i>فاتورة شراء</a>
@@ -502,6 +496,16 @@ V.home = (id, q, view) => {
     <div class="card"><h3>مواد وصلت للحد الأدنى</h3>${table(['المادة', 'الكمية', 'الحد الأدنى'],
       low.map(i => `<tr><td>${esc(i.name)}</td><td class="n"><span class="badge low">${fmt(st[i.id]?.qty || 0)}</span></td><td class="n">${fmt(i.minQty)}</td></tr>`).join(''))}
       ${!db.items.length ? `<p class="muted">لا توجد بيانات بعد. ابدأ بإضافة <a href="#/items">المواد</a> و<a href="#/parties">العملاء</a>، أو جرّب <a href="#/settings">البيانات التجريبية</a>.</p>` : ''}</div>
+  </div>
+  <h3 class="dash-title">📊 لوحة التحكم</h3>
+  <div class="kpis">
+    ${kpi('النقدية (صندوق + بنك)', fmt(bal('cashGroup')) + ' ' + cur(), 'p')}
+    ${kpi('ذمم العملاء (لنا)', fmt(bal('customers')), 'g')}
+    ${kpi('ذمم الموردين (علينا)', fmt(bal('suppliers')), 'r')}
+    ${kpi('قيمة المخزون', fmt(bal('inventory')), 'a')}
+    ${kpi('مبيعات هذا الشهر', fmt(monthSales), 'g')}
+    ${kpi(`سعر صرف ${FX().name}`, `<button class="mini" data-act="rate" style="float:left">تعديل</button>${FX().rate ? fmt(FX().rate) + ' ' + cur() : '<span class="bad" style="font-size:15px">غير محدد</span>'}`, 'a')}
+    ${kpi('صافي ربح السنة', `<span class="${profit < 0 ? 'neg' : 'pos'}">${fmt(profit)}</span>`, 'p')}
   </div>`;
   onAct(view, { open: id => go('#/invoice/' + id), rate: () => rateDialog() });
 };
@@ -1414,7 +1418,10 @@ V.invoice = (id, q, view) => {
     lines.forEach(l => { const it = db.items.find(x => x.id === l.item); if (it && num(l.cp)) { const b = r2(num(l.cp) * docRate(out)); if (b !== num(it.consumerPrice)) it.consumerPrice = b; } });
     save(); navigator.vibrate?.([60, 40, 60]); toast(`✅ انحفظت الفاتورة رقم ${out.no} — ${lines.length} مادة`);
     if (typeof shortMsg === 'string' && shortMsg) setTimeout(() => toast(shortMsg, 1), 2200);
-    go(andNew ? '#/invoice/new?type=' + out.type : '#/invoice/' + out.id + '?saved=1');
+    // حفظ وطباعة ← منرجع عالرئيسية | حفظ / حفظ التعديلات ← منضل بنفس الفاتورة وبنفس المكان
+    if (print) go('#/');
+    else if (andNew) go('#/invoice/new?type=' + out.type);
+    else { keepScrollY = window.scrollY; go('#/invoice/' + out.id + '?saved=1'); }
     if (print && window.Receipt) Receipt.printDirect(out);
   };
   const step = (i, d) => {
