@@ -265,7 +265,7 @@ const Cloud = (() => {
         <p><b>شركة جديدة على السحابة</b> — سيتم رفع بياناتك الموجودة على هذا الجهاز إليها.</p>
         ${fields([{ k: 'cname', l: 'اسم الشركة', full: 1 }], { cname: db.settings.company })}
         <div class="form-actions"><button class="btn pri" id="cNew">إنشاء ورفع بياناتي</button><button class="btn" id="cOut">تسجيل الخروج</button></div>`);
-      $('#cOut', el).onclick = () => { logout(); rerender(); };
+      $('#cOut', el).onclick = () => { logout(); if (/^#\/(pos|sellersetup)/.test(location.hash)) route(); else rerender(); };
       $('#cNew', el).onclick = async e => {
         const name = $('[name=cname]', el).value.trim() || 'شركتي';
         e.target.disabled = true;
@@ -299,7 +299,7 @@ const Cloud = (() => {
     $('#cSync', el).onclick = async () => { await sync(true); rerender(); };
     $('#cOut', el).onclick = () => {
       if (pending() && !confirm(`يوجد ${pending()} تغيير لم يُرفع بعد. تسجيل الخروج الآن قد يفقدها من السحابة. متابعة؟`)) return;
-      logout(); rerender();
+      logout(); if (/^#\/(pos|sellersetup)/.test(location.hash)) route(); else rerender();
     };
     if (st.owner) $('#cAdd', el).onclick = () => modal('إضافة مستخدم للشركة',
       `<p class="muted">يجب أن يكون المستخدم قد أنشأ حساباً من التطبيق أولاً (من جهازه: الإعدادات ← إنشاء حساب جديد). بعد إضافته يسجّل الدخول ويختار الشركة.</p>` + fields([{ k: 'email', l: 'إيميل المستخدم', t: 'email', req: 1, full: 1 }]), {
@@ -321,7 +321,7 @@ const Cloud = (() => {
       localStorage.setItem(DBKEY, JSON.stringify(db)); _eng = null; snap = recs();
       $('#coName').textContent = db.settings.company;
       await sync();
-      if (typeof applySellerUI === 'function') applySellerUI();
+      if (typeof applySellerUI === 'function') { applySellerUI(); if (!st.owner) setTimeout(() => { location.hash = '#/'; route(); }, 50); }
     } catch (e) {
       db = backup; Object.assign(st, { company: null, companyName: null, lastPull: null, dirty: {} }); saveSt(); snap = recs();
       throw e;
@@ -347,7 +347,7 @@ const Cloud = (() => {
   setTimeout(() => sync(), 800);
 
   // عضو بشركة مش صاحبها (متل المندوب) = وضع البيّاع تلقائياً على موبايله
-  if (typeof applySellerUI === 'function') setTimeout(() => { applySellerUI(); if (st.company && !st.owner) route(); }, 0);
+  if (typeof applySellerUI === 'function') setTimeout(() => { applySellerUI(); if ((st.company && !st.owner) || /^#\/(pos|sellersetup)/.test(location.hash)) route(); }, 0);
   return { track, card, sync, pill, info: () => ({ linked: linked(), pending: pending(), busy, lastSync: st.lastSync, member: !!(configured() && st.company && !st.owner), email: st.session?.email || '' }) };
 })();
 window.Cloud = Cloud;

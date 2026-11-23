@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '6.27';
+const APP_VERSION = '6.28';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -580,18 +580,18 @@ function backupShare() {
 }
 
 /* ------------------------- صفحة تجهيز موبايل المندوب (من الباركود الخاص فيه) ------------------------- */
-V.sellersetup = (id, q, view) => {
+V.pos = V.sellersetup = (id, q, view) => {
   const name = (q.name || '').trim();
-  const linked = window.Cloud && Cloud.info().linked;
-  view.innerHTML = head(`🧑‍💼 تجهيز نقطة بيع${name ? ' — ' + esc(name) : ''}`) + `
-  <div class="card"><h3>١) اربط هالموبايل بالشركة ${linked ? '✅' : ''}</h3>
-    <p class="muted">${linked ? 'هالموبايل مربوط بالشركة ✓ — كمّل للخطوة ٢.' : 'اعمل حساب بإيميل الشب (إنشاء حساب جديد) — <b>لا تكبس «إنشاء ورفع بياناتي»</b>. بعدين من موبايل المدير: الإعدادات ← 👤 إضافة مستخدم ← إيميل الشب. وبعدها ارجع لهون واكبس «📂 فتح» على اسم الشركة.'}</p>
-    <div id="cloudCard"></div></div>
-  <div class="card"><h3>٢) فعّل وضع البيّاع</h3>
-    <p class="muted">بيحط اسم المندوب على فواتيره، وبيسكّر الحسابات والتقارير والإعدادات. الرمز السري بيحطه المدير ولا يعطيه للشب.</p>
-    <div class="acts"><button class="btn pri" data-act="go">🔒 تفعيل وضع البيّاع${name ? ' لـ ' + esc(name) : ''}</button></div></div>`;
+  if (name) try { localStorage.setItem(REP_KEY, name); } catch (e) { /* */ }
+  const info = window.Cloud ? Cloud.info() : {};
+  if (info.member) return go('#/'); // حساب المندوب: دغري نقطة البيع
+  const ownerIn = info.linked && !info.member;
+  view.innerHTML = head(`🧑‍💼 تجهيز نقطة البيع${name ? ' — ' + esc(name) : ''}`) + `
+  <div class="card">
+    ${ownerIn ? `<p class="bad"><b>⚠️ هالموبايل مسجّل دخول بحساب المدير (${esc(info.email || '')}).</b><br>لحتى يصير نقطة بيع: اكبس «تسجيل الخروج» تحت، وبعدين سجّل دخول بإيميل المندوب.</p>` :
+    `<p class="muted">سجّل دخول بإيميل المندوب وكلمة سره ← <b>دخول</b> (أو «إنشاء حساب جديد» إذا أول مرة). بعدين اكبس <b>📂 فتح</b> على اسم الشركة.<br>⚠️ <b>لا تكبس «إنشاء ورفع بياناتي»</b>.<br>إذا ما طلعت الشركة: من موبايل المدير ← الإعدادات ← 👤 إضافة مستخدم ← إيميل المندوب، وارجع لهون.</p>`}
+    <div id="cloudCard"></div></div>`;
   if (window.Cloud) Cloud.card($('#cloudCard', view)); else $('#cloudCard', view).remove();
-  onAct(view, { go: () => { if (!(window.Cloud && Cloud.info().linked) && !confirm('هالموبايل لسا مش مربوط بالشركة، يعني فواتيره ما رح توصلك. بدك تفعّل وضع البيّاع هيك؟')) return; sellerSetup(name); } });
 };
 
 /* ------------------------- الرئيسية ------------------------- */
