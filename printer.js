@@ -267,21 +267,38 @@ const Receipt = (() => {
   }
 
   /* ---------- تحويل لأوامر ESC/POS ---------- */
+  // تحويل الصورة لأوامر ESC/POS — الأسطر البيضا ما منبعتها كصورة، منبعت «لفّ الورق» بس (أسرع بكتير)
   function escpos(c) {
     const W = c.width, H = c.height, bw = W / 8, px = c.getContext('2d').getImageData(0, 0, W, H).data;
+    const rows = new Array(H), blank = new Uint8Array(H);
+    for (let y = 0; y < H; y++) {
+      const r = new Uint8Array(bw); let any = 0;
+      for (let xx = 0; xx < W; xx++) {
+        const i = (y * W + xx) * 4;
+        if (px[i + 3] > 0 && px[i] * 0.3 + px[i + 1] * 0.59 + px[i + 2] * 0.11 < 150) { r[xx >> 3] |= 0x80 >> (xx & 7); any = 1; }
+      }
+      rows[y] = r; blank[y] = !any;
+    }
     const parts = [new Uint8Array([0x1b, 0x40])];
     const BAND = 128;
-    for (let y0 = 0; y0 < H; y0 += BAND) {
-      const h = Math.min(BAND, H - y0), buf = new Uint8Array(8 + bw * h);
-      buf.set([0x1d, 0x76, 0x30, 0x00, bw & 255, bw >> 8, h & 255, h >> 8]);
-      for (let y = 0; y < h; y++) for (let xx = 0; xx < W; xx++) {
-        const i = ((y0 + y) * W + xx) * 4, lum = px[i] * 0.3 + px[i + 1] * 0.59 + px[i + 2] * 0.11;
-        if (lum < 150) buf[8 + y * bw + (xx >> 3)] |= 0x80 >> (xx & 7);
+    let y = 0;
+    while (y < H) {
+      if (blank[y]) {
+        let n = 0; while (y < H && blank[y]) { n++; y++; }
+        while (n > 0) { const k = Math.min(255, n); parts.push(new Uint8Array([0x1b, 0x4a, k])); n -= k; } // ESC J n = لفّ n نقطة
+        continue;
       }
-      parts.push(buf);
+      // كتلة أسطر فيها كتابة (منسمح بشوية أسطر بيضا جوّاها حتى ما نقطّع الكتابة)
+      let e = y, gapRun = 0;
+      while (e < H && e - y < BAND) { if (blank[e]) { if (gapRun >= 6) break; gapRun++; } else gapRun = 0; e++; }
+      e = Math.max(y + 1, e - gapRun);
+      const h = e - y, buf = new Uint8Array(8 + bw * h);
+      buf.set([0x1d, 0x76, 0x30, 0x00, bw & 255, bw >> 8, h & 255, h >> 8]);
+      for (let k = 0; k < h; k++) buf.set(rows[y + k], 8 + k * bw);
+      parts.push(buf); y = e;
     }
     parts.push(new Uint8Array([0x1b, 0x64, 0x03]));
-    const n = parts.reduce((s, p) => s + p.length, 0), out = new Uint8Array(n);
+    const n = parts.reduce((s2, p) => s2 + p.length, 0), out = new Uint8Array(n);
     let o = 0; parts.forEach(p => { out.set(p, o); o += p.length; });
     return out;
   }
@@ -351,12 +368,13 @@ const Receipt = (() => {
   const sleep = ms => new Promise(r => setTimeout(r, ms));
   async function send(data, onProg) {
     const c = ch, noResp = c.properties.writeWithoutResponse && c.writeValueWithoutResponse;
+    let size = chunk; // كل طباعة بتبلّش بالحجم الطبيعي (ما بيضل صغير للأبد إذا فشلت مرة)
     for (let i = 0; i < data.length;) {
-      const part = data.slice(i, i + chunk);
+      const part = data.slice(i, i + size);
       try {
         if (noResp) await c.writeValueWithoutResponse(part); else await c.writeValue(part);
       } catch (e) {
-        if (chunk > 20) { chunk = 20; continue; }
+        if (size > 20) { size = size > 100 ? 100 : 20; await sleep(30); continue; }
         throw e;
       }
       i += part.length;
