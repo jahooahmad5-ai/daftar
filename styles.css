@@ -346,3 +346,5 @@ body.seller #installBtn{display:none}
 body.seller .qb.edit,body.seller .sg-new,body.seller [data-act=del],body.seller #vDel{display:none!important}
 body.seller .ph .acts a.btn:not([href*="type=sale"]){display:none}
 body.seller .tabs{display:none}
+.badge.rep{background:#fff4e0;color:#8a4b00;margin-top:3px;display:inline-block}
+body.seller .tabs.rep-tabs{display:none}

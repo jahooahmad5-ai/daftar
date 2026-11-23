@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '6.17';
+const APP_VERSION = '6.18';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -223,7 +223,7 @@ function engine() {
     const f = gross ? netDoc / gross : 1;
     const k = docRate(inv), net = netDoc * k;
     const party = inv.pay === 'cash' ? (inv.cashAcc || 'cash') : inv.party;
-    const label = `${INV_TYPES[inv.type]} رقم ${inv.no}`;
+    const label = `${INV_TYPES[inv.type]} رقم ${inv.no}${repTag(inv)}`;
     const L = [];
     const add = (a, dr, cr) => { dr = r2(dr); cr = r2(cr); if (dr < 0) { cr -= dr; dr = 0; } if (cr < 0) { dr -= cr; cr = 0; } if (dr || cr) L.push({ acc: a, dr, cr }); };
     let cost = 0;
@@ -345,7 +345,7 @@ function waInvoiceText(inv) {
   const t = invTotals(inv), sym = docSym(inv);
   const lines = inv.lines.map(l => { const it = db.items.find(x => x.id === l.item) || {}; return `• ${it.name || ''}: ${fmt(l.qty)} × ${fmt(l.price)} = ${fmt(num(l.qty) * num(l.price))}`; }).join('\n');
   const a = acc(inv.party);
-  let s = `${waHead()}\n${INV_TYPES[inv.type]} رقم ${inv.no}\nالتاريخ: ${inv.date}\n${a ? 'السيد: ' + a.name + '\n' : ''}————————\n${lines}\n————————\n`;
+  let s = `${waHead()}\n${INV_TYPES[inv.type]} رقم ${inv.no}${repTag(inv)}\nالتاريخ: ${inv.date}\n${a ? 'السيد: ' + a.name + '\n' : ''}————————\n${lines}\n————————\n`;
   if (t.disc || t.add) s += `الإجمالي: ${fmt(t.gross)}\n${t.disc ? `الحسم: ${fmt(t.disc)}\n` : ''}${t.add ? `إضافة: ${fmt(t.add)}${inv.addNote ? ' (' + inv.addNote + ')' : ''}\n` : ''}`;
   s += `*الصافي: ${fmt(t.net)} ${sym}*\n`;
   if (inv.cur === 'fx') s += `(المعادل: ${fmt(t.net * num(inv.rate))} ${cur()})\n`;
@@ -416,6 +416,8 @@ const NAV_MAP = { invoice: 'invoices', entry: 'journal', report: 'reports' };
 const SELLER_KEY = 'daftar_seller';
 const sellerCfg = () => { try { return JSON.parse(localStorage.getItem(SELLER_KEY) || 'null'); } catch (e) { return null; } };
 const isSeller = () => !!sellerCfg();
+const myRep = () => (isSeller() && (sellerCfg().name || 'مندوب')) || '';
+const repTag = i => (i && i.rep ? ` — مندوب: ${i.rep}` : '');
 const SELLER_ROUTES = ['home', 'invoices', 'invoice'];
 function applySellerUI() {
   const on = isSeller();
@@ -429,13 +431,14 @@ function applySellerUI() {
 }
 function sellerSetup() {
   modal('🧑‍💼 تفعيل وضع البيّاع على هالموبايل', `<p class="muted">بوضع البيّاع بيقدر يعمل فواتير مبيع بس. ما بيشوف حسابات الزباين وأرصدتهم، ولا التقارير والأرباح والإعدادات، وما بيقدر يحذف ولا يعدّل المواد.<br>للخروج بيلزم الرمز السري يلي رح تحطه هلق — <b>لا تعطيه للشب</b>.</p>` +
-    fields([{ k: 'pin', l: 'رمز سري (4 أرقام أو أكتر)', t: 'password', req: 1 }, { k: 'pin2', l: 'أعد كتابة الرمز', t: 'password', req: 1 }]), {
+    fields([{ k: 'name', l: 'اسم المندوب (بيطلع عفواتيره)', req: 1, full: 1, ph: 'محمد صعوبي' }, { k: 'pin', l: 'رمز سري (4 أرقام أو أكتر)', t: 'password', req: 1 }, { k: 'pin2', l: 'أعد كتابة الرمز', t: 'password', req: 1 }]), {
     saveText: 'تفعيل',
     onSave: d => {
       const p = String(d.pin || '').trim();
       if (p.length < 4) { toast('الرمز لازم يكون 4 أرقام أو أكتر', 1); return false; }
       if (p !== String(d.pin2 || '').trim()) { toast('الرمزين مش متطابقين', 1); return false; }
-      localStorage.setItem(SELLER_KEY, JSON.stringify({ pin: p, at: Date.now() }));
+      const nm = String(d.name || '').trim(); if (!nm) { toast('اكتب اسم المندوب', 1); return false; }
+      localStorage.setItem(SELLER_KEY, JSON.stringify({ pin: p, name: nm, at: Date.now() }));
       applySellerUI(); toast('✓ تفعّل وضع البيّاع'); go('#/');
     },
   });
@@ -455,7 +458,7 @@ function route() {
   let key = V[name] ? name : 'home';
   if (isSeller()) {
     const bad = !SELLER_ROUTES.includes(key)
-      || (key === 'invoice' && (id === 'new' ? (q.type || 'sale') !== 'sale' : (db.invoices.find(x => x.id === id)?.type || 'sale') !== 'sale'));
+      || (key === 'invoice' && (id === 'new' ? (q.type || 'sale') !== 'sale' : (() => { const iv = db.invoices.find(x => x.id === id); return !iv || iv.type !== 'sale' || iv.rep !== myRep(); })()));
     if (bad) { if (location.hash && location.hash !== '#/') { toast('🔒 هالصفحة مسكّرة بوضع البيّاع', 1); } history.replaceState(null, '', '#/'); key = 'home'; }
   }
   const nav = NAV_MAP[key] || key;
@@ -567,9 +570,9 @@ function backupShare() {
 
 /* ------------------------- الرئيسية ------------------------- */
 function sellerHome(view) {
-  const t = today(), mine = db.invoices.filter(i => i.type === 'sale' && i.date === t);
+  const t = today(), mine = db.invoices.filter(i => i.type === 'sale' && i.date === t && i.rep === myRep());
   const tot = mine.reduce((s2, i) => s2 + invTotals(i).net * docRate(i), 0);
-  view.innerHTML = head('🧑‍💼 نقطة البيع', `<button class="btn pri sync-btn" id="homeSync" data-act="sync">🔄 مزامنة</button><span class="muted">${t}</span>`) + `
+  view.innerHTML = head(`🧑‍💼 نقطة البيع — ${esc(myRep())}`, `<button class="btn pri sync-btn" id="homeSync" data-act="sync">🔄 مزامنة</button><span class="muted">${t}</span>`) + `
   <div class="quick">
     <a href="#/invoice/new?type=sale" class="q"><i>🧾</i>فاتورة مبيع</a>
     <a href="#/invoices?t=sale" class="q"><i>📋</i>فواتيري</a>
@@ -1021,16 +1024,21 @@ V.items = (id, q, view) => {
 /* ------------------------- الفواتير ------------------------- */
 V.invoices = (id, q, view) => {
   const t = isSeller() ? 'sale' : (q.t || 'all');
-  const list = db.invoices.filter(i => t === 'all' || i.type === t).sort((a, b) => b.date.localeCompare(a.date) || (b.created || 0) - (a.created || 0));
+  // فلتر حسب المندوب: الكل / فواتيري / مندوب فلان
+  const reps = [...new Set(db.invoices.map(i => i.rep).filter(Boolean))];
+  const rf = isSeller() ? myRep() : (q.rep || '');
+  const list = db.invoices.filter(i => (t === 'all' || i.type === t) && (isSeller() ? i.rep === rf : !rf ? true : rf === '-' ? !i.rep : i.rep === rf)).sort((a, b) => b.date.localeCompare(a.date) || (b.created || 0) - (a.created || 0));
   let tot = 0;
   const rows = list.map(i => {
     const n = invTotals(i).net; tot += n * docRate(i);
     return `<tr data-act="open" data-id="${i.id}" data-name="${esc(i.no + ' ' + accName(i.party))}"><td class="n">${i.no}</td><td><span class="badge ${i.type}">${INV_TYPES[i.type]}</span></td><td class="n">${i.date}</td>
-      <td>${esc(accName(i.party) || '—')}</td><td>${i.pay === 'cash' ? 'نقدي' : 'آجل'}</td><td class="n">${fmt(n)} <small class="muted">${esc(docSym(i))}</small></td></tr>`;
+      <td>${esc(accName(i.party) || '—')}${i.rep && !isSeller() ? `<br><small class="badge rep">مندوب: ${esc(i.rep)}</small>` : ''}</td><td>${i.pay === 'cash' ? 'نقدي' : 'آجل'}</td><td class="n">${fmt(n)} <small class="muted">${esc(docSym(i))}</small></td></tr>`;
   }).join('');
-  const tab = (k, l) => `<a href="#/invoices?t=${k}" class="${t === k ? 'on' : ''}">${l}</a>`;
-  view.innerHTML = head('الفواتير', Object.entries(INV_TYPES).map(([k, l]) => `<a class="btn ${k === 'sale' ? 'pri' : ''}" href="#/invoice/new?type=${k}">+ ${l}</a>`).join('')) + `
-    <div class="tabs">${tab('all', 'الكل')}${Object.entries(INV_TYPES).map(([k, l]) => tab(k, l)).join('')}</div>
+  const tab = (k, l) => `<a href="#/invoices?t=${k}${rf ? '&rep=' + encodeURIComponent(rf) : ''}" class="${t === k ? 'on' : ''}">${l}</a>`;
+  const rtab = (k, l) => `<a href="#/invoices?t=${t}${k ? '&rep=' + encodeURIComponent(k) : ''}" class="${rf === k ? 'on' : ''}">${l}</a>`;
+  const repTabs = !isSeller() && reps.length ? `<div class="tabs rep-tabs">${rtab('', 'كل الفواتير')}${rtab('-', 'فواتيري')}${reps.map(r => rtab(r, '🧑‍💼 مندوب: ' + esc(r))).join('')}</div>` : '';
+  view.innerHTML = head(isSeller() ? `فواتيري — مندوب: ${esc(myRep())}` : 'الفواتير', Object.entries(INV_TYPES).map(([k, l]) => `<a class="btn ${k === 'sale' ? 'pri' : ''}" href="#/invoice/new?type=${k}">+ ${l}</a>`).join('')) + `
+    ${repTabs}<div class="tabs">${tab('all', 'الكل')}${Object.entries(INV_TYPES).map(([k, l]) => tab(k, l)).join('')}</div>
     <div class="card"><input class="search" id="q" placeholder="🔎 بحث برقم الفاتورة أو الاسم" style="margin-bottom:10px">
     ${table(['الرقم', 'النوع', 'التاريخ', 'الطرف', 'الدفع', 'الصافي'], rows, t !== 'all' ? `<tr><td colspan="5">المجموع (بـ ${esc(cur())})</td><td class="n">${fmt(tot)}</td></tr>` : '')}</div>`;
   $('#q', view).oninput = e => { const s = e.target.value.trim(); $$('tbody tr[data-name]', view).forEach(tr => (tr.style.display = tr.dataset.name.includes(s) ? '' : 'none')); };
@@ -1045,7 +1053,7 @@ function invoiceHtml(inv) {
     return `<tr><td>${i + 1}</td><td>${esc(it.name || '')}</td><td>${esc(it.unit || '')}</td><td>${fmt(l.qty)}</td><td>${fmt(l.price)}</td>${hasCp ? `<td>${cp ? fmt(cp) : ''}</td>` : ''}<td>${fmt(num(l.qty) * num(l.price))}</td></tr>`;
   }).join('');
   const cs = hasCp ? 6 : 5;
-  return `<h3 class="ptitle">${INV_TYPES[inv.type]} رقم ${inv.no}</h3>
+  return `<h3 class="ptitle">${INV_TYPES[inv.type]} رقم ${inv.no}${repTag(inv)}</h3>
     <div class="pmeta"><span>التاريخ: ${inv.date}</span><span>${sideSale ? 'العميل' : 'المورد'}: ${esc(accName(inv.party) || 'نقدي')}</span><span>الدفع: ${inv.pay === 'cash' ? 'نقدي' : 'آجل'}</span><span>العملة: ${esc(docCurName(inv))}${inv.cur === 'fx' ? ` — سعر الصرف: ${fmt(inv.rate)}` : ''}</span></div>
     <table><thead><tr><th>#</th><th>المادة</th><th>الوحدة</th><th>الكمية</th><th>السعر</th>${hasCp ? '<th>سعر المستهلك</th>' : ''}<th>الإجمالي</th></tr></thead><tbody>${rows}</tbody>
     <tfoot><tr><td colspan="${cs}">الإجمالي</td><td>${fmt(t.gross)}</td></tr>${t.disc ? `<tr><td colspan="${cs}">الحسم</td><td>${fmt(t.disc)}</td></tr>` : ''}${t.add ? `<tr><td colspan="${cs}">إضافة${inv.addNote ? ' — ' + esc(inv.addNote) : ''}</td><td>${fmt(t.add)}</td></tr>` : ''}<tr><td colspan="${cs}">الصافي (${esc(sym)})</td><td>${fmt(t.net)}</td></tr>
@@ -1093,7 +1101,7 @@ V.invoice = (id, q, view) => {
   const itemById = id => items.find(x => x.id === id);
   const stockOf = it => (st[it.id] ? st[it.id].qty : num(it.openQty));
 
-  view.innerHTML = head(INV_TYPES[inv.type] + (orig ? ` رقم ${orig.no}` : ' جديدة'),
+  view.innerHTML = head(INV_TYPES[inv.type] + (orig ? ` رقم ${orig.no}${repTag(orig)}` : ' جديدة' + (isSeller() ? ` — مندوب: ${myRep()}` : '')),
     `${orig ? `<button class="btn wa" data-act="wa">واتساب</button><button class="btn" data-act="receipt">🧾 إيصال</button><button class="btn" data-act="print">🖨 طباعة</button><button class="btn red" data-act="del">حذف</button><a class="btn" href="#/invoices">رجوع</a>` : ''}`) + `
   ${orig && q.saved ? `<div class="saved-ok">✅ الفاتورة رقم ${orig.no} محفوظة — ${orig.lines.length} مادة، ${fmt(orig.lines.reduce((s, l) => s + num(l.qty), 0))} قطعة</div>` : ''}
   <div class="inv-count-d">القطع: <b id="cntPcs">0</b></div>
@@ -1553,7 +1561,11 @@ V.invoice = (id, q, view) => {
       lines.forEach(l => { const it = db.items.find(x => x.id === l.item); if (it) fillPrices(it, toBase(l.price)); });
     }
     const out = { ...inv, date: val('date'), pay, party, cashAcc: pay === 'cash' ? cashAcc : '', cur: inv.cur, rate: inv.cur === 'fx' ? rate() : '', discount: num(val('discount')), addition: num(val('addition')), addNote: val('addNote').trim(), note: val('note'), lines };
-    if (!orig) { out.id = uid(); out.no = nextNo(out.type); out.created = Date.now(); db.invoices.push(out); }
+    if (!orig) {
+      // فواتير المندوب: معزولة بترقيم لحالها واسمه عليها
+      if (isSeller()) out.rep = myRep();
+      out.id = uid(); out.no = nextNo(out.type + (out.rep ? '@' + out.rep : '')); out.created = Date.now(); db.invoices.push(out);
+    }
     else {
       // منلاقي الفاتورة برقمها (id) مش بالكائن — حتى لو المزامنة جدّدتها بالخلفية ما يضيع الحفظ
       const ix = db.invoices.findIndex(x => x.id === orig.id);

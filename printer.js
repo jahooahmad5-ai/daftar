@@ -56,6 +56,7 @@ const Receipt = (() => {
     txt(`${kindTxt} - ${inv.pay === 'cash' ? 'نقدي' : 'آجل'}`, { size: 26, bold: 1, align: 'c' });
     line();
     txt(`رقم الفاتورة ${inv.no}`, { size: 26, bold: 1, align: 'c' });
+    if (inv.rep) txt(`المندوب: ${inv.rep}`, { size: 22, bold: 1, align: 'c' });
     txt(`تاريخ الفاتورة: ${inv.date}`, { size: 22 });
     if (tm) txt(`وقت الفاتورة: ${tm.toTimeString().slice(0, 8)}`, { size: 22 });
     line();
