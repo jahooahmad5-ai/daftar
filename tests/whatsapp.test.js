@@ -76,4 +76,73 @@ module.exports = [
       assert.match(rt, /المندوب|مندوب: محمد/); assert.doesNotMatch(rt, /رصيد/);
     },
   },
+  {
+    name: 'المندوب بيختار «من موبايل المدير» ← بتوصل للمدير، وهو بيبعتها من رقمه ومعها رصيد الزبون',
+    fn: async base => {
+      // موبايل المندوب
+      const r = await page(base, { cloud: REP, ls: { daftar_rep_name: 'محمد' } });
+      await r.evaluate(() => {
+        window.open = u => { (window.__opened = window.__opened || []).push(u); };
+        db.accounts.push({ id: 'repbox_1', code: '1113', name: 'صندوق المندوب: محمد', type: 'asset', parent: 'cashGroup', group: false, repBox: 'محمد' },
+          { id: 'c1', code: '112001', name: 'أحمد', type: 'asset', parent: 'customers', group: false, phone: '0933123456' });
+        db.items.push({ id: 'it1', name: 'سكر', sellPrice: 1000, buyPrice: 900, openQty: 100 });
+        db.invoices.push({ id: 'ri1', type: 'sale', no: 3, date: today(), pay: 'credit', cashAcc: '', party: 'c1', cur: 'base', rate: '', lines: [{ item: 'it1', qty: 2, price: 1000 }], discount: 0, rep: 'محمد', created: 1 });
+        save();
+      });
+      await r.go('#/invoice/ri1'); await r.click('[data-act=wa]'); await r.waitForTimeout(200);
+      assert.match(await r.text('#dlg'), /من موبايل المدير/); assert.match(await r.text('#dlg'), /من موبايلي/);
+      await r.click('#waMgr'); await r.waitForTimeout(300);
+      assert.ok(await r.evaluate(() => db.invoices.find(i => i.id === 'ri1').waReq > 0));
+      assert.strictEqual((await r.evaluate(() => window.__opened || [])).length, 0, 'ما لازم ينفتح واتساب على موبايل المندوب');
+      await r.evaluate(() => Cloud.sync(true)); await r.waitForTimeout(300);
+      const pushed = [...r.cloud.pushed].reverse().find(x => x.id === 'ri1'); // آخر نسخة ارتفعت
+      assert.ok(pushed && pushed.data.waReq > 0, 'لازم يرتفع للسحابة مع علامة «لتنبعت من المدير»');
+
+      // موبايل المدير: الفاتورة وصلت بالمزامنة
+      const o = await page(base, { cloud: OWNER });
+      await o.evaluate(d => {
+        window.open = u => { (window.__opened = window.__opened || []).push(decodeURIComponent(u)); };
+        db.accounts.push({ id: 'repbox_1', code: '1113', name: 'صندوق المندوب: محمد', type: 'asset', parent: 'cashGroup', group: false, repBox: 'محمد' },
+          { id: 'c1', code: '112001', name: 'أحمد', type: 'asset', parent: 'customers', group: false, phone: '0933123456' });
+        db.items.push({ id: 'it1', name: 'سكر', sellPrice: 1000, buyPrice: 900, openQty: 100 });
+        db.invoices.push(d); save(); waSetDirect('c1', '963933123456'); route(); waOutboxBar();
+      }, pushed.data);
+      assert.match(await o.text(), /1 رسالة من المندوب/);
+      assert.strictEqual(await o.locator('#waOutBar').isVisible(), true, 'لازم يطلع شريط للمدير');
+      await o.click('#waOutBar'); await o.waitForTimeout(300);
+      assert.match(o.url(), /#\/outbox/);
+      await o.click('[data-act=send]'); await o.waitForTimeout(700);
+      const sent = await o.evaluate(() => window.__opened || []);
+      assert.strictEqual(sent.length, 1);
+      assert.match(sent[0], /^https:\/\/wa\.me\/963933123456\?text=/);
+      assert.match(sent[0], /فاتورة مبيع رقم 3 — مندوب: محمد/);
+      assert.match(sent[0], /رصيد الحساب الحالي/, 'من موبايل المدير لازم يكون فيها رصيد الزبون');
+      assert.ok(await o.evaluate(() => db.invoices.find(i => i.id === 'ri1').waSent > 0));
+      assert.match(await o.text(), /ما في رسائل بانتظار الإرسال/);
+    },
+  },
+  {
+    name: 'المندوب «من موبايلي»: بينفتح الواتساب عنده دغري، و«تلقائي» من الإعدادات بيبعت كل قبض للصندوق',
+    fn: async base => {
+      const r = await page(base, { cloud: REP, ls: { daftar_rep_name: 'محمد' } });
+      await r.evaluate(() => {
+        window.open = u => { (window.__opened = window.__opened || []).push(decodeURIComponent(u)); };
+        db.accounts.push({ id: 'repbox_1', code: '1113', name: 'صندوق المندوب: محمد', type: 'asset', parent: 'cashGroup', group: false, repBox: 'محمد' },
+          { id: 'c1', code: '112001', name: 'أحمد', type: 'asset', parent: 'customers', group: false, phone: '0933123456' });
+        waSetDirect('c1', '963933123456'); save(); route();
+      });
+      // قبض عادي ← «من موبايلي»
+      await r.click('a[href="#/vouchers?new=receipt"]'); await r.waitForTimeout(300);
+      await r.selectOption('#dlg [name=acc]', 'c1'); await r.fill('#dlg [name=amount]', '500'); await r.click('#dlg button.pri'); await r.waitForTimeout(400);
+      assert.strictEqual(await r.evaluate(() => !!db.vouchers.slice(-1)[0].waReq), false, 'بلا «تلقائي» ما لازم يروح للصندوق لحاله');
+      await r.click('#vWa'); await r.waitForTimeout(200); await r.click('#waMine'); await r.waitForTimeout(200);
+      const o = await r.evaluate(() => window.__opened || []);
+      assert.strictEqual(o.length, 1); assert.match(o[0], /سند قبض/); assert.doesNotMatch(o[0], /رصيد/);
+      // المدير فعّل «تلقائي» ← القبض الجاي بيروح للصندوق لحاله
+      await r.evaluate(() => { db.settings.waAuto = '1'; route(); });
+      await r.go('#/'); await r.click('a[href="#/vouchers?new=receipt"]'); await r.waitForTimeout(300);
+      await r.selectOption('#dlg [name=acc]', 'c1'); await r.fill('#dlg [name=amount]', '700'); await r.click('#dlg button.pri'); await r.waitForTimeout(400);
+      assert.strictEqual(await r.evaluate(() => db.vouchers.slice(-1)[0].waReq > 0), true);
+    },
+  },
 ];

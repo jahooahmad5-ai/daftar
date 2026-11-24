@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '6.65';
+const APP_VERSION = '6.66';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -342,11 +342,12 @@ function waSetDirect(id, ph) {
   try { localStorage.setItem(WA_KEY, JSON.stringify(m)); } catch (e) { /* */ }
 }
 const waDirectFor = a => { if (!a) return ''; const d = waMap()[a.id]; if (!d) return ''; const cur = waPhone(a.phone); return !cur || cur === d ? d : ''; };
-function waSend(a, text) {
+function waSend(a, text, onSent) {
   const direct = waDirectFor(a);
   if (direct) {
     window.open(`https://wa.me/${direct}?text=${encodeURIComponent(text)}`, '_blank');
     toast(`📤 عم يفتح واتساب ${a.name} (+${direct})`);
+    if (onSent) onSent();
     return;
   }
   // شاشة تأكيد: لمين رح تنبعت، والرقم قابل للتعديل، أو اختيار المحادثة من واتساب نفسه
@@ -374,8 +375,9 @@ function waSend(a, text) {
     if (a && inp.value.trim() !== (a.phone || '')) { a.phone = inp.value.trim(); save(); }
     if (a) waSetDirect(a.id, $('#waDir', d) && $('#waDir', d).checked ? ph : '');
     d.close(); window.open(`https://wa.me/${ph}?text=${encodeURIComponent(text)}`, '_blank');
+    if (onSent) onSent();
   };
-  $('#waAny', d).onclick = () => { d.close(); window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank'); };
+  $('#waAny', d).onclick = () => { d.close(); window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank'); if (onSent) onSent(); };
 }
 const waHead = () => `*${db.settings.company}*`;
 function waVoucherText(v) {
@@ -868,6 +870,59 @@ V.lock = (id, q, view) => {
   Cloud.card($('#cloudCard', view), { gate: true });
 };
 
+/* ---- صندوق الواتساب: فواتير وقبوضات المندوب بتنبعت للزبون من موبايل المدير (من رقم المحل، ومعها رصيد الزبون) ----
+   المندوب بيعلّم المستند (waReq) ← بيوصل للمدير بالمزامنة ← المدير بيكبس «ابعت» فبتنفتح محادثة الزبون جاهزة (waSent) */
+const waWant = d => !!(d && d.waReq && !d.waSent);
+const waPartyOf = (kind, d) => acc(kind === 'invoices' ? d.party : d.acc);
+const waTextFor = (kind, d) => (kind === 'invoices' ? waInvoiceText(d) : waVoucherText(d));
+const outboxDocs = () => [...db.invoices.filter(waWant).map(d => ({ kind: 'invoices', d })), ...db.vouchers.filter(waWant).map(d => ({ kind: 'vouchers', d }))]
+  .sort((a, b) => num(a.d.waReq) - num(b.d.waReq));
+const waBadge = d => (d && d.waSent && !d.waSkip ? ' <small title="انبعتت للزبون من موبايل المدير">✅</small>' : waWant(d) ? ' <small title="بانتظار المدير يبعتها للزبون">📤</small>' : '');
+// موبايل المندوب: من وين تنبعت الرسالة؟
+function repWaAsk(kind, d) {
+  const a = waPartyOf(kind, d);
+  if (!a || isWalkin(a.id)) return toast('ما في زبون باسمه على هالمستند — اختار زبون أول', 1);
+  const status = d.waSent && !d.waSkip ? '<p class="ok">✅ المدير بعتها للزبون من قبل.</p>' : d.waReq ? '<p class="muted">📤 مبعوتة للمدير من قبل — بانتظار يبعتها.</p>' : '';
+  const f = modal('📤 إرسال لـ ' + a.name + ' على واتساب', `${status}
+    <div class="rc-ways">
+      <button type="button" class="btn wa" id="waMgr">📤 من موبايل المدير <small>(من رقم المحل، وفيها رصيد الزبون)</small></button>
+      <button type="button" class="btn" id="waMine">📱 من موبايلي هلق</button>
+    </div>`);
+  $('#waMgr', f).onclick = () => {
+    $('#dlg').close();
+    if (!d.waReq || d.waSent) { d.waReq = Date.now(); delete d.waSent; delete d.waSkip; save(); }
+    toast('✓ وصلت للمدير — رح تنبعت للزبون من موبايله'); route();
+  };
+  $('#waMine', f).onclick = () => { $('#dlg').close(); waSend(a, waTextFor(kind, d)); };
+}
+// موبايل المدير: شريط فوق إذا في رسائل من المندوب بانتظار الإرسال
+function waOutboxBar() {
+  let bar = document.getElementById('waOutBar');
+  const n = isSeller() || window.__tabInactive ? 0 : outboxDocs().length;
+  if (!n || /^#\/outbox/.test(location.hash)) { if (bar) bar.remove(); return; }
+  if (!bar) { bar = document.createElement('div'); bar.id = 'waOutBar'; document.body.appendChild(bar); bar.onclick = () => { bar.remove(); go('#/outbox'); }; }
+  bar.style.top = document.getElementById('posReqBar') ? '120px' : '10px';
+  bar.innerHTML = `<b>📤 في ${n} رسالة من المندوب لتنبعت للزباين</b><div><button class="btn pri">افتح</button></div>`;
+}
+V.outbox = (id, q, view) => {
+  const list = outboxDocs();
+  const row = ({ kind, d }, i) => {
+    const a = waPartyOf(kind, d), amt = kind === 'invoices' ? invTotals(d).net : num(d.amount);
+    return `<div class="card ob-row"><div><b>${kind === 'invoices' ? esc(INV_TYPES[d.type] || 'فاتورة') : d.type === 'receipt' ? 'سند قبض' : 'سند دفع'} رقم ${esc(d.no)}</b> — ${esc(a ? a.name : '؟')}<br>
+      <small class="muted">${esc(d.date)} · ${fmt(amt)} ${esc(docSym(d))}${d.rep ? ' · مندوب: ' + esc(d.rep) : ''}${a && a.phone ? '' : ' · <span class="bad">ما في رقم للزبون</span>'}</small></div>
+      <div class="acts"><button class="btn wa${i ? '' : ' pri'}" data-act="send" data-id="${i}">📤 ابعت</button><button class="btn" data-act="skip" data-id="${i}" title="ما بدي ابعتها">✕</button></div></div>`;
+  };
+  view.innerHTML = head('📤 رسائل للزباين', '<a class="btn" href="#/">رجوع</a>') +
+    (list.length ? `<p class="muted">فواتير وقبوضات عملها المندوب وطلب تنبعت للزبون من موبايلك. اكبس «ابعت» ← بتنفتح محادثة الزبون والرسالة جاهزة ← اكبس إرسال بالواتساب وارجع لهون.</p>${list.map(row).join('')}`
+      : '<div class="card"><p class="muted">✅ ما في رسائل بانتظار الإرسال.</p></div>');
+  onAct(view, {
+    send: i => { const it = list[+i]; if (!it) return; const a = waPartyOf(it.kind, it.d); if (!a) return toast('الزبون مش موجود', 1);
+      waSend(a, waTextFor(it.kind, it.d), () => { it.d.waSent = Date.now(); save(); setTimeout(route, 400); }); },
+    skip: i => { const it = list[+i]; if (!it || !confirm('ما بدك تبعت هالرسالة؟ (بتنشال من الصندوق)')) return; it.d.waSent = Date.now(); it.d.waSkip = 1; save(); route(); },
+  });
+  waOutboxBar();
+};
+
 /* ---- مبيعات ما وصلت للمدير (موبايل انوقف وكان فيه فواتير ما ارتفعت) ---- */
 const stashText = x => {
   const L = [`*مبيعات ما وصلت للمدير — ${repName() || 'مندوب'}*`];
@@ -959,6 +1014,7 @@ V.home = (id, q, view) => {
     <a href="#/entry/new"><i>📝</i>قيد يومية</a>
     <a href="#/reports"><i>📊</i>التقارير</a>
   </div>
+  ${(() => { const n = outboxDocs().length; return n ? `<a class="card ob-home" href="#/outbox">📤 <b>${n} رسالة من المندوب</b> بانتظار تنبعت للزباين من موبايلك ← <u>افتح</u></a>` : ''; })()}
   ${(() => { const bx = postable().filter(a => a.repBox); return bx.length ? `<div class="card"><h3>💰 صناديق المندوبين</h3>${table(['الصندوق', 'الرصيد', ''], bx.map(a => `<tr><td>${esc(a.name)}</td><td class="n">${fmt(bal(a.id))} ${esc(cur())}</td><td><button class="btn pri" data-act="takeBox" data-id="${a.id}">📥 استلام</button></td></tr>`).join(''))}</div>` : ''; })()}
   <div class="cols2">
     <div class="card"><h3>آخر الفواتير</h3>${table(['الرقم', 'النوع', 'التاريخ', 'الطرف', 'الصافي'],
@@ -1417,7 +1473,7 @@ V.invoices = (id, q, view) => {
   const rows = list.map(i => {
     const n = invTotals(i).net; tot += n * docRate(i);
     return `<tr data-act="open" data-id="${esc(i.id)}" data-name="${esc(i.no + ' ' + accName(i.party))}"><td class="n">${esc(i.no)}</td><td><span class="badge ${typeCls(i.type)}">${INV_TYPES[i.type] || ''}</span></td><td class="n">${esc(i.date)}</td>
-      <td>${esc(accName(i.party) || '—')}${i.rep && !isSeller() ? `<br><small class="badge rep">مندوب: ${esc(i.rep)}</small>` : ''}</td><td>${i.pay === 'cash' ? 'نقدي' : 'آجل'}</td><td class="n">${fmt(n)} <small class="muted">${esc(docSym(i))}</small></td></tr>`;
+      <td>${esc(accName(i.party) || '—')}${waBadge(i)}${i.rep && !isSeller() ? `<br><small class="badge rep">مندوب: ${esc(i.rep)}</small>` : ''}</td><td>${i.pay === 'cash' ? 'نقدي' : 'آجل'}</td><td class="n">${fmt(n)} <small class="muted">${esc(docSym(i))}</small></td></tr>`;
   }).join('');
   const tab = (k, l) => `<a href="#/invoices?t=${k}${rf ? '&rep=' + encodeURIComponent(rf) : ''}" class="${t === k ? 'on' : ''}">${l}</a>`;
   const rtab = (k, l) => `<a href="#/invoices?t=${t}${k ? '&rep=' + encodeURIComponent(k) : ''}" class="${rf === k ? 'on' : ''}">${l}</a>`;
@@ -2024,6 +2080,7 @@ V.invoice = (id, q, view) => {
     if (!orig) {
       // فواتير المندوب: معزولة بترقيم لحالها واسمه عليها
       if (isSeller()) out.rep = myRep();
+      if (isSeller() && db.settings.waAuto === '1' && party && !isWalkin(party)) out.waReq = Date.now();
       delete out.nl; out.id = uid(); Object.assign(out, newNo(out.type + (out.rep ? '@' + out.rep : ''))); out.created = Date.now(); db.invoices.push(out);
     }
     else {
@@ -2089,7 +2146,7 @@ V.invoice = (id, q, view) => {
     saveNew: () => doSave(true),
     savePrint: () => doSave(false, true),
     print: () => printDoc(invoiceHtml(orig)),
-    wa: () => waSend(acc(orig.party), waInvoiceText(orig)),
+    wa: () => (isSeller() ? repWaAsk('invoices', orig) : waSend(acc(orig.party), waInvoiceText(orig))),
     receipt: () => window.Receipt && Receipt.open(orig),
     del: () => { if (isSeller()) return toast('🔒 الحذف مسكّر بوضع البيّاع', 1); if (!confirm('حذف الفاتورة نهائياً؟ سيتم عكس أثرها على الحسابات والمستودع.')) return; db.invoices = db.invoices.filter(x => x.id !== orig.id); db.vouchers = db.vouchers.filter(v => v.inv !== orig.id); save(); toast('تم الحذف'); go('#/invoices'); },
   });
@@ -2187,7 +2244,7 @@ function voucherHtml(v) {
 }
 function sellerVouchers(q, view) {
   const list = db.vouchers.filter(v => v.type === 'receipt' && v.rep === myRep()).sort((a, b) => b.date.localeCompare(a.date) || (b.created || 0) - (a.created || 0));
-  const rows = list.map(v => `<tr data-act="open" data-id="${esc(v.id)}"><td class="n">${esc(v.no)}</td><td class="n">${esc(v.date)}</td><td>${esc(accName(v.acc))}</td><td class="n">${fmt(v.amount)} <small class="muted">${esc(docSym(v))}</small></td></tr>`).join('');
+  const rows = list.map(v => `<tr data-act="open" data-id="${esc(v.id)}"><td class="n">${esc(v.no)}</td><td class="n">${esc(v.date)}</td><td>${esc(accName(v.acc))}${waBadge(v)}</td><td class="n">${fmt(v.amount)} <small class="muted">${esc(docSym(v))}</small></td></tr>`).join('');
   view.innerHTML = head('📥 سندات القبض — ' + esc(myRep()), '<button class="btn pri" data-act="new">📥 قبض من زبون</button>') +
     `<div class="card">${table(['الرقم', 'التاريخ', 'الزبون', 'المبلغ'], rows)}</div>`;
   onAct(view, {
@@ -2215,7 +2272,7 @@ function voucherPrintAsk(v, fresh) {
   const bt = $('#vBt', f); if (bt) bt.onclick = () => { $('#dlg').close(); Receipt.printDirect(v); };
   $('#vRc', f).onclick = () => { $('#dlg').close(); Receipt.open(v); };
   $('#vA4', f).onclick = () => { $('#dlg').close(); printDoc(voucherHtml(v)); };
-  $('#vWa', f).onclick = () => { $('#dlg').close(); waSend(acc(v.acc), waVoucherText(v)); };
+  $('#vWa', f).onclick = () => { $('#dlg').close(); if (isSeller()) repWaAsk('vouchers', v); else waSend(acc(v.acc), waVoucherText(v)); };
 }
 // قبض من زبون (المندوب): المصاري بتنزل بصندوقه، وبلا ما يشوف رصيد الزبون
 function sellerReceipt() {
@@ -2237,6 +2294,7 @@ function sellerReceipt() {
       if (d.cur === 'fx' && R <= 0) { toast('أدخل سعر الصرف', 1); return false; }
       const rp = myRep();
       const v = { id: uid(), type: 'receipt', ...newNo('receipt@' + rp), date: today(), acc: d.acc, cashAcc: box.id, amount, cur: d.cur, rate: d.cur === 'fx' ? R : '', note: d.note || '', rep: rp, created: Date.now() };
+      if (db.settings.waAuto === '1') v.waReq = Date.now();
       db.vouchers.push(v); save(); toast('✓ انحفظ سند القبض');
       setTimeout(() => { route(); voucherPrintAsk(v, true); }, 50);
     },
@@ -2525,6 +2583,7 @@ V.settings = (id, q, view) => {
       { k: 'oldFactor', l: 'كل ليرة جديدة = كم ليرة قديمة', t: 'number' },
       { k: 'startDate', l: 'تاريخ بداية الفترة المحاسبية', t: 'date', req: 1 },
       { k: 'paperWidth', l: 'عرض ورق الطابعة الحرارية', t: 'select', opts: [['80', '80 مم (3 إنش)'], ['58', '58 مم (2 إنش)']] },
+      { k: 'waAuto', l: '📤 واتساب فواتير وقبوضات المندوب', t: 'select', opts: [['0', 'بس لما المندوب يختار «من موبايل المدير»'], ['1', 'كلها بتروح لصندوق الإرسال عندي لحالها']] },
       { k: 'printFast', l: 'سرعة طباعة البلوتوث', t: 'select', opts: [['1', '⚡ سريعة (ضعف السرعة)'], ['0', 'عادية (أنعم شوي)']] },
       { k: 'receiptCp', l: 'عمود سعر المستهلك بالإيصال', t: 'select', opts: [['1', 'يطلع دايماً'], ['0', 'لا يطلع']] },
       { k: 'receiptHeader', l: 'سطر تحت اسم المحل بالإيصال (نشاطك، السجل التجاري…)', ph: 'شيبس، مياه، غازية، بسكويت — س.ت 384', t: 'textarea', full: 1 },

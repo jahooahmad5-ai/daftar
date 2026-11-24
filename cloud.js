@@ -141,6 +141,7 @@ const Cloud = (() => {
     const o = { ...d, no: nOr(d.no), created: nOr(d.created), cur: d.cur || 'base', rate: d.cur === 'fx' ? nOr(d.rate) : '' };
     if ('rep' in d) { if (d.rep == null || d.rep === '') delete o.rep; else o.rep = txt(d.rep, 60); }
     if ('note' in d) o.note = txt(d.note, 500);
+    ['waReq', 'waSent', 'waSkip'].forEach(k => { if (k in d) o[k] = nOr(d[k]); });
     if (kind === 'invoices') {
       if (!['sale', 'purchase', 'saleReturn', 'purchaseReturn'].includes(d.type) || !['cash', 'credit'].includes(d.pay) || !Array.isArray(d.lines)) return null;
       if (d.lines.some(l => !l || typeof l !== 'object' || !RX_ID.test(String(l.item || '')))) return null;
@@ -285,7 +286,7 @@ const Cloud = (() => {
       else pullLater = true;
       st.lastSync = Date.now(); lastErr = ''; saveSt();
       if (changed) refreshView();
-      if (st.owner) posNotify();
+      if (st.owner) { posNotify(); if (typeof waOutboxBar === 'function') waOutboxBar(); }
       if (manual) toast('تمت المزامنة ✓');
     } catch (e) {
       lastErr = e.message;
