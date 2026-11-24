@@ -212,4 +212,33 @@ module.exports = [
       assert.strictEqual(o.length, 1); assert.match(o[0], /^https:\/\/wa\.me\/963933123456\?text=/);
     },
   },
+  {
+    name: 'PDF: الفاتورة والسند بينبعتوا ملف PDF كامل (صفحة 80مم، وفيها صورة الإيصال بدقة عالية)',
+    fn: async base => {
+      const p = await page(base, { cloud: OWNER });
+      await setup(p);
+      await p.evaluate(() => {
+        db.settings.waMode = 'pdf';
+        navigator.canShare = () => true;
+        navigator.share = async data => {
+          const f = data.files[0], t = new TextDecoder('latin1').decode(new Uint8Array(await f.arrayBuffer()));
+          (window.__shared = window.__shared || []).push({ name: f.name, type: f.type, size: f.size, head: t.slice(0, 8), tail: t.trimEnd().slice(-5),
+            w: +(/\/Width (\d+)/.exec(t) || [])[1], box: (/\/MediaBox \[0 0 ([\d.]+)/.exec(t) || [])[1], text: data.text });
+        };
+      });
+      await p.go('#/invoice/inv1'); await p.click('[data-act=wa]');
+      await p.waitForFunction(() => (window.__shared || []).length === 1, null, { timeout: 10000 });
+      let sh = (await p.evaluate(() => window.__shared))[0];
+      assert.strictEqual(sh.name, 'invoice-4.pdf'); assert.strictEqual(sh.type, 'application/pdf');
+      assert.strictEqual(sh.head, '%PDF-1.4'); assert.strictEqual(sh.tail, '%%EOF');
+      assert.strictEqual(sh.w, 1152, 'الصورة جوّا الـ PDF لازم تكون بالدقة العالية');
+      assert.strictEqual(Math.round(+sh.box), 227, 'الصفحة لازم تكون بعرض 80مم');
+      assert.match(sh.text, /فاتورة مبيع رقم 4/);
+      await p.go('#/vouchers'); await p.click('tr[data-id="vr1"]'); await p.waitForTimeout(150); await p.click('#vWa');
+      await p.waitForFunction(() => (window.__shared || []).length === 2, null, { timeout: 10000 });
+      sh = (await p.evaluate(() => window.__shared))[1];
+      assert.strictEqual(sh.name, 'receipt-9.pdf'); assert.strictEqual(sh.head, '%PDF-1.4');
+      assert.deepStrictEqual(p.errors, []);
+    },
+  },
 ];

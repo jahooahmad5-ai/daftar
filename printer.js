@@ -159,6 +159,11 @@ const Receipt = (() => {
     const c = make(d, { width: 576, scale: 2 });
     return new Promise(res => c.toBlob(res, 'image/png'));
   }
+  // نفس الصورة بس كملف PDF (الواتساب ما بيضغطه): صفحة بعرض 80مم
+  async function pdfDoc(d) {
+    await loadLogo();
+    return pdfBlob(make(d, { width: 576, scale: 2 }), { mm: 80, q: 0.95 });
+  }
 
   // الشعار (من الإعدادات) يتحمّل مرة وحدة
   let logoImg = null, logoSrc = '';
@@ -419,13 +424,13 @@ const Receipt = (() => {
   }
 
   /* ---------- PDF: صفحة وحدة بعرض ورق الإيصال، فيها صورة الإيصال (بلا مكتبات وبيشتغل بلا نت) ---------- */
-  function pdfBlob(canvas) {
-    const mm = String(db.settings.paperWidth) === '58' ? 58 : 80;
+  function pdfBlob(canvas, o = {}) {
+    const mm = o.mm || (String(db.settings.paperWidth) === '58' ? 58 : 80);
     const W = mm * 72 / 25.4, H = W * canvas.height / canvas.width; // بالنقاط
     // خلفية بيضا (الـ JPEG ما بيدعم الشفافية)
     const c = document.createElement('canvas'); c.width = canvas.width; c.height = canvas.height;
     const x = c.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, c.width, c.height); x.drawImage(canvas, 0, 0);
-    const b64 = c.toDataURL('image/jpeg', 0.92).split(',')[1], bin = atob(b64);
+    const b64 = c.toDataURL('image/jpeg', o.q || 0.92).split(',')[1], bin = atob(b64);
     const img = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) img[i] = bin.charCodeAt(i);
     const enc = new TextEncoder(), parts = [], offs = []; let len = 0;
     const add = d => { const u = typeof d === 'string' ? enc.encode(d) : d; parts.push(u); len += u.length; };
@@ -518,6 +523,6 @@ const Receipt = (() => {
       else { toast(`❌ ما زبطت الطباعة بالبلوتوث — ${nm} محفوظ${isVoucher(inv) ? '' : 'ة'}، جرّب طريقة تانية`, 1); open(inv); }
     }
   }
-  return { open, pdfBlob, printDirect, warm, pill, build: inv => make(inv), buildVoucher, picture, escpos, loadLogo, balances };
+  return { open, pdfBlob, printDirect, warm, pill, build: inv => make(inv), buildVoucher, picture, pdf: pdfDoc, escpos, loadLogo, balances };
 })();
 window.Receipt = Receipt;

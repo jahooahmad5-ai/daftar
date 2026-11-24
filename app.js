@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '6.67';
+const APP_VERSION = '6.68';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -886,12 +886,14 @@ const waCaption = (kind, d) => {
 };
 async function waSendDoc(kind, d, onSent) {
   const a = waPartyOf(kind, d);
-  if (db.settings.waMode === 'text' || !window.Receipt || !Receipt.picture) return waSend(a, waTextFor(kind, d), onSent);
+  const mode = db.settings.waMode === 'pdf' ? 'pdf' : db.settings.waMode === 'text' ? 'text' : 'img';
+  if (mode === 'text' || !window.Receipt || !Receipt.picture) return waSend(a, waTextFor(kind, d), onSent);
   let blob = null;
-  try { toast('🖼 عم جهّز الصورة…'); blob = await Receipt.picture(d); } catch (e) { /* */ }
+  try { toast(mode === 'pdf' ? '📄 عم جهّز الـ PDF…' : '🖼 عم جهّز الصورة…'); blob = mode === 'pdf' ? await Receipt.pdf(d) : await Receipt.picture(d); } catch (e) { /* */ }
   if (!blob) return waSend(a, waTextFor(kind, d), onSent);
   // اسم الملف بالإنجليزي: بعض الأجهزة بتغيّر الأسماء العربية لـ «download»
-  const name = `${kind === 'invoices' ? 'invoice' : d.type === 'receipt' ? 'receipt' : 'payment'}-${d.no}.png`, file = new File([blob], name, { type: 'image/png' });
+  const type = mode === 'pdf' ? 'application/pdf' : 'image/png';
+  const name = `${kind === 'invoices' ? 'invoice' : d.type === 'receipt' ? 'receipt' : 'payment'}-${d.no}.${mode === 'pdf' ? 'pdf' : 'png'}`, file = new File([blob], name, { type });
   if (navigator.canShare && navigator.canShare({ files: [file] })) {
     if (a) toast(`📤 اختار محادثة «${a.name}» من الواتساب`);
     try { await navigator.share({ files: [file], text: waCaption(kind, d) }); if (onSent) onSent(); }
@@ -901,7 +903,7 @@ async function waSendDoc(kind, d, onSent) {
   // جهاز ما بيدعم مشاركة الصور (متل الكمبيوتر): منزّل الصورة ومنفتح محادثة الزبون لترفقها
   const u = URL.createObjectURL(blob), el = document.createElement('a'); el.href = u; el.download = name;
   document.body.appendChild(el); el.click(); el.remove(); setTimeout(() => URL.revokeObjectURL(u), 3000);
-  toast('🖼 نزلت الصورة — ارفقها بمحادثة الزبون', 1);
+  toast(mode === 'pdf' ? '📄 نزل الـ PDF — ارفقه بمحادثة الزبون' : '🖼 نزلت الصورة — ارفقها بمحادثة الزبون', 1);
   waSend(a, waCaption(kind, d), onSent);
 }
 // موبايل المندوب: من وين تنبعت الرسالة؟
@@ -2609,7 +2611,7 @@ V.settings = (id, q, view) => {
       { k: 'oldFactor', l: 'كل ليرة جديدة = كم ليرة قديمة', t: 'number' },
       { k: 'startDate', l: 'تاريخ بداية الفترة المحاسبية', t: 'date', req: 1 },
       { k: 'paperWidth', l: 'عرض ورق الطابعة الحرارية', t: 'select', opts: [['80', '80 مم (3 إنش)'], ['58', '58 مم (2 إنش)']] },
-      { k: 'waMode', l: '🟢 إرسال الفاتورة والسند على واتساب', t: 'select', opts: [['img', '🖼 صورة (عالية الجودة)'], ['text', '✉️ نص (بيروح دغري على رقم الزبون)']] },
+      { k: 'waMode', l: '🟢 إرسال الفاتورة والسند على واتساب', t: 'select', opts: [['img', '🖼 صورة (عالية الجودة، بتبيّن دغري بالمحادثة)'], ['pdf', '📄 PDF (ملف بجودته الكاملة، الزبون بيفتحه)'], ['text', '✉️ نص (بيروح دغري على رقم الزبون)']] },
       { k: 'waAuto', l: '📤 واتساب فواتير وقبوضات المندوب', t: 'select', opts: [['0', 'بس لما المندوب يختار «من موبايل المدير»'], ['1', 'كلها بتروح لصندوق الإرسال عندي لحالها']] },
       { k: 'printFast', l: 'سرعة طباعة البلوتوث', t: 'select', opts: [['1', '⚡ سريعة (ضعف السرعة)'], ['0', 'عادية (أنعم شوي)']] },
       { k: 'receiptCp', l: 'عمود سعر المستهلك بالإيصال', t: 'select', opts: [['1', 'يطلع دايماً'], ['0', 'لا يطلع']] },
