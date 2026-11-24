@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '6.69';
+const APP_VERSION = '6.70';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -342,14 +342,21 @@ function waSetDirect(id, ph) {
   try { localStorage.setItem(WA_KEY, JSON.stringify(m)); } catch (e) { /* */ }
 }
 const waDirectFor = a => { if (!a) return ''; const d = waMap()[a.id]; if (!d) return ''; const cur = waPhone(a.phone); return !cur || cur === d ? d : ''; };
-function waSend(a, text, onSent) {
-  const direct = waDirectFor(a);
-  if (direct) {
-    window.open(`https://wa.me/${direct}?text=${encodeURIComponent(text)}`, '_blank');
-    toast(`📤 عم يفتح واتساب ${a.name} (+${direct})`);
+const waUrl = (ph, text) => `https://wa.me/${ph || ''}${text ? '?text=' + encodeURIComponent(text) : ''}`;
+function waSend(a, text, onSent, pic) {
+  const open = (ph, msg) => {
+    window.open(waUrl(ph, text), '_blank');
+    if (msg) toast(msg);
     if (onSent) onSent();
-    return;
-  }
+  };
+  // pic (وضع الصورة): منسخ الصورة قبل ما نطلع من البرنامج، وبعدين بتنفتح محادثة الزبون — وإذا ما زبط النسخ بتطلع قائمة المشاركة
+  const go = async (ph, msg) => {
+    if (!pic) return open(ph, msg);
+    try { await pic.copy(); } catch (e) { return pic.share(); }
+    waPasteHelp(a, () => open(ph), pic.share);
+  };
+  const direct = waDirectFor(a);
+  if (direct) { go(direct, `📤 عم يفتح واتساب ${a.name} (+${direct})`); return; }
   // شاشة تأكيد: لمين رح تنبعت، والرقم قابل للتعديل، أو اختيار المحادثة من واتساب نفسه
   const canPick = 'contacts' in navigator && 'ContactsManager' in window;
   modal('📤 إرسال على واتساب', `
@@ -359,11 +366,12 @@ function waSend(a, text, onSent) {
       ${canPick ? '<button type="button" class="btn" id="waC" title="من جهات الاتصال">📇</button>' : ''}</div></label>
     <p class="muted" id="waHint" style="font-size:13px;margin:6px 0"></p>
     ${a ? '<label class="wa-dir"><input type="checkbox" id="waDir" checked> 📌 المرات الجاية ابعت دغري على هالرقم (بلا هالشاشة)</label>' : ''}
+    ${pic ? '<p class="muted" style="font-size:13px">🖼 رح تنسخ الصورة وتنفتح محادثة الزبون — بتلصقها وبتبعت.</p>' : ''}
     <div class="rc-ways">
       <button type="button" class="btn wa" id="waGo">✅ ابعت لهالرقم</button>
-      <button type="button" class="btn" id="waAny">💬 اختار المحادثة من واتساب</button>
+      <button type="button" class="btn" id="waAny">${pic ? '📤 اختار المحادثة من قائمة المشاركة' : '💬 اختار المحادثة من واتساب'}</button>
     </div>
-    <details style="margin-top:10px"><summary class="muted" style="font-size:13px">شوف الرسالة</summary><pre style="white-space:pre-wrap;font:inherit;font-size:13px;background:#f7faf9;padding:8px;border-radius:8px">${esc(text)}</pre></details>`);
+    ${text ? `<details style="margin-top:10px"><summary class="muted" style="font-size:13px">شوف الرسالة</summary><pre style="white-space:pre-wrap;font:inherit;font-size:13px;background:#f7faf9;padding:8px;border-radius:8px">${esc(text)}</pre></details>` : ''}`);
   const d = $('#dlg'), inp = $('#waPh', d), hint = $('#waHint', d);
   const upd = () => { const p = waPhone(inp.value); hint.textContent = inp.value.trim() ? (p ? '✓ الرقم: +' + p : '⚠️ الرقم مو صحيح') : 'ما في رقم — فيك تختار المحادثة من واتساب'; };
   inp.oninput = upd; upd();
@@ -374,10 +382,9 @@ function waSend(a, text, onSent) {
     if (!ph) { toast('الرقم مو صحيح', 1); inp.focus(); return; }
     if (a && inp.value.trim() !== (a.phone || '')) { a.phone = inp.value.trim(); save(); }
     if (a) waSetDirect(a.id, $('#waDir', d) && $('#waDir', d).checked ? ph : '');
-    d.close(); window.open(`https://wa.me/${ph}?text=${encodeURIComponent(text)}`, '_blank');
-    if (onSent) onSent();
+    d.close(); go(ph);
   };
-  $('#waAny', d).onclick = () => { d.close(); window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank'); if (onSent) onSent(); };
+  $('#waAny', d).onclick = () => { d.close(); if (pic) pic.share(); else open(''); };
 }
 const waHead = () => `*${db.settings.company}*`;
 function waVoucherText(v) {
@@ -889,6 +896,41 @@ async function waSendDoc(kind, d, onSent) {
   // الأساسي: نص (بيروح دغري على رقم الزبون) — والصورة والـ PDF إذا اخترتهن بالإعدادات
   const mode = db.settings.waMode === 'pdf' ? 'pdf' : db.settings.waMode === 'img' ? 'img' : 'text';
   if (mode === 'text' || !window.Receipt || !Receipt.picture) return waSend(a, waTextFor(kind, d), onSent);
+  /* 🖼 صورة مباشرة: الواتساب ما بيسمح لأي برنامج يبعت صورة لرقم معيّن (بس نص) —
+     فمنسخ الصورة ومنفتح محادثة الزبون دغري، وهو بيلصقها بكبسة وبيبعت. إذا الموبايل ما بيقدر ينسخ صور ← قائمة المشاركة */
+  const share = () => waShareDoc(kind, d, onSent, mode);
+  if (mode === 'img' && a && !isWalkin(a.id) && waCanCopyPic()) {
+    return waSend(a, '', onSent, {
+      copy: () => { toast('🖼 عم جهّز الصورة…'); return navigator.clipboard.write([new ClipboardItem({ 'image/png': Receipt.picture(d).then(b => b || Promise.reject(new Error('no image'))) })]); },
+      share,
+    });
+  }
+  return share();
+}
+const waCanCopyPic = () => !!(window.ClipboardItem && navigator.clipboard && navigator.clipboard.write && (!ClipboardItem.supports || ClipboardItem.supports('image/png')));
+// بعد ما تنسخت الصورة: أول ٣ مرات منشرح كيف تلصقها بالمحادثة، وبعدها بتنفتح المحادثة دغري
+const WA_HELP_KEY = 'daftar_paste_help';
+function waPasteHelp(a, open, share) {
+  let n = 0; try { n = +localStorage.getItem(WA_HELP_KEY) || 0; } catch (e) { /* */ }
+  if (n >= 3) { toast('🖼 الصورة منسوخة — الصقها بالمحادثة وابعت'); return open(); }
+  try { localStorage.setItem(WA_HELP_KEY, String(n + 1)); } catch (e) { /* */ }
+  const f = modal('🖼 الصورة جاهزة', `<p style="margin-top:0">✓ نسخنا الصورة. هلق بتنفتح محادثة <b>${esc((a && a.name) || 'الزبون')}</b> على واتساب، وفيها:</p>
+    <ol style="line-height:1.9;padding-inline-start:22px;margin:6px 0 12px">
+      <li>اكبس على خانة الكتابة</li>
+      <li>بتطلع الصورة فوق الكيبورد ← <b>اكبس عليها</b><br><small class="muted">أو: كبسة مطوّلة على الخانة ← «لصق»</small></li>
+      <li>ابعت ✅</li>
+    </ol>
+    <div class="rc-ways">
+      <button type="button" class="btn wa" id="waOpen">💬 افتح المحادثة</button>
+      <button type="button" class="btn" id="waShr">📤 ما زبط اللصق؟ ابعتها من قائمة المشاركة</button>
+    </div>
+    <p class="muted" style="font-size:12px;margin-bottom:0">هالشرح بيطلع أول ٣ مرات بس.</p>`);
+  $('#waOpen', f).onclick = () => { $('#dlg').close(); open(); };
+  $('#waShr', f).onclick = () => { $('#dlg').close(); share(); };
+}
+// مشاركة الصورة/الـ PDF من قائمة المشاركة (بتختار المحادثة)
+async function waShareDoc(kind, d, onSent, mode) {
+  const a = waPartyOf(kind, d);
   let blob = null;
   try { toast(mode === 'pdf' ? '📄 عم جهّز الـ PDF…' : '🖼 عم جهّز الصورة…'); blob = mode === 'pdf' ? await Receipt.pdf(d) : await Receipt.picture(d); } catch (e) { /* */ }
   if (!blob) return waSend(a, waTextFor(kind, d), onSent);
@@ -942,7 +984,7 @@ V.outbox = (id, q, view) => {
       <div class="acts"><button class="btn wa${i ? '' : ' pri'}" data-act="send" data-id="${i}">📤 ابعت</button><button class="btn" data-act="skip" data-id="${i}" title="ما بدي ابعتها">✕</button></div></div>`;
   };
   view.innerHTML = head('📤 رسائل للزباين', '<a class="btn" href="#/">رجوع</a>') +
-    (list.length ? `<p class="muted">فواتير وقبوضات عملها المندوب وطلب تنبعت للزبون من موبايلك. اكبس «ابعت» ← بتنفتح محادثة الزبون والرسالة جاهزة ← اكبس إرسال بالواتساب وارجع لهون.</p>${list.map(row).join('')}`
+    (list.length ? `<p class="muted">فواتير وقبوضات عملها المندوب وطلب تنبعت للزبون من موبايلك. اكبس «ابعت» ← بتنفتح محادثة الزبون ${db.settings.waMode === 'img' ? 'والصورة منسوخة ← الصقها' : 'والرسالة جاهزة'} ← اكبس إرسال بالواتساب وارجع لهون.</p>${list.map(row).join('')}`
       : '<div class="card"><p class="muted">✅ ما في رسائل بانتظار الإرسال.</p></div>');
   onAct(view, {
     send: i => { const it = list[+i]; if (!it) return; const a = waPartyOf(it.kind, it.d); if (!a) return toast('الزبون مش موجود', 1);
@@ -2612,7 +2654,7 @@ V.settings = (id, q, view) => {
       { k: 'oldFactor', l: 'كل ليرة جديدة = كم ليرة قديمة', t: 'number' },
       { k: 'startDate', l: 'تاريخ بداية الفترة المحاسبية', t: 'date', req: 1 },
       { k: 'paperWidth', l: 'عرض ورق الطابعة الحرارية', t: 'select', opts: [['80', '80 مم (3 إنش)'], ['58', '58 مم (2 إنش)']] },
-      { k: 'waMode', l: '🟢 إرسال الفاتورة والسند على واتساب', t: 'select', opts: [['text', '✉️ نص (بيروح دغري على رقم الزبون)'], ['img', '🖼 صورة (عالية الجودة، بتبيّن دغري بالمحادثة)'], ['pdf', '📄 PDF (ملف بجودته الكاملة، الزبون بيفتحه)']] },
+      { k: 'waMode', l: '🟢 إرسال الفاتورة والسند على واتساب', t: 'select', opts: [['text', '✉️ نص (بيروح دغري على رقم الزبون)'], ['img', '🖼 صورة (بتنفتح محادثة الزبون دغري — بتلصق الصورة وبتبعت)'], ['pdf', '📄 PDF (ملف بجودته الكاملة، الزبون بيفتحه)']] },
       { k: 'waAuto', l: '📤 واتساب فواتير وقبوضات المندوب', t: 'select', opts: [['0', 'بس لما المندوب يختار «من موبايل المدير»'], ['1', 'كلها بتروح لصندوق الإرسال عندي لحالها']] },
       { k: 'printFast', l: 'سرعة طباعة البلوتوث', t: 'select', opts: [['1', '⚡ سريعة (ضعف السرعة)'], ['0', 'عادية (أنعم شوي)']] },
       { k: 'receiptCp', l: 'عمود سعر المستهلك بالإيصال', t: 'select', opts: [['1', 'يطلع دايماً'], ['0', 'لا يطلع']] },

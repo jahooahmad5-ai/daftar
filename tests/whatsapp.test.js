@@ -150,12 +150,106 @@ module.exports = [
     },
   },
   {
-    name: 'صورة: الفاتورة والسند بينبعتوا صورة PNG عالية الجودة (عرض 1152) مع سطر تحتها',
+    name: 'صورة مباشرة: بتنسخ صورة الفاتورة (PNG عالية الجودة) وبتفتح محادثة الزبون دغري — وأول ٣ مرات شرح كيف تلصقها',
     fn: async base => {
       const p = await page(base, { cloud: OWNER });
       await setup(p);
       await p.evaluate(() => {
         db.settings.waMode = 'img';
+        navigator.canShare = () => true; navigator.share = async () => { window.__shared = (window.__shared || 0) + 1; };
+        navigator.clipboard.write = async items => {
+          const it = items[0], b = await it.getType('image/png'), bm = await createImageBitmap(b);
+          (window.__clip = window.__clip || []).push({ types: it.types.join(), type: b.type, size: b.size, w: bm.width, h: bm.height });
+        };
+      });
+      // أول مرة: شاشة تأكيد الرقم ← بتنسخ الصورة ← شرح اللصق ← «افتح المحادثة»
+      await p.go('#/invoice/inv1'); await p.click('[data-act=wa]'); await p.waitForTimeout(200);
+      assert.match(await p.text('#dlg'), /رح تنسخ الصورة/);
+      await p.click('#waGo');
+      await p.waitForSelector('#waOpen', { timeout: 10000 });
+      let c = await p.evaluate(() => window.__clip);
+      assert.strictEqual(c.length, 1); assert.strictEqual(c[0].types, 'image/png'); assert.strictEqual(c[0].type, 'image/png');
+      assert.strictEqual(c[0].w, 1152, 'الصورة لازم تكون بالدقة العالية');
+      assert.ok(c[0].h > 1000 && c[0].size > 20000, 'الصورة لازم تكون كاملة: ' + JSON.stringify(c[0]));
+      assert.match(await p.text('#dlg'), /اكبس عليها/);
+      assert.strictEqual((await opened(p)).length, 0, 'المحادثة بتنفتح بس لما يكبس «افتح المحادثة»');
+      await p.click('#waOpen'); await p.waitForTimeout(200);
+      let o = await opened(p);
+      assert.deepStrictEqual(o, ['https://wa.me/963933123456'], 'محادثة الزبون دغري (بلا نص — الصورة فيها كل شي)');
+      // بعد ٣ مرات شرح: السند بينسخ وبتنفتح المحادثة دغري بلا ولا شاشة
+      await p.evaluate(() => localStorage.setItem('daftar_paste_help', '3'));
+      await p.go('#/vouchers'); await p.click('tr[data-id="vr1"]'); await p.waitForTimeout(150); await p.click('#vWa');
+      await p.waitForFunction(() => (window.__opened || []).length === 2, null, { timeout: 10000 });
+      o = await opened(p); c = await p.evaluate(() => window.__clip);
+      assert.strictEqual(o[1], 'https://wa.me/963933123456'); assert.strictEqual(c.length, 2); assert.strictEqual(c[1].w, 1152);
+      assert.strictEqual(await p.evaluate(() => document.getElementById('dlg').open), false, 'ما لازم تطلع ولا شاشة');
+      assert.ok(!(await p.evaluate(() => window.__shared)), 'ما لازم تطلع قائمة المشاركة');
+      assert.deepStrictEqual(p.errors, []);
+    },
+  },
+  {
+    name: 'صورة مباشرة من صندوق المدير: بتنعلّم «انبعتت» بس لما تنفتح المحادثة فعلاً',
+    fn: async base => {
+      const o = await page(base, { cloud: OWNER });
+      await o.evaluate(() => {
+        db.settings.waMode = 'img';
+        window.open = u => { (window.__opened = window.__opened || []).push(decodeURIComponent(u)); };
+        db.accounts.push({ id: 'c1', code: '112001', name: 'أحمد', type: 'asset', parent: 'customers', group: false, phone: '0933123456' });
+        db.items.push({ id: 'it1', name: 'سكر', sellPrice: 1000, buyPrice: 900, openQty: 100 });
+        db.invoices.push({ id: 'ri1', type: 'sale', no: 3, date: today(), pay: 'credit', cashAcc: '', party: 'c1', cur: 'base', rate: '', lines: [{ item: 'it1', qty: 2, price: 1000 }], discount: 0, rep: 'محمد', created: 1, waReq: Date.now() });
+        save(); waSetDirect('c1', '963933123456');
+        navigator.clipboard.write = async items => { await items[0].getType('image/png'); window.__copies = (window.__copies || 0) + 1; };
+      });
+      await o.go('#/outbox');
+      assert.match(await o.text(), /الصورة منسوخة/);
+      await o.click('[data-act=send]'); await o.waitForSelector('#waOpen', { timeout: 10000 });
+      await o.closeDlg(); await o.waitForTimeout(300);
+      assert.ok(!(await o.evaluate(() => db.invoices[0].waSent)), 'سكّر الشرح بلا ما يفتح المحادثة ← لازم تضل بالصندوق');
+      await o.click('[data-act=send]'); await o.waitForSelector('#waOpen', { timeout: 10000 });
+      await o.click('#waOpen'); await o.waitForTimeout(700);
+      assert.deepStrictEqual(await o.evaluate(() => window.__opened), ['https://wa.me/963933123456']);
+      assert.strictEqual(await o.evaluate(() => window.__copies), 2);
+      assert.ok(await o.evaluate(() => db.invoices[0].waSent > 0));
+      assert.match(await o.text(), /ما في رسائل بانتظار الإرسال/);
+      assert.deepStrictEqual(o.errors, []);
+    },
+  },
+  {
+    name: 'صورة: إذا ما زبط نسخ الصورة (أو «ما زبط اللصق؟») بتطلع قائمة المشاركة — بلا ما تنفتح المحادثة مرتين',
+    fn: async base => {
+      const p = await page(base, { cloud: OWNER });
+      await setup(p);
+      await p.evaluate(() => {
+        db.settings.waMode = 'img'; waSetDirect('c1', '963933123456');
+        navigator.canShare = () => true;
+        navigator.share = async data => { (window.__shared = window.__shared || []).push(data.files[0].name); };
+        navigator.clipboard.write = async () => { throw new DOMException('denied', 'NotAllowedError'); };
+      });
+      await p.go('#/invoice/inv1'); await p.click('[data-act=wa]');
+      await p.waitForFunction(() => (window.__shared || []).length === 1, null, { timeout: 10000 }); await p.waitForTimeout(200);
+      assert.deepStrictEqual(await p.evaluate(() => window.__shared), ['invoice-4.png']);
+      assert.strictEqual((await opened(p)).length, 0, 'ما لازم تنفتح المحادثة إذا الصورة ما انسخت');
+      // النسخ زبط بس اللصق ما زبط على هالموبايل ← «ما زبط اللصق؟» بالشرح بيفتح قائمة المشاركة
+      await p.evaluate(() => { navigator.clipboard.write = async items => { await items[0].getType('image/png'); }; });
+      await p.click('[data-act=wa]'); await p.waitForSelector('#waShr', { timeout: 10000 }); await p.click('#waShr');
+      await p.waitForFunction(() => (window.__shared || []).length === 2, null, { timeout: 10000 });
+      assert.strictEqual((await opened(p)).length, 0);
+      // زبون عام (بلا رقم): مشاركة دغري بلا نسخ
+      await p.evaluate(() => { db.invoices.find(i => i.id === 'inv1').party = ensureWalkin().id; save(); window.__copied = 0; navigator.clipboard.write = async () => { window.__copied = 1; }; });
+      await p.go('#/invoices'); await p.go('#/invoice/inv1'); await p.click('[data-act=wa]');
+      await p.waitForFunction(() => (window.__shared || []).length === 3, null, { timeout: 10000 });
+      assert.strictEqual(await p.evaluate(() => window.__copied), 0);
+      assert.strictEqual((await opened(p)).length, 0);
+      assert.deepStrictEqual(p.errors, []);
+    },
+  },
+  {
+    name: 'صورة من قائمة المشاركة (موبايل ما بيقدر ينسخ صور): PNG عالية الجودة (عرض 1152) مع سطر تحتها',
+    fn: async base => {
+      const p = await page(base, { cloud: OWNER });
+      await setup(p);
+      await p.evaluate(() => {
+        db.settings.waMode = 'img'; window.ClipboardItem = undefined;
         navigator.canShare = () => true;
         navigator.share = async data => { const f = data.files[0], bm = await createImageBitmap(f); (window.__shared = window.__shared || []).push({ name: f.name, type: f.type, size: f.size, w: bm.width, h: bm.height, text: data.text }); };
       });
@@ -176,7 +270,7 @@ module.exports = [
     },
   },
   {
-    name: 'صورة من صندوق المدير: بتنعلّم «انبعتت» بس إذا انبعتت فعلاً (مش إذا لغيت المشاركة)',
+    name: 'صورة من قائمة المشاركة بصندوق المدير: بتنعلّم «انبعتت» بس إذا انبعتت فعلاً (مش إذا لغيت المشاركة)',
     fn: async base => {
       const o = await page(base, { cloud: OWNER });
       await o.evaluate(() => {
@@ -184,7 +278,7 @@ module.exports = [
         db.accounts.push({ id: 'c1', code: '112001', name: 'أحمد', type: 'asset', parent: 'customers', group: false, phone: '0933123456' });
         db.items.push({ id: 'it1', name: 'سكر', sellPrice: 1000, buyPrice: 900, openQty: 100 });
         db.invoices.push({ id: 'ri1', type: 'sale', no: 3, date: today(), pay: 'credit', cashAcc: '', party: 'c1', cur: 'base', rate: '', lines: [{ item: 'it1', qty: 2, price: 1000 }], discount: 0, rep: 'محمد', created: 1, waReq: Date.now() });
-        save();
+        save(); window.ClipboardItem = undefined;
         navigator.canShare = () => true;
         window.__cancel = true;
         navigator.share = async () => { if (window.__cancel) { const e = new Error('cancel'); e.name = 'AbortError'; throw e; } window.__ok = 1; };
@@ -202,7 +296,7 @@ module.exports = [
     fn: async base => {
       const p = await page(base, { cloud: OWNER });
       await setup(p);
-      await p.evaluate(() => { db.settings.waMode = 'img'; navigator.canShare = undefined; waSetDirect('c1', '963933123456'); });
+      await p.evaluate(() => { db.settings.waMode = 'img'; window.ClipboardItem = undefined; navigator.canShare = undefined; waSetDirect('c1', '963933123456'); });
       const dl = p.waitForEvent('download', { timeout: 10000 });
       await p.go('#/invoice/inv1'); await p.click('[data-act=wa]');
       const d = await dl;
