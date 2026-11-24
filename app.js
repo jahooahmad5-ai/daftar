@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '6.58';
+const APP_VERSION = '6.59';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -1891,7 +1891,8 @@ V.invoice = (id, q, view) => {
       }
     }
     // الكمية بالمستودع ما بتكفي: تنبيه واضح وبتقرر (ما منمنع — ممكن البضاعة موجودة وفاتورة شرائها لسا ما انسجّلت)
-    if (['sale', 'purchaseReturn'].includes(inv.type) && !skipStock) {
+    // (المدير ما بيطلعله هالتنبيه — بس موبايل المندوب)
+    if (['sale', 'purchaseReturn'].includes(inv.type) && !skipStock && isSeller()) {
       const need = {}, back = {};
       lines.forEach(l => { need[l.item] = (need[l.item] || 0) + l.qty; });
       if (orig && ['sale', 'purchaseReturn'].includes(orig.type)) orig.lines.forEach(l => { back[l.item] = (back[l.item] || 0) + num(l.qty); });

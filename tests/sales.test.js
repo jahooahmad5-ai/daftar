@@ -130,18 +130,28 @@ module.exports = [
     },
   },
   {
-    name: 'المستودع: الكمية ما بتكفي ← تنبيه، و«احفظ هيك» بيحفظ',
+    name: 'المستودع: المدير بيحفظ بلا تنبيه، والمندوب بيطلعله تنبيه و«احفظ هيك» بيحفظ',
     fn: async base => {
-      const p = await page(base, { cloud: OWNER });
-      await p.evaluate(() => { db.items.push({ id: 'it1', code: '1', name: 'بسكوت', sellPrice: 1000, buyPrice: 900, openQty: 2 }); ensureWalkin(); save();
-        localStorage.setItem('daftar_draft_sale', JSON.stringify({ lines: [{ item: 'it1', qty: 5, price: 1000 }], payment: '', inv: { date: today(), pay: 'cash', cashAcc: 'cash', party: 'walkin' }, at: Date.now() })); });
+      const draft = pt => JSON.stringify({ lines: [{ item: 'it1', qty: 5, price: 1000 }], payment: '', inv: { date: new Date().toISOString().slice(0, 10), pay: 'cash', cashAcc: pt === 'walkin' ? 'repbox_1' : 'cash', party: 'walkin' }, at: Date.now() });
+      // المدير
+      const o = await page(base, { cloud: OWNER });
+      await o.evaluate(() => { db.items.push({ id: 'it1', code: '1', name: 'بسكوت', sellPrice: 1000, buyPrice: 900, openQty: 2 }); ensureWalkin(); save(); });
+      await o.evaluate(d => localStorage.setItem('daftar_draft_sale', d), draft('x').replace('"cashAcc":"repbox_1"', '"cashAcc":"cash"'));
+      await o.go('#/invoice/new?type=sale'); await o.closeDlg();
+      const n0 = await o.evaluate(() => db.invoices.length);
+      await o.click('[data-act=save]'); await o.waitForTimeout(600);
+      assert.strictEqual(await o.evaluate(() => db.invoices.length), n0 + 1, 'المدير لازم يحفظ دغري بلا تنبيه');
+      // المندوب
+      const p = await page(base, { cloud: REP, ls: { daftar_rep_name: 'محمد' } });
+      await p.evaluate(() => { db.accounts.push({ id: 'repbox_1', code: '1113', name: 'صندوق المندوب: محمد', type: 'asset', parent: 'cashGroup', group: false, repBox: 'محمد' }); db.items.push({ id: 'it1', code: '1', name: 'بسكوت', sellPrice: 1000, buyPrice: 900, openQty: 2 }); ensureWalkin(); save(); });
+      await p.evaluate(d => localStorage.setItem('daftar_draft_sale', d), draft('walkin'));
       await p.go('#/invoice/new?type=sale'); await p.closeDlg();
-      const n0 = await p.evaluate(() => db.invoices.length);
+      const m0 = await p.evaluate(() => db.invoices.length);
       await p.click('[data-act=save]'); await p.waitForTimeout(300);
       assert.match(await p.text('#dlg'), /الكمية بالمستودع ما بتكفي.*بسكوت 5 2/);
-      assert.strictEqual(await p.evaluate(() => db.invoices.length), n0, 'لازم ما ينحفظ قبل الموافقة');
+      assert.strictEqual(await p.evaluate(() => db.invoices.length), m0, 'لازم ما ينحفظ قبل الموافقة');
       await p.click('#dlg button.pri'); await p.waitForTimeout(600);
-      assert.strictEqual(await p.evaluate(() => db.invoices.length), n0 + 1);
+      assert.strictEqual(await p.evaluate(() => db.invoices.length), m0 + 1);
     },
   },
   {
