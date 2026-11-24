@@ -124,12 +124,46 @@ const Cloud = (() => {
     : v && typeof v === 'object' ? '{' + Object.keys(v).sort().map(k => JSON.stringify(k) + ':' + canon(v[k])).join(',') + '}'
     : JSON.stringify(v ?? null);
   const same = (a, b) => canon(a) === canon(b);
+  /* ---------- تنظيف يلي جاي من السحابة ----------
+     الفواتير والسندات والترقيم ممكن يكتبهن موبايل المندوب، فما منثق فيهن: منتأكد من شكل كل خانة
+     (رقم = رقم، تاريخ = تاريخ، نوع من الأنواع المعروفة…) وأي شي غريب منرفضه — هيك ما بيوصل كود مخبّى لشاشة المدير */
+  const RX_ID = /^[A-Za-z0-9_-]{1,80}$/, RX_DATE = /^\d{4}-\d{2}-\d{2}$/;
+  const nOr = (v, d = 0) => { const x = typeof v === 'number' ? v : typeof v === 'string' && v.trim() !== '' ? Number(v) : NaN; return Number.isFinite(x) ? x : d; };
+  const idOr = v => (v == null || v === '' ? '' : typeof v === 'string' && RX_ID.test(v) ? v : null);
+  const txt = (v, max = 300) => (v == null ? '' : String(v).replace(/[\u0000-\u001f<>]/g, ' ').slice(0, max));
+  function cleanDoc(kind, d, rid) {
+    if (!d || typeof d !== 'object' || Array.isArray(d) || d.id !== rid || !RX_ID.test(String(d.id))) return null;
+    if (!RX_DATE.test(String(d.date || '')) || !['base', 'fx', undefined, ''].includes(d.cur)) return null;
+    const refs = kind === 'invoices' ? [d.party, d.cashAcc] : [d.acc, d.cashAcc, d.inv];
+    if (refs.some(v => idOr(v) === null)) return null;
+    if (!Number.isFinite(nOr(d.no, NaN))) return null; // رقم المستند لازم يكون رقم
+    const o = { ...d, no: nOr(d.no), created: nOr(d.created), cur: d.cur || 'base', rate: d.cur === 'fx' ? nOr(d.rate) : '' };
+    if ('rep' in d) { if (d.rep == null || d.rep === '') delete o.rep; else o.rep = txt(d.rep, 60); }
+    if ('note' in d) o.note = txt(d.note, 500);
+    if (kind === 'invoices') {
+      if (!['sale', 'purchase', 'saleReturn', 'purchaseReturn'].includes(d.type) || !['cash', 'credit'].includes(d.pay) || !Array.isArray(d.lines)) return null;
+      if (d.lines.some(l => !l || typeof l !== 'object' || !RX_ID.test(String(l.item || '')))) return null;
+      o.lines = d.lines.map(l => ({ ...l, qty: nOr(l.qty), price: nOr(l.price), cp: l.cp === '' || l.cp == null ? '' : nOr(l.cp) }));
+      o.discount = nOr(d.discount); o.addition = nOr(d.addition);
+      if ('addNote' in d) o.addNote = txt(d.addNote, 200);
+    } else {
+      if (!['receipt', 'payment'].includes(d.type)) return null;
+      o.amount = nOr(d.amount);
+    }
+    return o;
+  }
+  let rejected = 0;
   function apply(r) {
     const k = r.kind + '/' + r.id;
     if (r.kind === 'seq') {
-      const s = r.data || {}; let ch = false;
-      for (const x in s) if ((db.seq[x] || 0) < s[x]) { db.seq[x] = s[x]; ch = true; }
+      const s = r.data && typeof r.data === 'object' && !Array.isArray(r.data) ? r.data : {}; let ch = false;
+      for (const x in s) { const v = nOr(s[x], -1); if (v >= 0 && v < 1e9 && (db.seq[x] || 0) < v) { db.seq[x] = v; ch = true; } }
       return ch;
+    }
+    if ((r.kind === 'invoices' || r.kind === 'vouchers') && !r.deleted && r.data) {
+      const c = cleanDoc(r.kind, r.data, r.id);
+      if (!c) { rejected++; return false; }
+      r = { ...r, data: c };
     }
     if (st.dirty[k]) return false; // تعديلي المحلي له الأولوية وسيُرفع
     if (r.kind === 'settings') {
@@ -167,6 +201,7 @@ const Cloud = (() => {
       if (rows.length < 1000) break;
     }
     st.lastPull = newest;
+    if (rejected) { console.warn('daftar: rejected', rejected, 'invalid records from cloud'); rejected = 0; }
     if (changed) {
       try { const j = JSON.stringify(db); if (window.Store) Store.write(j); else localStorage.setItem(DBKEY, j); } catch (e) { /* */ }
       _eng = null;

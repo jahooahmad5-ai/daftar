@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '6.61';
+const APP_VERSION = '6.62';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -366,7 +366,7 @@ function waInvoiceText(inv) {
     const B = window.Receipt ? Receipt.balances(inv) : null;
     if (B) {
       const k = docRate(inv), netB = r2(t.net * k), sgn = ['sale', 'purchase'].includes(inv.type) ? 1 : -1;
-      const paidB = inv.pay === 'cash' ? netB : db.vouchers.filter(v => v.inv === inv.id).reduce((x, v) => x + num(v.amount), 0);
+      const paidB = inv.pay === 'cash' ? netB : paidBase(inv);
       const o = x => (oldOn() ? ` (قديم ${oldAmt(x)})` : '');
       s += `————————\nالحساب القديم: ${fmt(B.before)}${o(B.before)}\nكامل الحساب: ${fmt(B.after + paidB * sgn)}${o(B.after + paidB * sgn)}\nالدفعة: ${fmt(paidB)}${o(paidB)}\n*رصيد الحساب الحالي: ${fmt(B.after)}*${o(B.after)}\n`;
     }
@@ -443,6 +443,10 @@ const REP_KEY = 'daftar_rep_name';
 const repName = () => { try { return localStorage.getItem(REP_KEY) || ''; } catch (e) { return ''; } };
 const myRep = () => (isSeller() && (repName() || (window.Cloud && Cloud.info().email) || 'مندوب')) || '';
 const repTag = i => (i && i.rep ? ` — مندوب: ${i.rep}` : '');
+// دفعات الفاتورة (سندات مربوطة فيها) — بعملة السند، ومحوّلة لليرة
+const paidBase = inv => db.vouchers.filter(v => v.inv === inv.id).reduce((x, v) => x + num(v.amount) * docRate(v), 0);
+const repTagH = i => esc(repTag(i)); // للـ HTML (اسم المندوب جاي من موبايل تاني — ما منثق فيه)
+const typeCls = t => (INV_TYPES[t] ? t : ''); // نوع الفاتورة كـ class: بس من الأنواع المعروفة
 // صندوق خاص لكل مندوب (بينعمل عند المدير لما يفعّل موبايله، وبيوصل للمندوب بالمزامنة)
 const myBox = () => { const n = myRep(); return n ? db.accounts.find(a => a.repBox === n) : null; };
 function ensureRepBox(name) {
@@ -673,6 +677,11 @@ async function autoBackup(force) {
     for (const k of days.slice(AUTO_DAYS)) await Store.del(k);
   } catch (e) { /* ما منوقّف البرنامج إذا ما زبطت النسخة */ }
 }
+// نسخة «قبل آخر رجوع»: قبل أي شي بيستبدل كل البيانات (رجوع لنسخة، استعادة ملف، بيانات تجريبية، مسح الكل)
+async function snapshotPre() {
+  if (!(window.Store && Store.info().idb)) return;
+  try { await Store.put('bak:pre', JSON.stringify({ at: Date.now(), db })); } catch (e) { /* */ }
+}
 async function autoBackupList() {
   if (!bkOk()) return [];
   const ks = (await Store.keys('bak:')).sort().reverse();
@@ -869,7 +878,7 @@ V.home = (id, q, view) => {
   ${(() => { const bx = postable().filter(a => a.repBox); return bx.length ? `<div class="card"><h3>💰 صناديق المندوبين</h3>${table(['الصندوق', 'الرصيد', ''], bx.map(a => `<tr><td>${esc(a.name)}</td><td class="n">${fmt(bal(a.id))} ${esc(cur())}</td><td><button class="btn pri" data-act="takeBox" data-id="${a.id}">📥 استلام</button></td></tr>`).join(''))}</div>` : ''; })()}
   <div class="cols2">
     <div class="card"><h3>آخر الفواتير</h3>${table(['الرقم', 'النوع', 'التاريخ', 'الطرف', 'الصافي'],
-      recent.map(i => `<tr data-act="open" data-id="${i.id}"><td>${i.no}</td><td><span class="badge ${i.type}">${INV_TYPES[i.type]}</span></td><td class="n">${i.date}</td><td>${esc(accName(i.party) || 'نقدي')}</td><td class="n">${fmt(invTotals(i).net)} <small class="muted">${esc(docSym(i))}</small></td></tr>`).join(''))}</div>
+      recent.map(i => `<tr data-act="open" data-id="${esc(i.id)}"><td>${esc(i.no)}</td><td><span class="badge ${typeCls(i.type)}">${INV_TYPES[i.type]}</span></td><td class="n">${esc(i.date)}</td><td>${esc(accName(i.party) || 'نقدي')}</td><td class="n">${fmt(invTotals(i).net)} <small class="muted">${esc(docSym(i))}</small></td></tr>`).join(''))}</div>
     <div class="card"><h3>مواد وصلت للحد الأدنى</h3>${table(['المادة', 'الكمية', 'الحد الأدنى'],
       low.map(i => `<tr><td>${esc(i.name)}</td><td class="n"><span class="badge low">${fmt(st[i.id]?.qty || 0)}</span></td><td class="n">${fmt(i.minQty)}</td></tr>`).join(''))}
       ${!db.items.length ? `<p class="muted">لا توجد بيانات بعد. ابدأ بإضافة <a href="#/items">المواد</a> و<a href="#/parties">العملاء</a>، أو جرّب <a href="#/settings">البيانات التجريبية</a>.</p>` : ''}</div>
@@ -1316,7 +1325,7 @@ V.invoices = (id, q, view) => {
   let tot = 0;
   const rows = list.map(i => {
     const n = invTotals(i).net; tot += n * docRate(i);
-    return `<tr data-act="open" data-id="${i.id}" data-name="${esc(i.no + ' ' + accName(i.party))}"><td class="n">${i.no}</td><td><span class="badge ${i.type}">${INV_TYPES[i.type]}</span></td><td class="n">${i.date}</td>
+    return `<tr data-act="open" data-id="${esc(i.id)}" data-name="${esc(i.no + ' ' + accName(i.party))}"><td class="n">${esc(i.no)}</td><td><span class="badge ${typeCls(i.type)}">${INV_TYPES[i.type] || ''}</span></td><td class="n">${esc(i.date)}</td>
       <td>${esc(accName(i.party) || '—')}${i.rep && !isSeller() ? `<br><small class="badge rep">مندوب: ${esc(i.rep)}</small>` : ''}</td><td>${i.pay === 'cash' ? 'نقدي' : 'آجل'}</td><td class="n">${fmt(n)} <small class="muted">${esc(docSym(i))}</small></td></tr>`;
   }).join('');
   const tab = (k, l) => `<a href="#/invoices?t=${k}${rf ? '&rep=' + encodeURIComponent(rf) : ''}" class="${t === k ? 'on' : ''}">${l}</a>`;
@@ -1338,8 +1347,8 @@ function invoiceHtml(inv) {
     return `<tr><td>${i + 1}</td><td>${esc(it.name || '')}</td><td>${esc(it.unit || '')}</td><td>${fmt(l.qty)}</td><td>${fmt(l.price)}</td>${hasCp ? `<td>${cp ? fmt(cp) : ''}</td>` : ''}<td>${fmt(num(l.qty) * num(l.price))}</td></tr>`;
   }).join('');
   const cs = hasCp ? 6 : 5;
-  return `<h3 class="ptitle">${INV_TYPES[inv.type]} رقم ${inv.no}${repTag(inv)}</h3>
-    <div class="pmeta"><span>التاريخ: ${inv.date}</span><span>${sideSale ? 'العميل' : 'المورد'}: ${esc(accName(inv.party) || 'نقدي')}</span><span>الدفع: ${inv.pay === 'cash' ? 'نقدي' : 'آجل'}</span><span>العملة: ${esc(docCurName(inv))}${inv.cur === 'fx' ? ` — سعر الصرف: ${fmt(inv.rate)}` : ''}</span></div>
+  return `<h3 class="ptitle">${INV_TYPES[inv.type]} رقم ${esc(inv.no)}${repTagH(inv)}</h3>
+    <div class="pmeta"><span>التاريخ: ${esc(inv.date)}</span><span>${sideSale ? 'العميل' : 'المورد'}: ${esc(accName(inv.party) || 'نقدي')}</span><span>الدفع: ${inv.pay === 'cash' ? 'نقدي' : 'آجل'}</span><span>العملة: ${esc(docCurName(inv))}${inv.cur === 'fx' ? ` — سعر الصرف: ${fmt(inv.rate)}` : ''}</span></div>
     <table><thead><tr><th>#</th><th>المادة</th><th>الوحدة</th><th>الكمية</th><th>السعر</th>${hasCp ? '<th>سعر المستهلك</th>' : ''}<th>الإجمالي</th></tr></thead><tbody>${rows}</tbody>
     <tfoot><tr><td colspan="${cs}">الإجمالي</td><td>${fmt(t.gross)}</td></tr>${t.disc ? `<tr><td colspan="${cs}">الحسم</td><td>${fmt(t.disc)}</td></tr>` : ''}${t.add ? `<tr><td colspan="${cs}">إضافة${inv.addNote ? ' — ' + esc(inv.addNote) : ''}</td><td>${fmt(t.add)}</td></tr>` : ''}<tr><td colspan="${cs}">الصافي (${esc(sym)})</td><td>${fmt(t.net)}</td></tr>
     ${inv.cur === 'fx' ? `<tr><td colspan="${cs}">المعادل بـ ${esc(db.settings.currencyName)}</td><td>${fmt(t.net * num(inv.rate))}</td></tr>` : ''}
@@ -1390,9 +1399,9 @@ V.invoice = (id, q, view) => {
   const itemById = id => items.find(x => x.id === id);
   const stockOf = it => (st[it.id] ? st[it.id].qty : num(it.openQty));
 
-  view.innerHTML = head(INV_TYPES[inv.type] + (orig ? ` رقم ${orig.no}${repTag(orig)}` : ' جديدة' + (isSeller() ? ` — مندوب: ${myRep()}` : '')),
+  view.innerHTML = head(INV_TYPES[inv.type] + (orig ? ` رقم ${esc(orig.no)}${repTagH(orig)}` : ' جديدة' + (isSeller() ? ` — مندوب: ${esc(myRep())}` : '')),
     `${orig ? `<button class="btn wa" data-act="wa">واتساب</button><button class="btn" data-act="receipt">🧾 إيصال</button><button class="btn" data-act="print">🖨 طباعة</button><button class="btn red" data-act="del">حذف</button><a class="btn" href="#/invoices">رجوع</a>` : ''}`) + `
-  ${orig && q.saved ? `<div class="saved-ok">✅ الفاتورة رقم ${orig.no} محفوظة — ${orig.lines.length} مادة، ${fmt(orig.lines.reduce((s, l) => s + num(l.qty), 0))} قطعة</div>` : ''}
+  ${orig && q.saved ? `<div class="saved-ok">✅ الفاتورة رقم ${esc(orig.no)} محفوظة — ${orig.lines.length} مادة، ${fmt(orig.lines.reduce((s, l) => s + num(l.qty), 0))} قطعة</div>` : ''}
   <div class="inv-count-d">القطع: <b id="cntPcs">0</b></div>
   <div id="dirtyNote" class="dirty-note" hidden>⚠️ في تغييرات على هالفاتورة <b>لسا ما انحفظت</b> — كبّس «💾 حفظ التعديلات» تحت</div>
   ${restored ? (orig ? '<div class="draft-note">↩️ رجّعتلك التعديلات اللي ما كانت محفوظة على هالفاتورة. <button class="btn" data-act="discard">تراجع عنها</button></div>'
@@ -1466,7 +1475,7 @@ V.invoice = (id, q, view) => {
     $('#tOld', view).textContent = oldOn() && nb ? `الصافي بالعملة القديمة: ${oldAmt(nb)} ${cur()}` : '';
     $('#barOld', view).textContent = oldTxt(nb);
     const pv = num(val('payment')), tr = $('#tRest', view);
-    if (tr) tr.textContent = pv ? `الباقي على الحساب: ${fmt(n - pv)} ${sym}${oldOn() ? ` — الدفعة بالقديم: ${oldAmt(pv)}` : ''}` : '';
+    if (tr) tr.textContent = pv ? `الباقي على الحساب: ${fmt(n - pv)} ${sym}${oldOn() ? ` — الدفعة بالقديم: ${oldAmt(toBase(pv))}` : ''}` : '';
     // رصيد الزبون الحالي وبعد الفاتورة (بالجديد والقديم)
     const tb = $('#tBal', view), pa = acc(val('party'));
     if (tb) {
@@ -1475,10 +1484,10 @@ V.invoice = (id, q, view) => {
         const sg = ['sale', 'purchase'].includes(inv.type) ? 1 : -1;
         let cb = partyBal(pa);
         if (orig && orig.party === pa.id) {
-          const op = db.vouchers.filter(v => v.inv === orig.id).reduce((x, v) => x + num(v.amount), 0);
+          const op = paidBase(orig);
           cb -= ((orig.pay === 'credit' ? invTotals(orig).net * docRate(orig) : 0) - op) * sg;
         }
-        const paidS = val('pay') === 'credit' ? pv : nb, kamel = cb + nb * sg, after = kamel - paidS * sg;
+        const paidS = val('pay') === 'credit' ? toBase(pv) : nb, kamel = cb + nb * sg, after = kamel - paidS * sg;
         const o = x => (oldOn() ? ` <small>(بالقديم ${oldAmt(x)})</small>` : '');
         tb.innerHTML = `<table class="acc-sum">${oldOn() ? '<tr><th></th><th>جديد</th><th>قديم</th></tr>' : ''}` +
           [['مجموع الفاتورة', nb], ['الحساب القديم', cb], ['كامل الحساب', kamel], ['الدفعة', paidS], ['رصيد الحساب الحالي', after]]
@@ -1860,7 +1869,8 @@ V.invoice = (id, q, view) => {
       if (R && to !== inv.cur && inv.lines.some(l => num(l.price)) && confirm('تحويل الأسعار المدخلة إلى العملة الجديدة حسب سعر الصرف؟')) {
         const c = x => (num(x) ? r2(to === 'fx' ? num(x) / R : num(x) * R) : x);
         inv.lines.forEach(l => { l.price = c(l.price); l.cp = c(l.cp); });
-        ['discount', 'addition'].forEach(k => { const d = $(`[name=${k}]`, view); d.value = c(d.value) || ''; });
+        ['discount', 'addition', 'payment'].forEach(k => { const d = $(`[name=${k}]`, view); d.value = c(d.value) || ''; });
+        payNow = num(val('payment'));
       }
       inv.cur = to; toggles(); draw();
     }
@@ -1927,7 +1937,7 @@ V.invoice = (id, q, view) => {
     const linked = db.vouchers.filter(v => v.inv === out.id);
     if (pv > 0) {
       const vt = ['sale', 'purchaseReturn'].includes(out.type) ? 'receipt' : 'payment';
-      const o = { date: out.date, acc: party, amount: pv, note: `دفعة على ${INV_TYPES[out.type]} رقم ${out.no}`, cur: 'base', rate: '' };
+      const o = { date: out.date, acc: party, amount: pv, note: `دفعة على ${INV_TYPES[out.type]} رقم ${out.no}`, cur: out.cur === 'fx' ? 'fx' : 'base', rate: out.cur === 'fx' ? out.rate : '' };
       if (linked[0]) Object.assign(linked[0], o, { type: vt });
       else db.vouchers.push({ id: uid(), type: vt, ...newNo(vt + (out.rep ? '@' + out.rep : '')), cashAcc: (isSeller() ? myBox()?.id : null) || cashAccounts()[0]?.id || 'cash', created: Date.now() + 1, inv: out.id, ...(out.rep ? { rep: out.rep } : {}), ...o });
     }
@@ -1954,7 +1964,7 @@ V.invoice = (id, q, view) => {
   };
   onAct(view, {
     cam: () => scanBarcode(addByCode),
-    paste: () => window.OrderPaste && OrderPaste.open({ sideSale, onDone: fromPaste }),
+    paste: () => window.OrderPaste && OrderPaste.open({ sideSale, onDone: r => fromPaste({ ...r, pay: r.pay ? toDoc(r.pay) : 0 }) }),
     mic: () => (window.Voice ? Voice.listen() : voice()),
     inc: i => step(i, 1),
     dec: i => step(i, -1),
@@ -2002,7 +2012,7 @@ V.invoice = (id, q, view) => {
       Voice.askItem(ln, raw.replace(/\s*عدد.*$/, '')).then(it => it && add(it));
     },
     setParty: id => fromPaste({ party: id, lines: [], pay: payNow }),
-    setPay: n => { payNow = n; showPay(); },
+    setPay: n => { payNow = n ? toDoc(n) : 0; showPay(); },
     setQty: q => {
       const l = inv.lines[inv.lines.length - 1]; // آخر سطر انضاف
       if (!l || !(q > 0)) return null;
@@ -2068,8 +2078,8 @@ function voucherForm(v, type, preAcc) {
 }
 function voucherHtml(v) {
   const isR = v.type === 'receipt';
-  return `<h3 class="ptitle">${isR ? 'سند قبض' : 'سند دفع'} رقم ${v.no}${repTag(v)}</h3>
-  <table><tbody><tr><th>التاريخ</th><td>${v.date}</td></tr><tr><th>${isR ? 'استلمنا من' : 'دفعنا إلى'}</th><td>${esc(accName(v.acc))}</td></tr>
+  return `<h3 class="ptitle">${isR ? 'سند قبض' : 'سند دفع'} رقم ${esc(v.no)}${repTagH(v)}</h3>
+  <table><tbody><tr><th>التاريخ</th><td>${esc(v.date)}</td></tr><tr><th>${isR ? 'استلمنا من' : 'دفعنا إلى'}</th><td>${esc(accName(v.acc))}</td></tr>
   <tr><th>المبلغ</th><td>${fmt(v.amount)} ${esc(docSym(v))} — بالعملة القديمة: ${oldAmt(v.amount * docRate(v))}</td></tr><tr><th>المبلغ كتابةً</th><td>${esc(moneyWords(v.amount, v))}</td></tr>
   ${v.cur === 'fx' ? `<tr><th>سعر الصرف</th><td>${fmt(v.rate)} — المعادل: ${fmt(v.amount * num(v.rate))} ${esc(cur())}</td></tr>` : ''}
   <tr><th>البيان</th><td>${esc(v.note || '')}</td></tr><tr><th>${isR ? 'إلى الصندوق' : 'من الصندوق'}</th><td>${esc(accName(v.cashAcc))}</td></tr></tbody></table>
@@ -2077,7 +2087,7 @@ function voucherHtml(v) {
 }
 function sellerVouchers(q, view) {
   const list = db.vouchers.filter(v => v.type === 'receipt' && v.rep === myRep()).sort((a, b) => b.date.localeCompare(a.date) || (b.created || 0) - (a.created || 0));
-  const rows = list.map(v => `<tr data-act="open" data-id="${v.id}"><td class="n">${v.no}</td><td class="n">${v.date}</td><td>${esc(accName(v.acc))}</td><td class="n">${fmt(v.amount)} <small class="muted">${esc(docSym(v))}</small></td></tr>`).join('');
+  const rows = list.map(v => `<tr data-act="open" data-id="${esc(v.id)}"><td class="n">${esc(v.no)}</td><td class="n">${esc(v.date)}</td><td>${esc(accName(v.acc))}</td><td class="n">${fmt(v.amount)} <small class="muted">${esc(docSym(v))}</small></td></tr>`).join('');
   view.innerHTML = head('📥 سندات القبض — ' + esc(myRep()), '<button class="btn pri" data-act="new">📥 قبض من زبون</button>') +
     `<div class="card">${table(['الرقم', 'التاريخ', 'الزبون', 'المبلغ'], rows)}</div>`;
   onAct(view, {
@@ -2140,8 +2150,8 @@ V.vouchers = (id, q, view) => {
   if (isSeller()) return sellerVouchers(q, view);
   const t = isSeller() ? 'receipt' : q.t === 'payment' ? 'payment' : q.t === 'receipt' ? 'receipt' : 'all';
   const list = db.vouchers.filter(v => t === 'all' || v.type === t).sort((a, b) => b.date.localeCompare(a.date) || (b.created || 0) - (a.created || 0));
-  const rows = list.map(v => `<tr data-act="open" data-id="${v.id}"><td class="n">${v.no}</td><td><span class="badge ${v.type === 'receipt' ? 'sale' : 'purchaseReturn'}">${v.type === 'receipt' ? 'قبض' : 'دفع'}</span></td>
-    <td class="n">${v.date}</td><td>${esc(accName(v.acc))}</td><td>${esc(v.note || '')}</td><td class="n">${fmt(v.amount)} <small class="muted">${esc(docSym(v))}</small></td></tr>`).join('');
+  const rows = list.map(v => `<tr data-act="open" data-id="${esc(v.id)}"><td class="n">${esc(v.no)}</td><td><span class="badge ${v.type === 'receipt' ? 'sale' : 'purchaseReturn'}">${v.type === 'receipt' ? 'قبض' : 'دفع'}</span></td>
+    <td class="n">${esc(v.date)}</td><td>${esc(accName(v.acc))}</td><td>${esc(v.note || '')}</td><td class="n">${fmt(v.amount)} <small class="muted">${esc(docSym(v))}</small></td></tr>`).join('');
   const tab = (k, l) => `<a href="#/vouchers?t=${k}" class="${t === k ? 'on' : ''}">${l}</a>`;
   view.innerHTML = head('سندات القبض والدفع', `<button class="btn pri" data-act="new" data-id="receipt">📥 سند قبض</button><button class="btn" data-act="new" data-id="payment">📤 سند دفع</button>`) +
     `<div class="tabs">${tab('all', 'الكل')}${tab('receipt', 'سندات القبض')}${tab('payment', 'سندات الدفع')}</div>
@@ -2161,7 +2171,7 @@ V.journal = (id, q, view) => {
   const rows = list.map(e => {
     const amt = e.lines.reduce((x, l) => x + l.dr, 0);
     const lines = e.lines.map(l => `<div class="muted" style="font-size:12.5px">${l.dr ? 'من ح/ ' : '&nbsp;&nbsp;&nbsp;&nbsp;إلى ح/ '}${esc(accName(l.acc))} — ${fmt(l.dr || l.cr)}</div>`).join('');
-    return `<tr data-act="open" data-id="${e.id}"><td class="n">${e.date}</td><td><span class="badge">${SRC[e.src]}</span> ${e.no}</td><td>${esc(e.desc)}${lines}</td><td class="n">${fmt(amt)}</td></tr>`;
+    return `<tr data-act="open" data-id="${esc(e.id)}"><td class="n">${esc(e.date)}</td><td><span class="badge">${SRC[e.src]}</span> ${esc(e.no)}</td><td>${esc(e.desc)}${lines}</td><td class="n">${fmt(amt)}</td></tr>`;
   }).join('');
   const tab = (k, l) => `<a href="#/journal?src=${k}" class="${s === k ? 'on' : ''}">${l}</a>`;
   view.innerHTML = head('القيود اليومية', `<a class="btn pri" href="#/entry/new">+ قيد يدوي</a>`) +
@@ -2184,7 +2194,7 @@ V.entry = (id, q, view) => {
   if (id !== 'new' && !orig) return go('#/journal');
   const en = orig ? clone(orig) : { date: today(), desc: '', lines: [{ acc: '', dr: '', cr: '', note: '' }, { acc: '', dr: '', cr: '', note: '' }] };
   const aOpts = accOpts(postable(), '— اختر الحساب —');
-  view.innerHTML = head(orig ? `قيد يومية رقم ${orig.no}` : 'قيد يومية جديد', `${orig ? `<button class="btn red" data-act="del">حذف</button>` : ''}<a class="btn" href="#/journal">رجوع</a>`) + `
+  view.innerHTML = head(orig ? `قيد يومية رقم ${esc(orig.no)}` : 'قيد يومية جديد', `${orig ? `<button class="btn red" data-act="del">حذف</button>` : ''}<a class="btn" href="#/journal">رجوع</a>`) + `
   <div class="card">
     <div class="grid4">${field({ k: 'date', l: 'التاريخ', t: 'date', req: 1 }, en.date)}<div class="fld" style="grid-column:span 3"><span>البيان</span><input name="desc" value="${esc(en.desc)}"></div></div>
     <div class="tbl" style="margin-top:14px"><table class="lines"><thead><tr><th>#</th><th>الحساب</th><th>مدين</th><th>دائن</th><th>ملاحظة</th><th></th></tr></thead><tbody id="ln"></tbody>
@@ -2247,7 +2257,9 @@ V.reports = (id, q, view) => {
 };
 V.report = (type, q, view) => {
   const R = REPORTS[type]; if (!R) return go('#/reports');
-  const from = q.from || db.settings.startDate, to = q.to || today();
+  // التواريخ جاية من الرابط: بس شكل تاريخ صحيح (أي شي تاني منتجاهله — حماية من الروابط الملغومة)
+  const okDate = d => /^\d{4}-\d{2}-\d{2}$/.test(String(d || ''));
+  const from = okDate(q.from) ? q.from : db.settings.startDate, to = okDate(q.to) ? q.to : today();
   const F = { from: { k: 'from', l: 'من تاريخ', t: 'date' }, to: { k: 'to', l: 'إلى تاريخ', t: 'date' } };
   let filters = [], body = '', waMsg = null, waAcc = null;
   const vals = { ...q, from, to };
@@ -2271,10 +2283,10 @@ V.report = (type, q, view) => {
       bal = open;
       const html = rows.map(({ e, l, net }) => {
         bal += net; tdr += l.dr; tcr += l.cr;
-        return `<tr><td class="n">${e.date}</td><td>${SRC[e.src]} ${e.no}</td><td>${esc(e.desc)}${l.note ? ' — ' + esc(l.note) : ''}${ids.size > 1 ? ` <small class="muted">[${esc(accName(l.acc))}]</small>` : ''}</td>
+        return `<tr><td class="n">${esc(e.date)}</td><td>${SRC[e.src]} ${esc(e.no)}</td><td>${esc(e.desc)}${l.note ? ' — ' + esc(l.note) : ''}${ids.size > 1 ? ` <small class="muted">[${esc(accName(l.acc))}]</small>` : ''}</td>
           <td class="n">${l.dr ? fmt(l.dr) : ''}</td><td class="n">${l.cr ? fmt(l.cr) : ''}</td><td class="n">${fmt(Math.abs(bal))} <small class="muted">${bal ? balLabel(a, bal) : ''}</small></td></tr>`;
       }).join('');
-      body = `<h3>${esc(a.code + ' - ' + a.name)} <small class="muted">من ${from} إلى ${to}</small></h3>` +
+      body = `<h3>${esc(a.code + ' - ' + a.name)} <small class="muted">من ${esc(from)} إلى ${esc(to)}</small></h3>` +
         table(['التاريخ', 'المستند', 'البيان', 'مدين', 'دائن', 'الرصيد'],
           `<tr class="grp"><td colspan="5">رصيد سابق</td><td class="n">${fmt(Math.abs(open))} <small class="muted">${open ? balLabel(a, open) : ''}</small></td></tr>` + html,
           `<tr><td colspan="3">المجموع / الرصيد النهائي</td><td class="n">${fmt(tdr)}</td><td class="n">${fmt(tcr)}</td><td class="n">${fmt(Math.abs(bal))} ${bal ? balLabel(a, bal) : ''}</td></tr>`);
@@ -2349,7 +2361,7 @@ V.report = (type, q, view) => {
       qty = open;
       body = `<h3>${esc(it.name)} <small class="muted">${esc(it.unit || '')}</small></h3>` + table(['التاريخ', 'الحركة', 'الطرف', 'وارد', 'صادر', 'السعر', 'الرصيد'],
         (open ? `<tr class="grp"><td colspan="6">رصيد سابق</td><td class="n">${fmt(open)}</td></tr>` : '') +
-        rows.map(m => { qty += m.in - m.out; return `<tr${m.ref ? ` data-act="inv" data-id="${m.ref}"` : ''}><td class="n">${m.date}</td><td>${esc(m.label)}</td><td>${esc(accName(m.party))}</td><td class="n">${m.in ? fmt(m.in) : ''}</td><td class="n">${m.out ? fmt(m.out) : ''}</td><td class="n">${fmt(m.price)}</td><td class="n">${fmt(qty)}</td></tr>`; }).join(''));
+        rows.map(m => { qty += m.in - m.out; return `<tr${m.ref ? ` data-act="inv" data-id="${esc(m.ref)}"` : ''}><td class="n">${esc(m.date)}</td><td>${esc(m.label)}</td><td>${esc(accName(m.party))}</td><td class="n">${m.in ? fmt(m.in) : ''}</td><td class="n">${m.out ? fmt(m.out) : ''}</td><td class="n">${fmt(m.price)}</td><td class="n">${fmt(qty)}</td></tr>`; }).join(''));
     }
   }
 
@@ -2389,7 +2401,7 @@ V.report = (type, q, view) => {
     $$('select', flt).forEach(s => (s.onchange = () => flt.requestSubmit()));
   }
   onAct(view, {
-    print: () => printDoc(`<h3 class="ptitle">${R.t}</h3><div class="pmeta">${filters.some(f => f.k === 'from') ? `<span>من ${from}</span>` : ''}${filters.some(f => f.k === 'to') ? `<span>إلى ${to}</span>` : ''}</div>` + $('#rep', view).innerHTML),
+    print: () => printDoc(`<h3 class="ptitle">${R.t}</h3><div class="pmeta">${filters.some(f => f.k === 'from') ? `<span>من ${esc(from)}</span>` : ''}${filters.some(f => f.k === 'to') ? `<span>إلى ${esc(to)}</span>` : ''}</div>` + $('#rep', view).innerHTML),
     inv: id => go('#/invoice/' + id),
     st: id => go('#/report/statement?acc=' + id),
     wa: () => waSend(waAcc, waMsg),
@@ -2466,7 +2478,7 @@ V.settings = (id, q, view) => {
         const d = JSON.parse(r.result);
         if (!Array.isArray(d.accounts) || !Array.isArray(d.invoices)) throw 0;
         if (!confirm('سيتم استبدال كل البيانات الحالية بالنسخة المختارة. متابعة؟')) return;
-        if (bkOk()) Store.put('bak:pre', JSON.stringify({ at: Date.now(), db })).catch(() => {});
+        snapshotPre();
         const sd = seed(); db = { ...sd, ...d, settings: { ...sd.settings, ...d.settings } }; save(); toast('تمت الاستعادة'); go('#/');
       } catch (err) { toast('الملف غير صالح', 1); }
     };
@@ -2481,8 +2493,20 @@ V.settings = (id, q, view) => {
       const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `daftar-backup-${today()}.json`;
       document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
     },
-    demo: () => { if ((db.invoices.length || db.items.length) && !confirm('سيتم استبدال البيانات الحالية ببيانات تجريبية. متابعة؟')) return; loadDemo(); toast('تم تحميل البيانات التجريبية'); go('#/'); },
-    reset: () => { if (!confirm('مسح كل البيانات نهائياً؟' + (window.Cloud && $('#syncPill') && !$('#syncPill').hidden ? '\nتنبيه: أنت مربوط بالسحابة، سيُمسح منها أيضاً ومن كل الأجهزة!' : ''))) return; if (prompt('اكتب كلمة: مسح') !== 'مسح') return; db = seed(); save(); toast('تم المسح'); go('#/'); },
+    // البيانات التجريبية بتستبدل كل شي — وإذا الموبايل مربوط بالسحابة كانت رح تمسح بيانات الشركة من السحابة ومن موبايل المندوب
+    demo: async () => {
+      if (window.Cloud && Cloud.info().company) return toast('🔒 ممنوع والموبايل مربوط بالسحابة — رح تنمسح بيانات شركتك من كل الأجهزة. جرّب البيانات التجريبية على موبايل مش مربوط', 1);
+      if ((db.invoices.length || db.items.length) && !confirm('سيتم استبدال البيانات الحالية ببيانات تجريبية. متابعة؟\n(بتنحفظ نسخة «قبل آخر رجوع» وفيك ترجعلها من النسخ الأوتوماتيكية)')) return;
+      await snapshotPre();
+      loadDemo(); toast('تم تحميل البيانات التجريبية'); go('#/');
+    },
+    reset: async () => {
+      const cloud = !!(window.Cloud && Cloud.info().company);
+      if (!confirm('مسح كل البيانات نهائياً؟' + (cloud ? '\n\n⚠️ أنت مربوط بالسحابة: رح تنمسح بيانات الشركة من السحابة ومن كل الأجهزة (وموبايل المندوب)!' : ''))) return;
+      if (prompt('اكتب كلمة: مسح') !== 'مسح') return;
+      await snapshotPre();
+      db = seed(); save(); toast('تم المسح — في نسخة «قبل آخر رجوع» بالإعدادات إذا بدك ترجع'); go('#/');
+    },
   });
 };
 

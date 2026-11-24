@@ -33,7 +33,7 @@ const Receipt = (() => {
     }
     return { before: r2(before), after: r2(before + eff), now: r2(partyBal(a)) };
   }
-  const paidFor = inv => db.vouchers.filter(v => v.inv === inv.id).reduce((s, v) => s + num(v.amount), 0);
+  const paidFor = inv => db.vouchers.filter(v => v.inv === inv.id).reduce((s, v) => s + num(v.amount) * docRate(v), 0); // بالليرة
 
   function build(inv) {
     const s = db.settings, t = invTotals(inv), sym = docSym(inv), a = acc(inv.party);
