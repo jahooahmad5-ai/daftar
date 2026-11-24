@@ -100,4 +100,16 @@ module.exports = [
       assert.match(await p.text(), /البرنامج مقفول/);
     },
   },
+  {
+    name: 'باركود نقطة البيع فيه رابط ينبعت بالواتساب (إذا الكاميرا ما بتقرا)',
+    fn: async base => {
+      const p = await page(base, { cloud: OWNER, hash: '#/settings' });
+      await p.evaluate(() => { window.open = u => { window.__opened = u; }; });
+      await p.click('[data-act=posqr]'); await p.fill('#dlg [name=name]', 'محمد صعوبي'); await p.click('#dlg button.pri'); await p.waitForTimeout(300);
+      await p.click('#qrWa');
+      const u = decodeURIComponent(decodeURIComponent(await p.evaluate(() => window.__opened)));
+      assert.match(u, /^https:\/\/wa\.me\/\?text=/);
+      assert.match(u, /#\/pos\?name=محمد صعوبي&c=c1/);
+    },
+  },
 ];

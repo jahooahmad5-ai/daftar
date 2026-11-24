@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '6.56';
+const APP_VERSION = '6.57';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -514,8 +514,14 @@ function posQRShow(name) {
   const box = `<div style="background:#fff;padding:10px;border-radius:12px;max-width:300px;margin:0 auto">${svg}</div>`;
   const f = modal('📷 باركود نقطة البيع — ' + name, `${box}
     <p class="muted" style="margin-top:12px">1. المندوب بيصوّر الباركود بكاميرا موبايله ← بيطلعله «بانتظار تفعيل المدير».<br>2. على موبايلك بيطلع شريط فوق: <b>📲 موبايل «${esc(name)}» بدو يفتح نقطة البيع</b> ← اكبس <b>✓ تفعيل</b>.<br>3. موبايل المندوب بيفتح نقطة البيع لحاله — بلا إيميل ولا كلمة سر.</p>
-    <p class="muted">🔒 إذا حدا غريب صوّر الباركود ما بيفوت إلا إذا إنت فعّلته.</p>`,
-    { extra: '<button type="button" class="btn pri" id="qrPrint">🖨 طباعة</button>' });
+    <p class="muted">📵 <b>كاميرا المندوب ما بتقرا الباركود؟</b> ابعتله الرابط بـ «🟢 واتساب» تحت، وهو بيفتحه من موبايله — نفس الشي تماماً.</p>
+    <p class="muted">🔒 إذا حدا غريب صوّر الباركود أو فتح الرابط ما بيفوت إلا إذا إنت فعّلته.</p>`,
+    { extra: '<button type="button" class="btn pri" id="qrWa">🟢 واتساب</button><button type="button" class="btn" id="qrShare">📤 مشاركة</button><button type="button" class="btn" id="qrCopy">📋 نسخ الرابط</button><button type="button" class="btn" id="qrPrint">🖨 طباعة</button>' });
+  // إذا كاميرا موبايل المندوب ما بتقرا الباركود: منبعتله الرابط، وبيفتحه من الموبايل (نفس الشي تماماً)
+  const msg = `رابط نقطة البيع (${name}):\n${url}\n\nافتحه بـ Chrome، وبعدين المدير بيفعّله.`;
+  $('#qrWa', f).onclick = () => window.open('https://wa.me/?text=' + encodeURIComponent(msg), '_blank');
+  $('#qrShare', f).onclick = () => { if (navigator.share) navigator.share({ title: 'نقطة البيع', text: msg }).catch(() => {}); else $('#qrCopy', f).click(); };
+  $('#qrCopy', f).onclick = () => (navigator.clipboard ? navigator.clipboard.writeText(url) : Promise.reject()).then(() => toast('✓ انتسخ الرابط — ابعته للمندوب')).catch(() => prompt('انسخ الرابط وابعته للمندوب:', url));
   $('#qrPrint', f).onclick = () => { $('#dlg').close(); printDoc(`<h3 class="ptitle">باركود نقطة البيع — ${esc(name)}</h3><div style="width:260px;margin:20px auto">${svg}</div><p style="text-align:center">صوّر الباركود بكاميرا الموبايل لفتح نقطة البيع</p>`); };
 }
 // قائمة موبايلات نقطة البيع بالإعدادات (للمدير)
