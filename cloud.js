@@ -27,6 +27,7 @@ const Cloud = (() => {
     return m;
   }
   function track() {
+    if (window.__tabInactive) return;
     const now = recs();
     // منسجّل التغييرات حتى لو انتهى تسجيل الدخول (الشركة لسا مربوطة) — هيك بترتفع أول ما ترجع تسجّل دخول
     if (snap && configured() && st.company) {
@@ -204,7 +205,7 @@ const Cloud = (() => {
     if (rejected) { console.warn('daftar: rejected', rejected, 'invalid records from cloud'); rejected = 0; }
     if (changed) {
       try { const j = JSON.stringify(db); if (window.Store) Store.write(j); else localStorage.setItem(DBKEY, j); } catch (e) { /* */ }
-      _eng = null;
+      _eng = null; _acc = null;
       $('#coName').textContent = db.settings.company;
     }
     snap = recs();
@@ -249,7 +250,7 @@ const Cloud = (() => {
     try { localStorage.setItem(STASH, JSON.stringify(x)); } catch (e) { /* */ }
   }
   async function sync(manual) {
-    if (busy) return;
+    if (busy || window.__tabInactive) return; // تبويب تاني هو الشغّال
     if (configured() && !st.session && st.company && !st.owner && st.posReq && navigator.onLine) await relink(manual);
     if (!linked() || busy) return;
     if (!navigator.onLine) { lastErr = 'offline'; pill(); if (manual) toast('لا يوجد اتصال بالإنترنت — التغييرات محفوظة على الجهاز', 1); return; }
@@ -475,7 +476,7 @@ const Cloud = (() => {
     try {
       await pull();
       if (!db.accounts.length) { db = { ...seed(), settings: { ...seed().settings, ...db.settings } }; markAllDirty(); }
-      { const j = JSON.stringify(db); if (window.Store) Store.write(j); else localStorage.setItem(DBKEY, j); } _eng = null; snap = recs();
+      { const j = JSON.stringify(db); if (window.Store) Store.write(j); else localStorage.setItem(DBKEY, j); } _eng = null; _acc = null; snap = recs();
       $('#coName').textContent = db.settings.company;
       // مبيعات كانت محفوظة من قبل ما ينوقف هالموبايل: بترجع وبترتفع هلق
       const sx = readStash();
@@ -567,14 +568,14 @@ const Cloud = (() => {
     delete st.res[key]; saveSt(); setTimeout(() => reserve(key), 300);
     return n;
   }
-  const seqKey = d => d.type + (d.rep ? '@' + d.rep : '');
+  const seqKey = (d, kind) => (kind === 'entries' ? 'entry' : d.type + (d.rep ? '@' + d.rep : ''));
   // رقم انعمل بلا نت (محلي) وطلع مكرر مع جهاز تاني: منعطيه رقم جديد من السيرفر
   async function fixDupNumbers() {
     if (!linked()) return;
     const fixed = [];
-    for (const kind of ['invoices', 'vouchers']) {
+    for (const kind of ['invoices', 'vouchers', 'entries']) {
       const groups = {};
-      for (const d of db[kind]) { const k = seqKey(d) + '#' + d.no; (groups[k] = groups[k] || []).push(d); }
+      for (const d of db[kind]) { const k = seqKey(d, kind) + '#' + d.no; (groups[k] = groups[k] || []).push(d); }
       for (const k in groups) {
         const g = groups[k]; if (g.length < 2) continue;
         const local = g.filter(d => d.nl).sort((a, b) => num(b.created) - num(a.created));
@@ -583,10 +584,11 @@ const Cloud = (() => {
         for (const d of local) {
           if (d === keep) continue;
           let n = 0;
-          try { n = num(await http('/rest/v1/rpc/take_no', { method: 'POST', body: JSON.stringify({ p_company: st.company, p_key: seqKey(d), p_min: num(db.seq[seqKey(d)]) }) })); } catch (e) { /* */ }
+          const sk = seqKey(d, kind);
+          try { n = num(await http('/rest/v1/rpc/take_no', { method: 'POST', body: JSON.stringify({ p_company: st.company, p_key: sk, p_min: num(db.seq[sk]) }) })); } catch (e) { /* */ }
           if (!n) continue;
-          const old = d.no; d.no = n; delete d.nl; db.seq[seqKey(d)] = Math.max(num(db.seq[seqKey(d)]), n);
-          fixed.push(`${kind === 'invoices' ? 'فاتورة' : 'سند'} ${old} ← ${n}`);
+          const old = d.no; d.no = n; delete d.nl; db.seq[sk] = Math.max(num(db.seq[sk]), n);
+          fixed.push(`${kind === 'invoices' ? 'فاتورة' : kind === 'vouchers' ? 'سند' : 'قيد'} ${old} ← ${n}`);
         }
       }
     }

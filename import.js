@@ -188,7 +188,7 @@ const ItemImport = (() => {
     db.entries = db.entries.filter(e => !(e.openFor === a.id || (e.desc === OPEN_TAG + a.name && e.lines.length === 2 && e.lines.some(l => l.acc === a.id) && e.lines.some(l => l.acc === 'capital'))));
     ob = r2(ob); if (!ob) return;
     const dr = kind === 'c' ? ob > 0 : ob < 0, v = Math.abs(ob);
-    db.entries.push({ id: uid(), no: nextNo('entry'), date: db.settings.startDate, desc: OPEN_TAG + a.name, openFor: a.id,
+    db.entries.push({ id: uid(), ...newNo('entry'), date: db.settings.startDate, desc: OPEN_TAG + a.name, openFor: a.id,
       lines: [{ acc: a.id, dr: dr ? v : 0, cr: dr ? 0 : v, note: '' }, { acc: 'capital', dr: dr ? 0 : v, cr: dr ? v : 0, note: '' }] });
   }
   function runParties(rows, hr, map, mode, opts) {

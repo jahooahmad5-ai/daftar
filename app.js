@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '6.63';
+const APP_VERSION = '6.64';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -14,6 +14,7 @@ const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 const AR_DIG = '٠١٢٣٤٥٦٧٨٩';
 const num = v => {
+  if (typeof v === 'number') return isFinite(v) ? v : 0; // الأرقام الجاهزة دغري (أسرع بكتير)
   const n = parseFloat(String(v ?? '').replace(/[٠-٩]/g, d => AR_DIG.indexOf(d)).replace(/٫/g, '.').replace(/[,،\s]/g, ''));
   return isFinite(n) ? n : 0;
 };
@@ -135,8 +136,12 @@ function load() {
 }
 let db = load();
 let _eng = null;
+let lastSaveAt = 0;
 function save() {
-  _eng = null;
+  // تبويب تاني صار هو الشغّال: هون ما منكتب شي (حتى ما نمسح شغل التبويب التاني)
+  if (window.__tabInactive) { toast('📑 دفتر مفتوح بمكان تاني — هالشاشة موقفة', 1); return; }
+  lastSaveAt = Date.now();
+  _eng = null; _acc = null;
   try { const j = JSON.stringify(db); if (window.Store) Store.write(j); else localStorage.setItem(KEY, j); }
   catch (e) { toast('تعذّر الحفظ: مساحة التخزين ممتلئة', 1); }
   $('#coName').textContent = db.settings.company;
@@ -155,10 +160,21 @@ function newNo(k) {
 const reserveNo = k => { if (window.Cloud && Cloud.reserve) Cloud.reserve(k); };
 
 /* ------------------------- الحسابات ------------------------- */
-const acc = id => db.accounts.find(a => a.id === id);
+// فهرس الحسابات (بحث بالرقم + أولاد كل حساب): أسرع بكتير مع آلاف الزباين.
+// بيتجدّد لحاله إذا تغيّرت قائمة الحسابات (حساب انضاف أو انحذف)، ومع كل حفظ أو مزامنة
+let _acc = null;
+const accIx = () => {
+  const A = db.accounts;
+  if (_acc && _acc.arr === A && _acc.n === A.length) return _acc;
+  const byId = new Map(), kids = new Map();
+  for (const a of A) { byId.set(a.id, a); const p = a.parent ?? null; if (!kids.has(p)) kids.set(p, []); kids.get(p).push(a); }
+  for (const l of kids.values()) l.sort(byCode);
+  return (_acc = { arr: A, n: A.length, byId, kids });
+};
+const acc = id => accIx().byId.get(id);
 const accName = id => acc(id)?.name || '';
-const children = id => db.accounts.filter(a => (a.parent ?? null) === (id ?? null)).sort(byCode);
-const isGroup = a => !!a && (a.group || db.accounts.some(x => x.parent === a.id));
+const children = id => (accIx().kids.get(id ?? null) || []).slice();
+const isGroup = a => !!a && (a.group || accIx().kids.has(a.id));
 const isUnder = (id, root) => { let a = acc(id); while (a) { if (a.id === root) return true; a = acc(a.parent); } return false; };
 const descendants = id => { const out = [id]; children(id).forEach(c => out.push(...descendants(c.id))); return out; };
 const postable = () => db.accounts.filter(a => !isGroup(a)).sort(byCode);
@@ -270,14 +286,19 @@ function engine() {
   return (_eng = { entries: E, stock, moves });
 }
 function sums(from, to) {
+  const all = !from && !to, E = all ? engine() : null;
+  if (all && E.tot) return E.tot;
   const m = {};
   for (const e of engine().entries) {
     if (from && e.date < from) continue;
     if (to && e.date > to) continue;
     for (const l of e.lines) { const x = m[l.acc] || (m[l.acc] = { dr: 0, cr: 0 }); x.dr += l.dr; x.cr += l.cr; }
   }
+  if (all) E.tot = m;
   return m;
 }
+// أرصدة كل الحسابات مع المجموعات (لهلق) — محسوبة مرة وحدة
+const rollAll = () => { const E = engine(); return E.ru || (E.ru = rollup(sums())); };
 function rollup(m) {
   const out = {};
   const calc = a => {
@@ -301,7 +322,7 @@ const waPhone = raw => {
   else if (d.length === 9 && d.startsWith('9')) d = '963' + d;
   return d.length >= 9 ? d : '';
 };
-const partyBal = a => natural(a, rollup(sums())[a.id]);
+const partyBal = a => natural(a, isGroup(a) ? rollAll()[a.id] : sums()[a.id]);
 const balWords = (a, b) => {
   if (!r2(b)) return '*الحساب مسدّد بالكامل* ✅';
   const isCust = a.type === 'asset';
@@ -643,7 +664,7 @@ const toCsv = rows => {
   return '\ufeff' + [cols.map(q).join(','), ...rows.map(r => cols.map(c => q(r[c])).join(','))].join('\r\n');
 };
 function backupData() {
-  const R = rollup(sums()), st = engine().stock, bal = a => r2(natural(a, R[a.id]));
+  const R = rollAll(), st = engine().stock, bal = a => r2(natural(a, R[a.id]));
   const partyRows = list => list.map(a => ({ 'الرمز': a.code, 'الاسم': a.name, 'الهاتف': a.phone || '', 'العنوان': a.address || '', 'الرصيد': bal(a) }));
   const items = [...db.items].sort(byCode).map(it => ({ 'الرمز': it.code || '', 'اسم المادة': it.name, 'الباركود': it.barcode || '', 'الوحدة': it.unit || '', 'المجموعة': it.group || '', 'سعر الشراء': num(it.buyPrice), 'سعر المبيع': num(it.sellPrice), 'سعر المستهلك': num(it.consumerPrice), 'الكمية الحالية': r2(st[it.id]?.qty || 0) }));
   const invs = [...db.invoices].sort((a, b) => (a.date < b.date ? 1 : -1)).map(i => ({ 'النوع': INV_TYPES[i.type] || i.type, 'الرقم': i.no, 'التاريخ': i.date, 'الطرف': i.party ? accName(i.party) : '', 'الدفع': i.pay === 'cash' ? 'نقدي' : 'آجل', 'الصافي': invTotals(i).net, 'عدد المواد': i.lines.length, 'ملاحظة': i.note || '' }));
@@ -653,7 +674,7 @@ function backupData() {
 // مسح كل بيانات الشركة من هالموبايل (المندوب الموقوف، أو «خروج ومسح»)
 // keepPos: موبايل نقطة بيع منخلّيه نقطة بيع (بيقدر يبعت طلب تفعيل من جديد) بس بلا بيانات
 async function wipeLocalData(keepPos) {
-  db = seed(); _eng = null;
+  db = seed(); _eng = null; _acc = null;
   try {
     const j = JSON.stringify(db);
     if (window.Store) { Store.write(j); await Store.flush(); for (const k of await Store.keys('bak:')) await Store.del(k); }
@@ -669,7 +690,7 @@ async function wipeLocalData(keepPos) {
 const AUTO_DAYS = 7;
 const bkOk = () => !!(window.Store && Store.info().idb) && !isSeller();
 async function autoBackup(force) {
-  if (!bkOk()) return;
+  if (!bkOk() || window.__tabInactive) return;
   try {
     const key = 'bak:' + today(), have = await Store.keys('bak:');
     if (!have.includes(key) || force) await Store.put(key, JSON.stringify({ at: Date.now(), db }));
@@ -889,7 +910,7 @@ function sellerHome(view) {
 V.home = (id, q, view) => {
   if (isSeller()) return sellerHome(view);
   ensureAllRepBoxes();
-  const R = rollup(sums());
+  const R = rollAll();
   const bal = i => natural(acc(i), R[i]);
   const mo = today().slice(0, 7), y = today().slice(0, 4);
   const MS = sums(mo + '-01');
@@ -942,6 +963,7 @@ V.home = (id, q, view) => {
 // استلام مصاري من المندوب: قيد من صندوق المندوب للصندوق الرئيسي (أو أي صندوق)
 function takeFromRep(boxId, balance) {
   const box = acc(boxId); if (!box) return;
+  reserveNo('entry');
   const to = cashAccounts().filter(a => !a.repBox);
   modal('📥 استلام من ' + box.name.replace('صندوق المندوب: ', 'المندوب '), fields([
     { k: 'amount', l: `المبلغ المستلم (${cur()})`, t: 'number', req: 1 },
@@ -954,7 +976,7 @@ function takeFromRep(boxId, balance) {
       const amt = r2(num(d.amount));
       if (amt <= 0) { toast('أدخل مبلغاً صحيحاً', 1); return false; }
       if (amt > r2(balance) && !confirm(`المبلغ أكبر من رصيد صندوقه (${fmt(balance)}). متابعة؟`)) return false;
-      db.entries.push({ id: uid(), no: newNo('entry').no, date: d.date, desc: 'استلام من ' + box.name + (d.note ? ' — ' + d.note : ''),
+      db.entries.push({ id: uid(), ...newNo('entry'), date: d.date, desc: 'استلام من ' + box.name + (d.note ? ' — ' + d.note : ''),
         lines: [{ acc: d.to, dr: amt, cr: 0, note: '' }, { acc: box.id, dr: 0, cr: amt, note: '' }] });
       save(); toast(`✓ استلمت ${fmt(amt)} ${cur()}`); route();
     },
@@ -1001,7 +1023,7 @@ function canAddChild(a) {
   return true;
 }
 V.accounts = (id, q, view) => {
-  const R = rollup(sums());
+  const R = rollAll();
   const rows = treeOrder().map(({ a, d }) => {
     const b = natural(a, R[a.id]);
     return `<tr class="${isGroup(a) ? 'grp' : ''}"><td class="n">${esc(a.code)}</td>
@@ -1037,6 +1059,7 @@ function partyForm(a, kind) {
   fl.push({ k: 'aliases', l: 'أسماء تانية (متل ما بتحكيه أو بتكتبه — كل اسم بسطر)', t: 'textarea', full: 1 });
   fl.push({ k: 'notes', l: 'ملاحظات', t: 'textarea', full: 1 });
   const vals = a ? { ...a, aliases: (a.aliases || []).join('\n') } : { code: nextCode(acc(parent)) };
+  if (!a) reserveNo('entry'); // لقيد الرصيد الافتتاحي (إذا انكتب)
   modal(a ? 'تعديل' : (kind === 'c' ? 'عميل جديد' : 'مورد جديد'), fields(fl, vals), {
     onSave: d => {
       const code = (d.code || '').trim() || nextCode(acc(parent));
@@ -1049,7 +1072,7 @@ function partyForm(a, kind) {
         const ob = r2(num(d.openBal));
         if (ob) {
           const dr = kind === 'c' ? ob > 0 : ob < 0, v = Math.abs(ob);
-          db.entries.push({ id: uid(), no: nextNo('entry'), date: db.settings.startDate, desc: 'رصيد افتتاحي — ' + na.name,
+          db.entries.push({ id: uid(), ...newNo('entry'), date: db.settings.startDate, desc: 'رصيد افتتاحي — ' + na.name,
             lines: [{ acc: na.id, dr: dr ? v : 0, cr: dr ? 0 : v, note: '' }, { acc: 'capital', dr: dr ? 0 : v, cr: dr ? v : 0, note: '' }] });
         }
       }
@@ -1060,7 +1083,7 @@ function partyForm(a, kind) {
 V.parties = (id, q, view) => {
   const k = q.t === 's' && !isSeller() ? 's' : 'c';
   const list = k === 'c' ? customers() : suppliers();
-  const R = rollup(sums());
+  const R = rollAll();
   let total = 0;
   const rows = list.map(a => {
     const b = natural(a, R[a.id]); total += b;
@@ -1593,16 +1616,24 @@ V.invoice = (id, q, view) => {
   // سعر المبيع: آخر سعر بعناه لهالزبون بنفس المادة، وإذا ما في منرجع لسعر بطاقة المادة
   // سياسة التسعير: آخر سعر مبيع لهالزبون بهالمادة — وإذا ما في (أو «زبون عام») سعر بطاقة المادة
   // (مرتجع المبيع بياخد آخر سعر مبيع للزبون)
+  let lfKey = '', lfMap = null;
   const lastFor = (party, itemId) => {
     if (!sideSale || !party || isWalkin(party)) return 0;
-    let best = null;
-    for (const d of db.invoices) {
-      if (d.type !== 'sale' || d.party !== party || (orig && d.id === orig.id)) continue;
-      const l = d.lines.find(x => x.item === itemId); if (!l || !num(l.price)) continue;
-      const k = (d.date || '') + String(d.created || 0).padStart(15, '0');
-      if (!best || k > best.k) best = { k, p: num(l.price) * docRate(d) };
+    const key = party + '|' + db.invoices.length;
+    if (lfKey !== key) {
+      lfKey = key; lfMap = new Map();
+      for (const d of db.invoices) {
+        if (d.type !== 'sale' || d.party !== party || (orig && d.id === orig.id)) continue;
+        const k = (d.date || '') + String(d.created || 0).padStart(15, '0');
+        for (const l of d.lines) {
+          if (!num(l.price)) continue;
+          const b = lfMap.get(l.item);
+          if (!b || k > b.k) lfMap.set(l.item, { k, p: num(l.price) * docRate(d) });
+        }
+      }
     }
-    return best ? r2(best.p) : 0;
+    const b = lfMap.get(itemId);
+    return b ? r2(b.p) : 0;
   };
   const basePrice = it => (sideSale ? (lastFor(val('party'), it.id) || num(it.sellPrice)) : (num(it.buyPrice) || r2(st[it.id]?.avg || 0)));
   // إضافة مادة: إذا كانت موجودة بالفاتورة تزيد الكمية
@@ -2227,6 +2258,7 @@ V.entry = (id, q, view) => {
   const orig = id === 'new' ? null : db.entries.find(e => e.id === id);
   if (id !== 'new' && !orig) return go('#/journal');
   const en = orig ? clone(orig) : { date: today(), desc: '', lines: [{ acc: '', dr: '', cr: '', note: '' }, { acc: '', dr: '', cr: '', note: '' }] };
+  if (!orig) reserveNo('entry');
   const aOpts = accOpts(postable(), '— اختر الحساب —');
   view.innerHTML = head(orig ? `قيد يومية رقم ${esc(orig.no)}` : 'قيد يومية جديد', `${orig ? `<button class="btn red" data-act="del">حذف</button>` : ''}<a class="btn" href="#/journal">رجوع</a>`) + `
   <div class="card">
@@ -2268,7 +2300,7 @@ V.entry = (id, q, view) => {
       const date = $('[name=date]', view).value, desc = $('[name=desc]', view).value.trim();
       if (!date) return toast('أدخل التاريخ', 1);
       if (orig) Object.assign(orig, { date, desc, lines });
-      else db.entries.push({ id: uid(), no: newNo('entry').no, date, desc, lines });
+      else db.entries.push({ id: uid(), ...newNo('entry'), date, desc, lines });
       save(); toast('تم حفظ القيد'); go('#/journal?src=manual');
     },
   });
@@ -2581,6 +2613,44 @@ function loadDemo() {
   vch('receipt', 0, c1, 5000, 'دفعة نقدية');
   save();
 }
+
+/* ---- تبويب واحد شغّال ----
+   إذا انفتح دفتر بتبويب أو شباك تاني (مثلاً التطبيق والمتصفح سوا)، القديم بيوقف وبيطلع عليه «استعمل هون».
+   هيك ما بيكتبوا فوق بعض وبيضيع شغل واحد منهن */
+(function tabGuard() {
+  if (!('BroadcastChannel' in window)) return;
+  const ch = new BroadcastChannel('daftar-tabs'), me = uid(), born = Date.now();
+  let cover = null;
+  const sleep = () => {
+    window.__tabInactive = true;
+    if (cover) return;
+    try { const d = document.getElementById('dlg'); if (d && d.open) d.close(); } catch (e) { /* */ }
+    cover = document.createElement('div'); cover.id = 'tabCover';
+    cover.innerHTML = '<div class="tc-box"><div style="font-size:44px">📑</div><b>دفتر مفتوح بتبويب أو شباك تاني</b><p>هون وقّفناه لحتى ما تختلط البيانات بين الاتنين.</p><button type="button" class="btn pri" id="tcUse">استعمل هون</button></div>';
+    document.body.appendChild(cover);
+    cover.querySelector('#tcUse').onclick = () => {
+      ch.postMessage({ t: 'take', id: me, born: Date.now() });
+      // منستنى التبويب التاني يخلّص حفظه، وبعدين منفتح من جديد بآخر البيانات
+      let done = false; const go = () => { if (done) return; done = true; location.reload(); };
+      ch.onmessage = e => { if (e.data && e.data.t === 'released') go(); };
+      setTimeout(go, 1500);
+    };
+  };
+  ch.onmessage = async e => {
+    const m = e.data || {};
+    if (m.id === me) return;
+    if ((m.t === 'hello' || m.t === 'take') && !window.__tabInactive) {
+      sleep();
+      try { if (window.Store) await Store.flush(); } catch (er) { /* */ }
+      ch.postMessage({ t: 'released', id: me, to: m.id, wrote: lastSaveAt >= (m.born || 0) - 3000 });
+    } else if (m.t === 'released' && m.to === me && m.wrote && Date.now() - born < 5000) {
+      // التبويب القديم كان عم يحفظ لحظة ما فتحنا: منفتح من جديد لناخد آخر شي حفظه
+      try { if (!sessionStorage.getItem('daftar_tab_rl')) { sessionStorage.setItem('daftar_tab_rl', '1'); location.reload(); } } catch (er) { /* */ }
+    }
+  };
+  try { setTimeout(() => sessionStorage.removeItem('daftar_tab_rl'), 8000); } catch (e) { /* */ }
+  ch.postMessage({ t: 'hello', id: me, born });
+})();
 
 /* ------------------------- الإقلاع ------------------------- */
 $('#appName').textContent = APP_NAME;
