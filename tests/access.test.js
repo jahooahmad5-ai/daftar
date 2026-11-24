@@ -112,4 +112,56 @@ module.exports = [
       assert.match(u, /#\/pos\?name=محمد صعوبي&c=c1/);
     },
   },
+  {
+    name: 'موبايل نقطة بيع خسر جلسته: بيبعت طلب تفعيل جديد لحاله، وما بيمسح شي، وبعد التفعيل بترتفع مبيعاته',
+    fn: async base => {
+      const lost = { ...REP, session: null };
+      const p = await page(base, { cloud: lost, ls: { daftar_rep_name: 'محمد', daftar_pos_device: '1' }, cloudOpts: { companies: [], requests: [{ approved: false }] } });
+      // ما لازم يطلع فورم إيميل وكلمة سر
+      assert.strictEqual(await p.locator('#view [name=email]').count(), 0, 'ما لازم يطلع فورم دخول للمندوب');
+      assert.match(await p.text(), /مش متصل بالسحابة/);
+      // باع فاتورة وهو بلا جلسة
+      await p.evaluate(() => { db.items.push({ id: 'it1', name: 'سكر', sellPrice: 1000 }); db.invoices.push({ id: 'sold1', type: 'sale', no: 5, date: today(), pay: 'cash', cashAcc: 'cash', party: '', cur: 'base', rate: '', lines: [{ item: 'it1', qty: 1, price: 1000 }], discount: 0, rep: 'محمد', created: 1 }); save(); });
+      await p.evaluate(() => Cloud.sync(true)); await p.waitForTimeout(500);
+      let st = await p.evaluate(() => ({ relink: Cloud.info().relink, signedIn: Cloud.info().signedIn, inv: db.invoices.length, items: db.items.length }));
+      assert.deepStrictEqual(st, { relink: true, signedIn: true, inv: 1, items: 1 }, 'لازم يعمل حساب جديد ويبعت طلب بلا ما يمسح');
+      assert.strictEqual(p.cloud.pushed.length, 0, 'ما لازم يرفع شي قبل التفعيل');
+      // المدير فعّله
+      p.cloud.companies.push({ id: 'c1', name: 'شركة الاختبار', owner: 'u-owner' });
+      await p.evaluate(() => Cloud.sync(true)); await p.waitForTimeout(500);
+      assert.strictEqual(await p.evaluate(() => Cloud.info().relink), false);
+      assert.ok(p.cloud.pushed.some(x => x.kind === 'invoices' && x.id === 'sold1'), 'الفاتورة لازم ترتفع بعد التفعيل');
+      assert.deepStrictEqual(p.errors, []);
+    },
+  },
+  {
+    name: 'مندوب انوقف وعنده فواتير ما ارتفعت: بتنحفظ، بتنبعت بالواتساب، وبترتفع إذا رجع انفعّل',
+    fn: async base => {
+      const p = await page(base, { cloud: REP, ls: { daftar_rep_name: 'محمد', daftar_pos_device: '1' }, cloudOpts: { requests: [] } });
+      await p.evaluate(async () => {
+        db.items.push({ id: 'it1', name: 'سكر', sellPrice: 1000, buyPrice: 900 });
+        db.accounts.push({ id: 'cz', code: '112009', name: 'زبون مهم', type: 'asset', parent: 'customers', group: false });
+        save(); await Cloud.sync(true); // كل شي ارتفع
+        db.invoices.push({ id: 'off1', type: 'sale', no: 7, date: today(), pay: 'credit', cashAcc: '', party: 'cz', cur: 'base', rate: '', lines: [{ item: 'it1', qty: 3, price: 1000 }], discount: 0, rep: 'محمد', created: 1 });
+        save(); // بلا نت: ما ارتفعت
+      });
+      // المدير وقّفه قبل ما الموبايل يتصل ويرفع الفاتورة — وبعدين الموبايل اتصل
+      p.cloud.companies.length = 0;
+      await p.evaluate(() => Cloud.sync(true)); await p.waitForTimeout(800);
+      const st = await p.evaluate(() => ({ items: db.items.length, cust: db.accounts.some(a => a.id === 'cz'), stash: (Cloud.info().stash || { docs: [] }).docs.map(d => d.id) }));
+      assert.deepStrictEqual(st, { items: 0, cust: false, stash: ['off1'] }, 'الأسعار والزباين بينمسحوا، والفاتورة يلي ما ارتفعت بتنحفظ');
+      await p.go('#/pos'); await p.waitForTimeout(800);
+      assert.match(await p.text(), /في 1 فاتورة ما وصلوا للمدير/);
+      await p.evaluate(() => { window.open = u => { window.__wa = u; }; });
+      await p.click('#stashWa');
+      const wa = decodeURIComponent(await p.evaluate(() => window.__wa));
+      assert.match(wa, /زبون مهم/); assert.match(wa, /سكر: 3 × 1,000 = 3,000/);
+      // رجع انفعّل
+      p.cloud.pushed.length = 0;
+      p.cloud.companies.push({ id: 'c1', name: 'شركة الاختبار', owner: 'u-owner' });
+      await p.evaluate(() => Cloud.posCheck()); await p.waitForTimeout(800);
+      assert.ok(p.cloud.pushed.some(x => x.kind === 'invoices' && x.id === 'off1'), 'الفاتورة المحفوظة لازم ترتفع');
+      assert.strictEqual(await p.evaluate(() => Cloud.info().stash), null);
+    },
+  },
 ];

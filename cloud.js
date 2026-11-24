@@ -212,7 +212,45 @@ const Cloud = (() => {
     saveSt();
     return changed;
   }
+  /* ---------- موبايل نقطة البيع خسر جلسته ----------
+     حسابه انعمل لحاله وما إله كلمة سر يعرفها حدا، فما فيه «يسجّل دخول». منعمله حساب جديد ومنبعت طلب تفعيل للمدير،
+     وبلا ما نمسح شي: بيكمّل بيع، وأول ما المدير يفعّله بترتفع كل المبيعات */
+  async function relink(manual) {
+    busy = true; pill();
+    try {
+      await posJoin(st.posReq.company, st.posReq.name);
+      st.relink = 1; saveSt();
+      toast('🔄 هالموبايل بحاجة تفعيل من جديد — وصل طلب للمدير، ومبيعاتك محفوظة', 1);
+    } catch (e) { lastErr = e.message; if (manual) toast(e.message, 1); }
+    busy = false; pill();
+  }
+  /* ---------- مبيعات ما ارتفعت على موبايل انوقف ----------
+     قبل ما نمسح بيانات الشركة من موبايل مندوب انوقف: الفواتير والسندات يلي لسا ما ارتفعت منحفظها لحالها
+     (بلا أسعار ولا أرصدة) — بترتفع لحالها إذا المدير رجع فعّله، أو بيبعتها للمدير بالواتساب */
+  const STASH = 'daftar_stash';
+  function makeStash() {
+    const docs = [], names = {};
+    for (const k of Object.keys(st.dirty)) {
+      const m = /^(invoices|vouchers)\/(.+)$/.exec(k); if (!m) continue;
+      const d = db[m[1]].find(x => x.id === m[2]); if (d) docs.push({ kind: m[1], ...d });
+    }
+    if (!docs.length) return null;
+    docs.forEach(d => {
+      [d.party, d.acc].forEach(id => { const a = id && db.accounts.find(x => x.id === id); if (a) names[id] = a.name; });
+      (d.lines || []).forEach(l => { const it = db.items.find(x => x.id === l.item); if (it) names[l.item] = it.name; });
+    });
+    return { company: st.company, at: Date.now(), docs, names, cur: db.settings.currency || 'ل.س', fx: db.settings.currency2 || '$' };
+  }
+  const readStash = () => { try { return JSON.parse(localStorage.getItem(STASH) || 'null'); } catch (e) { return null; } };
+  function keepStash(x) {
+    if (!x) return;
+    const old = readStash();
+    if (old && old.company === x.company) { const ids = new Set(x.docs.map(d => d.id)); x.docs.push(...old.docs.filter(d => !ids.has(d.id))); Object.assign(x.names, old.names); }
+    try { localStorage.setItem(STASH, JSON.stringify(x)); } catch (e) { /* */ }
+  }
   async function sync(manual) {
+    if (busy) return;
+    if (configured() && !st.session && st.company && !st.owner && st.posReq && navigator.onLine) await relink(manual);
     if (!linked() || busy) return;
     if (!navigator.onLine) { lastErr = 'offline'; pill(); if (manual) toast('لا يوجد اتصال بالإنترنت — التغييرات محفوظة على الجهاز', 1); return; }
     // مرة وحدة على موبايل صاحب الشركة: رفع كل البيانات (يلي تعدّلت وقت كان تسجيل الدخول منتهي وما ارتفعت)
@@ -222,10 +260,21 @@ const Cloud = (() => {
       // موبايل مندوب: إذا المدير وقّفه (ما عاد عضو بالشركة) منمسح بيانات الشركة من الموبايل كلها
       if (!st.owner) {
         const l = await http('/rest/v1/companies?select=id&id=eq.' + encodeURIComponent(st.company));
-        if (Array.isArray(l) && !l.length) {
-          Object.assign(st, { company: null, companyName: null, lastPull: null, lastSync: null, dirty: {}, res: {} }); saveSt();
+        const member = Array.isArray(l) && l.length > 0;
+        if (member && st.relink) { st.relink = 0; st.lastPull = null; saveSt(); toast('✓ رجع هالموبايل مفعّل — عم ترتفع المبيعات'); }
+        if (Array.isArray(l) && !member) {
+          if (st.relink) {
+            // لسا بانتظار تفعيل المدير؟ ما منرفع ولا منمسح شي
+            const r = await http('/rest/v1/pos_requests?select=approved&company_id=eq.' + encodeURIComponent(st.company)).catch(() => [{}]);
+            if (Array.isArray(r) && r.length) { busy = false; pill(); return; }
+          }
+          // انوقف (أو المدير رفض إعادة التفعيل): منحفظ يلي ما ارتفع، ومنمسح باقي بيانات الشركة
+          const x = makeStash(); keepStash(x);
+          Object.assign(st, { company: null, companyName: null, lastPull: null, lastSync: null, dirty: {}, res: {}, relink: 0 }); saveSt();
           if (typeof wipeLocalData === 'function') await wipeLocalData(true);
-          busy = false; pill(); route(); toast('⛔ هالموبايل انوقف من المدير — انمسحت بيانات الشركة منه', 1); return;
+          busy = false; pill(); route();
+          toast(x ? `⛔ هالموبايل انوقف — في ${x.docs.length} فاتورة/سند ما وصلوا للمدير، محفوظين عالموبايل` : '⛔ هالموبايل انوقف من المدير — انمسحت بيانات الشركة منه', 1);
+          return;
         }
       }
       await push();
@@ -428,6 +477,14 @@ const Cloud = (() => {
       if (!db.accounts.length) { db = { ...seed(), settings: { ...seed().settings, ...db.settings } }; markAllDirty(); }
       { const j = JSON.stringify(db); if (window.Store) Store.write(j); else localStorage.setItem(DBKEY, j); } _eng = null; snap = recs();
       $('#coName').textContent = db.settings.company;
+      // مبيعات كانت محفوظة من قبل ما ينوقف هالموبايل: بترجع وبترتفع هلق
+      const sx = readStash();
+      if (sx && sx.company === c.id) {
+        let n = 0;
+        for (const { kind, ...d } of sx.docs) if (KINDS.includes(kind) && !db[kind].some(x => x.id === d.id)) { db[kind].push(d); n++; }
+        localStorage.removeItem(STASH);
+        if (n) { save(); toast(`✓ ${n} فاتورة/سند كانوا محفوظين — عم يرتفعوا للمدير`); }
+      }
       await sync();
       if (st.owner) ownerHere();
       else if (typeof applySellerUI === 'function') { applySellerUI(); setTimeout(() => { location.hash = '#/'; route(); }, 50); }
@@ -557,7 +614,7 @@ const Cloud = (() => {
 
   // عضو بشركة مش صاحبها (متل المندوب) = وضع البيّاع تلقائياً على موبايله
   if (typeof applySellerUI === 'function') setTimeout(() => { applySellerUI(); route(); }, 0); // كمان شاشة القفل بتحتاج Cloud جاهز
-  return { track, card, sync, pill, reserve, take, posJoin, posCheck, ownerSwitch, posList, posApprove, posRevoke, posNotify, info: () => ({ linked: linked(), pending: pending(), busy, lastSync: st.lastSync, configured: configured(), owner: !!(linked() && st.owner), member: !!(configured() && st.company && !st.owner), company: st.company || '', posReq: st.posReq || null, email: st.session?.email || '' }) };
+  return { track, card, sync, pill, reserve, take, posJoin, posCheck, ownerSwitch, posList, posApprove, posRevoke, posNotify, info: () => ({ linked: linked(), pending: pending(), busy, lastSync: st.lastSync, configured: configured(), owner: !!(linked() && st.owner), member: !!(configured() && st.company && !st.owner), company: st.company || '', posReq: st.posReq || null, signedIn: !!st.session, relink: !!st.relink, stash: readStash(), email: st.session?.email || '' }) };
 })();
 window.Cloud = Cloud;
 if (/^#\/settings/.test(location.hash)) route();

@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '6.62';
+const APP_VERSION = '6.63';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -539,7 +539,7 @@ async function posDevsCard(el) {
     ${r.approved ? '' : `<button class="btn pri" data-pa="ok" data-u="${r.user_id}">✓ تفعيل</button>`}<button class="btn red" data-pa="no" data-u="${r.user_id}">${r.approved ? '⛔ إيقاف' : '✕ رفض'}</button></div>`).join('');
   el.onclick = async e => {
     const b = e.target.closest('[data-pa]'); if (!b) return;
-    if (b.dataset.pa === 'no' && !confirm('أكيد؟ هالموبايل ما عاد يقدر يفتح نقطة البيع.')) return;
+    if (b.dataset.pa === 'no' && !confirm('أكيد؟ هالموبايل ما عاد يقدر يفتح نقطة البيع، وبتنمسح منه بيانات الشركة.\n\nإذا فيه مبيعات ما ارتفعت (كان بلا نت)، بتضل محفوظة عنده وبترتفع إذا رجعت فعّلته — أو بيبعتلك ياها بالواتساب.')) return;
     b.disabled = true;
     try { if (b.dataset.pa === 'ok') { await Cloud.posApprove(b.dataset.u); ensureRepBox((list.find(r => r.user_id === b.dataset.u) || {}).name); toast('✓ تفعّلت'); } else { await Cloud.posRevoke(b.dataset.u); toast('✓ توقّفت'); } }
     catch (err) { toast(err.message, 1); }
@@ -768,11 +768,15 @@ V.pos = V.sellersetup = (id, q, view) => {
     applySellerUI();
     const repN = name || (info.posReq && info.posReq.name) || repName() || 'مندوب';
     if (q.c) history.replaceState(null, '', '#/pos');
-    const show = (html) => { if (/^#\/(pos|sellersetup)/.test(location.hash)) view.innerHTML = head(`🧑‍💼 نقطة البيع — ${esc(repN)}`) + `<div class="card" style="text-align:center">${html}</div>`; };
+    const show = (html) => {
+      if (!/^#\/(pos|sellersetup)/.test(location.hash)) return;
+      view.innerHTML = head(`🧑‍💼 نقطة البيع — ${esc(repN)}`) + `<div class="card" style="text-align:center">${html}</div>` + stashHtml();
+      bindStash(view);
+    };
     const waitHtml = `<p style="font-size:42px;margin:6px 0">⏳</p><p><b>بانتظار تفعيل المدير</b></p><p class="muted">خلّي المدير يكبس «✓ تفعيل» من موبايله.<br>أول ما يفعّل بتفتح نقطة البيع لحالها.</p><div class="acts" style="justify-content:center"><button class="btn pri" id="posChk">🔄 تحقّق هلق</button></div>`;
     const check = async () => {
       try {
-        if (!Cloud.info().posReq || q.c) { await Cloud.posJoin(company, repN); q.c = ''; }
+        if (!Cloud.info().posReq || q.c || !Cloud.info().signedIn) { await Cloud.posJoin(company, repN); q.c = ''; }
         const r = await Cloud.posCheck();
         if (r === 'ok') { clearInterval(window._posPoll); history.replaceState(null, '', '#/'); route(); toast('✓ تفعّلت نقطة البيع'); return; }
         if (r === 'rejected') {
@@ -814,6 +818,31 @@ V.lock = (id, q, view) => {
   Cloud.card($('#cloudCard', view), { gate: true });
 };
 
+/* ---- مبيعات ما وصلت للمدير (موبايل انوقف وكان فيه فواتير ما ارتفعت) ---- */
+const stashText = x => {
+  const L = [`*مبيعات ما وصلت للمدير — ${repName() || 'مندوب'}*`];
+  for (const d of x.docs) {
+    const sym = d.cur === 'fx' ? x.fx : x.cur;
+    if (d.kind === 'invoices') {
+      L.push(`🧾 ${INV_TYPES[d.type] || 'فاتورة'} رقم ${d.no} — ${d.date} — ${x.names[d.party] || 'زبون عام'} — ${d.pay === 'cash' ? 'نقدي' : 'آجل'}`);
+      (d.lines || []).forEach(l => L.push(`   • ${x.names[l.item] || 'مادة'}: ${fmt(l.qty)} × ${fmt(l.price)} = ${fmt(num(l.qty) * num(l.price))}`));
+      L.push(`   *الصافي: ${fmt(invTotals(d).net)} ${sym}*`);
+    } else L.push(`📥 سند ${d.type === 'receipt' ? 'قبض' : 'دفع'} رقم ${d.no} — ${d.date} — ${x.names[d.acc] || ''}: *${fmt(d.amount)} ${sym}*`);
+  }
+  return L.join('\n');
+};
+function stashHtml() {
+  const x = window.Cloud && Cloud.info().stash; if (!x || !x.docs || !x.docs.length) return '';
+  const inv = x.docs.filter(d => d.kind === 'invoices').length, vch = x.docs.length - inv;
+  return `<div class="card warn-card"><p><b>⚠️ في ${inv ? inv + ' فاتورة' : ''}${inv && vch ? ' و' : ''}${vch ? vch + ' سند' : ''} ما وصلوا للمدير</b> (انعملوا بلا نت قبل ما ينوقف هالموبايل).</p>
+    <p class="muted">محفوظين عالموبايل، <b>وبيرتفعوا لحالهن</b> إذا المدير فعّلك من جديد. أو ابعتهن للمدير هلق:</p>
+    <div class="acts"><button type="button" class="btn pri" id="stashWa">📤 ابعتهن للمدير بالواتساب</button></div></div>`;
+}
+function bindStash(view) {
+  const b = $('#stashWa', view); if (!b) return;
+  b.onclick = () => { const x = Cloud.info().stash; if (x) window.open('https://wa.me/?text=' + encodeURIComponent(stashText(x)), '_blank'); };
+}
+
 /* ------------------------- الرئيسية ------------------------- */
 function sellerHome(view) {
   const t = today(), mine = db.invoices.filter(i => i.type === 'sale' && i.date === t && i.rep === myRep());
@@ -829,7 +858,12 @@ function sellerHome(view) {
   ${myBox() ? `<p class="muted" style="text-align:center">💰 ${esc(myBox().name)}</p>` : `<p class="bad" style="text-align:center">${NO_BOX}</p>`}
   <p class="muted" style="text-align:center;margin-top:14px">الإصدار ${APP_VERSION}${window.Cloud && Cloud.info().email && !/@pos\.daftar\.app$/.test(Cloud.info().email) ? ` — ${esc(Cloud.info().email)}` : ''}</p>
   <p style="text-align:center;margin-top:4px"><button class="btn" style="font-size:12px;opacity:.7" data-act="boss">🔑 دخول المدير</button></p>`;
-  if (window.Cloud && !Cloud.info().linked) { const c = document.createElement('div'); c.className = 'card'; view.appendChild(c); Cloud.card(c); }
+  if (window.Cloud) {
+    const ci = Cloud.info();
+    if (ci.relink) view.insertAdjacentHTML('afterbegin', '<div class="card warn-card"><b>🔄 هالموبايل بحاجة تفعيل من جديد من المدير</b><br><span class="muted">وصله طلب على موبايله. فيك تكمّل بيع عادي، والمبيعات بترتفع لحالها بعد التفعيل.</span></div>');
+    else if (!ci.linked && ci.posReq) view.insertAdjacentHTML('beforeend', '<div class="card warn-card"><b>📶 هالموبايل مش متصل بالسحابة هلق</b><br><span class="muted">فيك تكمّل بيع — المبيعات محفوظة وبترتفع لحالها أول ما يرجع النت. إذا ضل هيك، خلّي المدير يبعتلك رابط نقطة البيع من جديد.</span></div>');
+    else if (!ci.linked) { const c = document.createElement('div'); c.className = 'card'; view.appendChild(c); Cloud.card(c); }
+  }
   if (!repName()) {
     modal('🧑‍💼 اسم المندوب', '<p class="muted">اكتب اسمك مرة وحدة — بيطلع على كل فواتيرك.</p>' + fields([{ k: 'name', l: 'اسم المندوب', req: 1, full: 1 }]), {
       saveText: 'حفظ', onSave: d => { const n = String(d.name || '').trim(); if (!n) return false; localStorage.setItem(REP_KEY, n); route(); },
