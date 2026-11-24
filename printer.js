@@ -35,7 +35,7 @@ const Receipt = (() => {
   }
   const paidFor = inv => db.vouchers.filter(v => v.inv === inv.id).reduce((s, v) => s + num(v.amount) * docRate(v), 0); // بالليرة
 
-  function build(inv) {
+  function build(inv, opt) {
     const s = db.settings, t = invTotals(inv), sym = docSym(inv), a = acc(inv.party);
     // سعر المستهلك: من سطر الفاتورة، وإذا فاضي من بطاقة المادة
     const cpOf = l => num(l.cp) || num((db.items.find(x => x.id === l.item) || {}).consumerPrice);
@@ -108,11 +108,11 @@ const Receipt = (() => {
     const now = new Date();
     txt(`تاريخ الطباعة ${today()} ${now.toTimeString().slice(0, 8)}`, { size: 18, align: 'c' });
     gap(30);
-    return render(ops);
+    return render(ops, opt);
   }
 
   // سند قبض / دفع: المبلغ بالعملة الجديدة والقديمة دايماً — وبلا رصيد الزبون
-  function buildVoucher(v) {
+  function buildVoucher(v, opt) {
     const s = db.settings, isR = v.type === 'receipt', a = acc(v.acc), cs = s.currency || 'ل.س';
     const ops = [];
     const txt = (text, o = {}) => ops.push({ k: 't', text: String(text ?? ''), ...o });
@@ -148,11 +148,17 @@ const Receipt = (() => {
     const now = new Date();
     txt(`تاريخ الطباعة ${today()} ${now.toTimeString().slice(0, 8)}`, { size: 18, align: 'c' });
     gap(30);
-    return render(ops);
+    return render(ops, opt);
   }
   const isVoucher = d => !!d && !Array.isArray(d.lines) && 'acc' in d;
   const docName = d => (isVoucher(d) ? (d.type === 'receipt' ? 'سند القبض' : 'سند الدفع') : 'الفاتورة') + ' رقم ' + d.no;
-  const make = d => (isVoucher(d) ? buildVoucher(d) : build(d));
+  const make = (d, opt) => (isVoucher(d) ? buildVoucher(d, opt) : build(d, opt));
+  // صورة الفاتورة/السند للواتساب: نفس الإيصال بعرض 80مم وبدقة مضاعفة (واضحة حتى بعد ما الواتساب يضغطها)
+  async function picture(d) {
+    await loadLogo();
+    const c = make(d, { width: 576, scale: 2 });
+    return new Promise(res => c.toBlob(res, 'image/png'));
+  }
 
   // الشعار (من الإعدادات) يتحمّل مرة وحدة
   let logoImg = null, logoSrc = '';
@@ -187,8 +193,9 @@ const Receipt = (() => {
     x.restore();
   }
 
-  function render(ops) {
-    const W = paperW(), P = 8, c = document.createElement('canvas'), x = c.getContext('2d');
+  // opt.scale: دقة أعلى (للصورة على الواتساب) — نفس التصميم بس كل شي أوضح بـ scale مرات
+  function render(ops, opt = {}) {
+    const W = opt.width || paperW(), S = opt.scale || 1, P = 8, c = document.createElement('canvas'), x = c.getContext('2d');
     const scale = W / 576;
     const font = o => `${o.bold ? 'bold ' : ''}${Math.round((o.size || 24) * (W < 576 ? 0.82 : 1))}px ${FONT}`;
     const wrap = (text, o, max) => {
@@ -225,8 +232,9 @@ const Receipt = (() => {
         plan.push({ o, y: H, lh, cw, rowsL, hs, pad }); H += hs.reduce((a, b) => a + b, 0) + 6;
       } else H += o.h;
     }
-    c.width = W; c.height = H + P;
-    x.fillStyle = '#fff'; x.fillRect(0, 0, W, c.height); x.fillStyle = '#000'; x.strokeStyle = '#000'; x.textBaseline = 'top';
+    c.width = Math.round(W * S); c.height = Math.round((H + P) * S);
+    x.setTransform(S, 0, 0, S, 0, 0);
+    x.fillStyle = '#fff'; x.fillRect(0, 0, W, H + P); x.fillStyle = '#000'; x.strokeStyle = '#000'; x.textBaseline = 'top';
     for (const pl of plan) {
       const { o, y, lh } = pl;
       if (o.k === 'hr') { x.fillRect(P, y + 8, W - 2 * P, 2); continue; }
@@ -510,6 +518,6 @@ const Receipt = (() => {
       else { toast(`❌ ما زبطت الطباعة بالبلوتوث — ${nm} محفوظ${isVoucher(inv) ? '' : 'ة'}، جرّب طريقة تانية`, 1); open(inv); }
     }
   }
-  return { open, pdfBlob, printDirect, warm, pill, build: inv => make(inv), buildVoucher, escpos, loadLogo, balances };
+  return { open, pdfBlob, printDirect, warm, pill, build: inv => make(inv), buildVoucher, picture, escpos, loadLogo, balances };
 })();
 window.Receipt = Receipt;

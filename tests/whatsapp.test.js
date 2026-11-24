@@ -4,6 +4,7 @@ const assert = require('assert');
 const { page, OWNER, REP } = require('./helpers');
 
 const setup = p => p.evaluate(() => {
+  db.settings.waMode = 'text'; // هالفحوصات للإرسال كنص (الصورة إلها فحوصات لحالها تحت)
   window.open = u => { (window.__opened = window.__opened || []).push(decodeURIComponent(u)); };
   db.items.push({ id: 'it1', name: 'سكر', sellPrice: 1000, buyPrice: 900, openQty: 100 });
   db.accounts.push({ id: 'c1', code: '112001', name: 'أحمد', type: 'asset', parent: 'customers', group: false, phone: '0933123456' });
@@ -82,6 +83,7 @@ module.exports = [
       // موبايل المندوب
       const r = await page(base, { cloud: REP, ls: { daftar_rep_name: 'محمد' } });
       await r.evaluate(() => {
+        db.settings.waMode = 'text';
         window.open = u => { (window.__opened = window.__opened || []).push(u); };
         db.accounts.push({ id: 'repbox_1', code: '1113', name: 'صندوق المندوب: محمد', type: 'asset', parent: 'cashGroup', group: false, repBox: 'محمد' },
           { id: 'c1', code: '112001', name: 'أحمد', type: 'asset', parent: 'customers', group: false, phone: '0933123456' });
@@ -101,6 +103,7 @@ module.exports = [
       // موبايل المدير: الفاتورة وصلت بالمزامنة
       const o = await page(base, { cloud: OWNER });
       await o.evaluate(d => {
+        db.settings.waMode = 'text';
         window.open = u => { (window.__opened = window.__opened || []).push(decodeURIComponent(u)); };
         db.accounts.push({ id: 'repbox_1', code: '1113', name: 'صندوق المندوب: محمد', type: 'asset', parent: 'cashGroup', group: false, repBox: 'محمد' },
           { id: 'c1', code: '112001', name: 'أحمد', type: 'asset', parent: 'customers', group: false, phone: '0933123456' });
@@ -126,6 +129,7 @@ module.exports = [
     fn: async base => {
       const r = await page(base, { cloud: REP, ls: { daftar_rep_name: 'محمد' } });
       await r.evaluate(() => {
+        db.settings.waMode = 'text';
         window.open = u => { (window.__opened = window.__opened || []).push(decodeURIComponent(u)); };
         db.accounts.push({ id: 'repbox_1', code: '1113', name: 'صندوق المندوب: محمد', type: 'asset', parent: 'cashGroup', group: false, repBox: 'محمد' },
           { id: 'c1', code: '112001', name: 'أحمد', type: 'asset', parent: 'customers', group: false, phone: '0933123456' });
@@ -143,6 +147,69 @@ module.exports = [
       await r.go('#/'); await r.click('a[href="#/vouchers?new=receipt"]'); await r.waitForTimeout(300);
       await r.selectOption('#dlg [name=acc]', 'c1'); await r.fill('#dlg [name=amount]', '700'); await r.click('#dlg button.pri'); await r.waitForTimeout(400);
       assert.strictEqual(await r.evaluate(() => db.vouchers.slice(-1)[0].waReq > 0), true);
+    },
+  },
+  {
+    name: 'صورة: الفاتورة والسند بينبعتوا صورة PNG عالية الجودة (عرض 1152) مع سطر تحتها',
+    fn: async base => {
+      const p = await page(base, { cloud: OWNER });
+      await setup(p);
+      await p.evaluate(() => {
+        db.settings.waMode = 'img';
+        navigator.canShare = () => true;
+        navigator.share = async data => { const f = data.files[0], bm = await createImageBitmap(f); (window.__shared = window.__shared || []).push({ name: f.name, type: f.type, size: f.size, w: bm.width, h: bm.height, text: data.text }); };
+      });
+      await p.go('#/invoice/inv1'); await p.click('[data-act=wa]');
+      await p.waitForFunction(() => (window.__shared || []).length === 1, null, { timeout: 10000 });
+      let sh = await p.evaluate(() => window.__shared);
+      assert.strictEqual(sh[0].name, 'invoice-4.png'); assert.strictEqual(sh[0].type, 'image/png');
+      assert.strictEqual(sh[0].w, 1152, 'العرض لازم يكون ضعف عرض الإيصال (دقة عالية)');
+      assert.ok(sh[0].h > 1000 && sh[0].size > 20000, 'الصورة لازم تكون كاملة: ' + JSON.stringify(sh[0]));
+      assert.match(sh[0].text, /فاتورة مبيع رقم 4 — 2,000/);
+      assert.strictEqual(await p.evaluate(() => (window.__opened || []).length), 0, 'بوضع الصورة ما بينفتح رابط نص');
+      // السند
+      await p.go('#/vouchers'); await p.click('tr[data-id="vr1"]'); await p.waitForTimeout(150); await p.click('#vWa');
+      await p.waitForFunction(() => (window.__shared || []).length === 2, null, { timeout: 10000 });
+      sh = await p.evaluate(() => window.__shared);
+      assert.strictEqual(sh[1].name, 'receipt-9.png'); assert.strictEqual(sh[1].w, 1152); assert.match(sh[1].text, /سند قبض رقم 9 — 1,500/);
+      assert.deepStrictEqual(p.errors, []);
+    },
+  },
+  {
+    name: 'صورة من صندوق المدير: بتنعلّم «انبعتت» بس إذا انبعتت فعلاً (مش إذا لغيت المشاركة)',
+    fn: async base => {
+      const o = await page(base, { cloud: OWNER });
+      await o.evaluate(() => {
+        db.settings.waMode = 'img';
+        db.accounts.push({ id: 'c1', code: '112001', name: 'أحمد', type: 'asset', parent: 'customers', group: false, phone: '0933123456' });
+        db.items.push({ id: 'it1', name: 'سكر', sellPrice: 1000, buyPrice: 900, openQty: 100 });
+        db.invoices.push({ id: 'ri1', type: 'sale', no: 3, date: today(), pay: 'credit', cashAcc: '', party: 'c1', cur: 'base', rate: '', lines: [{ item: 'it1', qty: 2, price: 1000 }], discount: 0, rep: 'محمد', created: 1, waReq: Date.now() });
+        save();
+        navigator.canShare = () => true;
+        window.__cancel = true;
+        navigator.share = async () => { if (window.__cancel) { const e = new Error('cancel'); e.name = 'AbortError'; throw e; } window.__ok = 1; };
+      });
+      await o.go('#/outbox'); await o.click('[data-act=send]'); await o.waitForTimeout(800);
+      assert.ok(!(await o.evaluate(() => db.invoices[0].waSent)), 'لغيت المشاركة ← لازم تضل بالصندوق');
+      await o.evaluate(() => { window.__cancel = false; });
+      await o.click('[data-act=send]'); await o.waitForFunction(() => window.__ok === 1, null, { timeout: 10000 }); await o.waitForTimeout(600);
+      assert.ok(await o.evaluate(() => db.invoices[0].waSent > 0));
+      assert.match(await o.text(), /ما في رسائل بانتظار الإرسال/);
+    },
+  },
+  {
+    name: 'صورة على جهاز ما بيدعم مشاركة الصور: بتنزل الصورة وبتنفتح محادثة الزبون',
+    fn: async base => {
+      const p = await page(base, { cloud: OWNER });
+      await setup(p);
+      await p.evaluate(() => { db.settings.waMode = 'img'; navigator.canShare = undefined; waSetDirect('c1', '963933123456'); });
+      const dl = p.waitForEvent('download', { timeout: 10000 });
+      await p.go('#/invoice/inv1'); await p.click('[data-act=wa]');
+      const d = await dl;
+      assert.strictEqual(d.suggestedFilename(), 'invoice-4.png');
+      await p.waitForTimeout(300);
+      const o = await p.evaluate(() => window.__opened || []);
+      assert.strictEqual(o.length, 1); assert.match(o[0], /^https:\/\/wa\.me\/963933123456\?text=/);
     },
   },
 ];

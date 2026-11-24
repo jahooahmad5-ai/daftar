@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '6.66';
+const APP_VERSION = '6.67';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -878,6 +878,32 @@ const waTextFor = (kind, d) => (kind === 'invoices' ? waInvoiceText(d) : waVouch
 const outboxDocs = () => [...db.invoices.filter(waWant).map(d => ({ kind: 'invoices', d })), ...db.vouchers.filter(waWant).map(d => ({ kind: 'vouchers', d }))]
   .sort((a, b) => num(a.d.waReq) - num(b.d.waReq));
 const waBadge = d => (d && d.waSent && !d.waSkip ? ' <small title="انبعتت للزبون من موبايل المدير">✅</small>' : waWant(d) ? ' <small title="بانتظار المدير يبعتها للزبون">📤</small>' : '');
+// الفاتورة أو السند على واتساب: صورة عالية الجودة (نفس الإيصال) — أو نص إذا اخترت هيك بالإعدادات
+const waCaption = (kind, d) => {
+  const t = kind === 'invoices' ? (INV_TYPES[d.type] || 'فاتورة') : d.type === 'receipt' ? 'سند قبض' : 'سند دفع';
+  const amt = kind === 'invoices' ? invTotals(d).net : num(d.amount);
+  return `${waHead()}\n${t} رقم ${d.no}${repTag(d)} — ${fmt(amt)} ${docSym(d)}\nشكراً لتعاملكم معنا 🌹`;
+};
+async function waSendDoc(kind, d, onSent) {
+  const a = waPartyOf(kind, d);
+  if (db.settings.waMode === 'text' || !window.Receipt || !Receipt.picture) return waSend(a, waTextFor(kind, d), onSent);
+  let blob = null;
+  try { toast('🖼 عم جهّز الصورة…'); blob = await Receipt.picture(d); } catch (e) { /* */ }
+  if (!blob) return waSend(a, waTextFor(kind, d), onSent);
+  // اسم الملف بالإنجليزي: بعض الأجهزة بتغيّر الأسماء العربية لـ «download»
+  const name = `${kind === 'invoices' ? 'invoice' : d.type === 'receipt' ? 'receipt' : 'payment'}-${d.no}.png`, file = new File([blob], name, { type: 'image/png' });
+  if (navigator.canShare && navigator.canShare({ files: [file] })) {
+    if (a) toast(`📤 اختار محادثة «${a.name}» من الواتساب`);
+    try { await navigator.share({ files: [file], text: waCaption(kind, d) }); if (onSent) onSent(); }
+    catch (e) { if (!e || e.name !== 'AbortError') { toast('ما زبطت مشاركة الصورة — منبعتها كنص', 1); waSend(a, waTextFor(kind, d), onSent); } }
+    return;
+  }
+  // جهاز ما بيدعم مشاركة الصور (متل الكمبيوتر): منزّل الصورة ومنفتح محادثة الزبون لترفقها
+  const u = URL.createObjectURL(blob), el = document.createElement('a'); el.href = u; el.download = name;
+  document.body.appendChild(el); el.click(); el.remove(); setTimeout(() => URL.revokeObjectURL(u), 3000);
+  toast('🖼 نزلت الصورة — ارفقها بمحادثة الزبون', 1);
+  waSend(a, waCaption(kind, d), onSent);
+}
 // موبايل المندوب: من وين تنبعت الرسالة؟
 function repWaAsk(kind, d) {
   const a = waPartyOf(kind, d);
@@ -893,7 +919,7 @@ function repWaAsk(kind, d) {
     if (!d.waReq || d.waSent) { d.waReq = Date.now(); delete d.waSent; delete d.waSkip; save(); }
     toast('✓ وصلت للمدير — رح تنبعت للزبون من موبايله'); route();
   };
-  $('#waMine', f).onclick = () => { $('#dlg').close(); waSend(a, waTextFor(kind, d)); };
+  $('#waMine', f).onclick = () => { $('#dlg').close(); waSendDoc(kind, d); };
 }
 // موبايل المدير: شريط فوق إذا في رسائل من المندوب بانتظار الإرسال
 function waOutboxBar() {
@@ -917,7 +943,7 @@ V.outbox = (id, q, view) => {
       : '<div class="card"><p class="muted">✅ ما في رسائل بانتظار الإرسال.</p></div>');
   onAct(view, {
     send: i => { const it = list[+i]; if (!it) return; const a = waPartyOf(it.kind, it.d); if (!a) return toast('الزبون مش موجود', 1);
-      waSend(a, waTextFor(it.kind, it.d), () => { it.d.waSent = Date.now(); save(); setTimeout(route, 400); }); },
+      waSendDoc(it.kind, it.d, () => { it.d.waSent = Date.now(); save(); setTimeout(route, 400); }); },
     skip: i => { const it = list[+i]; if (!it || !confirm('ما بدك تبعت هالرسالة؟ (بتنشال من الصندوق)')) return; it.d.waSent = Date.now(); it.d.waSkip = 1; save(); route(); },
   });
   waOutboxBar();
@@ -2146,7 +2172,7 @@ V.invoice = (id, q, view) => {
     saveNew: () => doSave(true),
     savePrint: () => doSave(false, true),
     print: () => printDoc(invoiceHtml(orig)),
-    wa: () => (isSeller() ? repWaAsk('invoices', orig) : waSend(acc(orig.party), waInvoiceText(orig))),
+    wa: () => (isSeller() ? repWaAsk('invoices', orig) : waSendDoc('invoices', orig)),
     receipt: () => window.Receipt && Receipt.open(orig),
     del: () => { if (isSeller()) return toast('🔒 الحذف مسكّر بوضع البيّاع', 1); if (!confirm('حذف الفاتورة نهائياً؟ سيتم عكس أثرها على الحسابات والمستودع.')) return; db.invoices = db.invoices.filter(x => x.id !== orig.id); db.vouchers = db.vouchers.filter(v => v.inv !== orig.id); save(); toast('تم الحذف'); go('#/invoices'); },
   });
@@ -2230,7 +2256,7 @@ function voucherForm(v, type, preAcc) {
     $('#vPrint').onclick = () => { $('#dlg').close(); printDoc(voucherHtml(v)); };
     const bt = $('#vBt'); if (bt) bt.onclick = () => { $('#dlg').close(); Receipt.printDirect(v); };
     $('#vRc').onclick = () => { $('#dlg').close(); Receipt.open(v); };
-    $('#vWa').onclick = () => { $('#dlg').close(); waSend(acc(v.acc), waVoucherText(v)); };
+    $('#vWa').onclick = () => { $('#dlg').close(); waSendDoc('vouchers', v); };
   }
 }
 function voucherHtml(v) {
@@ -2272,7 +2298,7 @@ function voucherPrintAsk(v, fresh) {
   const bt = $('#vBt', f); if (bt) bt.onclick = () => { $('#dlg').close(); Receipt.printDirect(v); };
   $('#vRc', f).onclick = () => { $('#dlg').close(); Receipt.open(v); };
   $('#vA4', f).onclick = () => { $('#dlg').close(); printDoc(voucherHtml(v)); };
-  $('#vWa', f).onclick = () => { $('#dlg').close(); if (isSeller()) repWaAsk('vouchers', v); else waSend(acc(v.acc), waVoucherText(v)); };
+  $('#vWa', f).onclick = () => { $('#dlg').close(); if (isSeller()) repWaAsk('vouchers', v); else waSendDoc('vouchers', v); };
 }
 // قبض من زبون (المندوب): المصاري بتنزل بصندوقه، وبلا ما يشوف رصيد الزبون
 function sellerReceipt() {
@@ -2583,6 +2609,7 @@ V.settings = (id, q, view) => {
       { k: 'oldFactor', l: 'كل ليرة جديدة = كم ليرة قديمة', t: 'number' },
       { k: 'startDate', l: 'تاريخ بداية الفترة المحاسبية', t: 'date', req: 1 },
       { k: 'paperWidth', l: 'عرض ورق الطابعة الحرارية', t: 'select', opts: [['80', '80 مم (3 إنش)'], ['58', '58 مم (2 إنش)']] },
+      { k: 'waMode', l: '🟢 إرسال الفاتورة والسند على واتساب', t: 'select', opts: [['img', '🖼 صورة (عالية الجودة)'], ['text', '✉️ نص (بيروح دغري على رقم الزبون)']] },
       { k: 'waAuto', l: '📤 واتساب فواتير وقبوضات المندوب', t: 'select', opts: [['0', 'بس لما المندوب يختار «من موبايل المدير»'], ['1', 'كلها بتروح لصندوق الإرسال عندي لحالها']] },
       { k: 'printFast', l: 'سرعة طباعة البلوتوث', t: 'select', opts: [['1', '⚡ سريعة (ضعف السرعة)'], ['0', 'عادية (أنعم شوي)']] },
       { k: 'receiptCp', l: 'عمود سعر المستهلك بالإيصال', t: 'select', opts: [['1', 'يطلع دايماً'], ['0', 'لا يطلع']] },
