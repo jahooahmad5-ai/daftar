@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '6.64';
+const APP_VERSION = '6.65';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -333,7 +333,22 @@ const balWords = (a, b) => {
   if (FX().rate) t += `\n(≈ ${fmt(m / FX().rate)} ${FX().sym})`;
   return t;
 };
+/* إرسال مباشر: بعد أول مرة بتبعت فيها لزبون على رقمه، المرات الجاية بتنفتح محادثته دغري (بلا شاشة التأكيد).
+   محفوظ على هالموبايل: رقم الزبون (بالصيغة الدولية) — وإذا تغيّر رقمه ببطاقته، بترجع شاشة التأكيد مرة */
+const WA_KEY = 'daftar_wa_direct';
+const waMap = () => { try { return JSON.parse(localStorage.getItem(WA_KEY) || '{}') || {}; } catch (e) { return {}; } };
+function waSetDirect(id, ph) {
+  const m = waMap(); if (ph) m[id] = ph; else delete m[id];
+  try { localStorage.setItem(WA_KEY, JSON.stringify(m)); } catch (e) { /* */ }
+}
+const waDirectFor = a => { if (!a) return ''; const d = waMap()[a.id]; if (!d) return ''; const cur = waPhone(a.phone); return !cur || cur === d ? d : ''; };
 function waSend(a, text) {
+  const direct = waDirectFor(a);
+  if (direct) {
+    window.open(`https://wa.me/${direct}?text=${encodeURIComponent(text)}`, '_blank');
+    toast(`📤 عم يفتح واتساب ${a.name} (+${direct})`);
+    return;
+  }
   // شاشة تأكيد: لمين رح تنبعت، والرقم قابل للتعديل، أو اختيار المحادثة من واتساب نفسه
   const canPick = 'contacts' in navigator && 'ContactsManager' in window;
   modal('📤 إرسال على واتساب', `
@@ -342,6 +357,7 @@ function waSend(a, text) {
       <div style="display:flex;gap:6px"><input id="waPh" type="tel" inputmode="tel" dir="ltr" placeholder="09xxxxxxxx" value="${esc((a && a.phone) || '')}" style="flex:1">
       ${canPick ? '<button type="button" class="btn" id="waC" title="من جهات الاتصال">📇</button>' : ''}</div></label>
     <p class="muted" id="waHint" style="font-size:13px;margin:6px 0"></p>
+    ${a ? '<label class="wa-dir"><input type="checkbox" id="waDir" checked> 📌 المرات الجاية ابعت دغري على هالرقم (بلا هالشاشة)</label>' : ''}
     <div class="rc-ways">
       <button type="button" class="btn wa" id="waGo">✅ ابعت لهالرقم</button>
       <button type="button" class="btn" id="waAny">💬 اختار المحادثة من واتساب</button>
@@ -356,11 +372,24 @@ function waSend(a, text) {
     const ph = waPhone(inp.value);
     if (!ph) { toast('الرقم مو صحيح', 1); inp.focus(); return; }
     if (a && inp.value.trim() !== (a.phone || '')) { a.phone = inp.value.trim(); save(); }
+    if (a) waSetDirect(a.id, $('#waDir', d) && $('#waDir', d).checked ? ph : '');
     d.close(); window.open(`https://wa.me/${ph}?text=${encodeURIComponent(text)}`, '_blank');
   };
   $('#waAny', d).onclick = () => { d.close(); window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank'); };
 }
 const waHead = () => `*${db.settings.company}*`;
+function waVoucherText(v) {
+  const isR = v.type === 'receipt', a = acc(v.acc), base = num(v.amount) * docRate(v);
+  let s = `${waHead()}\n${isR ? 'سند قبض' : 'سند دفع'} رقم ${v.no}${repTag(v)}\nالتاريخ: ${v.date}\n`;
+  if (a) s += `${isR ? 'استلمنا من السيد' : 'دفعنا للسيد'}: ${a.name}\n`;
+  s += `————————\n*المبلغ: ${fmt(v.amount)} ${docSym(v)}*\n`;
+  if (v.cur === 'fx') s += `(المعادل: ${fmt(base)} ${cur()})\n`;
+  s += `(بالقديم: ${oldAmt(base)})\n${moneyWords(v.amount, v)}\n`;
+  if (v.note) s += `البيان: ${v.note}\n`;
+  // رصيد الزبون: بس من موبايل المدير (المندوب ما بيشوف الأرصدة)
+  if (a && !isSeller()) s += `————————\nرصيد حسابكم الحالي:\n${balWords(a, partyBal(a))}\n`;
+  return s + 'شكراً لتعاملكم معنا 🌹';
+}
 function waBalanceText(a) {
   return `${waHead()}\nمرحباً ${a.name} 👋\nرصيد حسابكم بتاريخ ${today()}:\n${balWords(a, partyBal(a))}\nشكراً لتعاملكم معنا 🌹`;
 }
@@ -1058,14 +1087,19 @@ function partyForm(a, kind) {
   if (!a) fl.push({ k: 'openBal', l: kind === 'c' ? 'رصيد افتتاحي (له علينا ← اكتب بالسالب)' : 'رصيد افتتاحي (لنا عليه ← اكتب بالسالب)', t: 'number', full: 1 });
   fl.push({ k: 'aliases', l: 'أسماء تانية (متل ما بتحكيه أو بتكتبه — كل اسم بسطر)', t: 'textarea', full: 1 });
   fl.push({ k: 'notes', l: 'ملاحظات', t: 'textarea', full: 1 });
-  const vals = a ? { ...a, aliases: (a.aliases || []).join('\n') } : { code: nextCode(acc(parent)) };
+  if (a) fl.splice(2, 0, { k: 'waDirect', l: '📲 واتساب', t: 'select', opts: [['1', 'ابعت دغري على رقمه'], ['0', 'اسألني كل مرة']] });
+  const vals = a ? { ...a, aliases: (a.aliases || []).join('\n'), waDirect: waDirectFor(a) ? '1' : '0' } : { code: nextCode(acc(parent)) };
   if (!a) reserveNo('entry'); // لقيد الرصيد الافتتاحي (إذا انكتب)
   modal(a ? 'تعديل' : (kind === 'c' ? 'عميل جديد' : 'مورد جديد'), fields(fl, vals), {
     onSave: d => {
       const code = (d.code || '').trim() || nextCode(acc(parent));
       if (db.accounts.some(x => x.code === code && x !== a)) { toast('الرمز مستخدم مسبقاً', 1); return false; }
       const aliases = String(d.aliases || '').split(/\n+/).map(x => x.trim()).filter(Boolean);
-      if (a) Object.assign(a, { name: d.name.trim(), phone: d.phone, address: d.address, notes: d.notes, code, aliases });
+      if (a) {
+        Object.assign(a, { name: d.name.trim(), phone: d.phone, address: d.address, notes: d.notes, code, aliases });
+        const ph = waPhone(d.phone);
+        if (d.waDirect === '1' && ph) waSetDirect(a.id, ph); else if (d.waDirect === '0' || !ph) waSetDirect(a.id, '');
+      }
       else {
         const na = { id: uid(), code, name: d.name.trim(), type: acc(parent).type, parent, group: false, phone: d.phone, address: d.address, notes: d.notes, aliases };
         db.accounts.push(na);
@@ -2113,7 +2147,7 @@ function voucherForm(v, type, preAcc) {
     { k: 'note', l: 'البيان', full: 1 },
   ];
   const f = modal((isR ? 'سند قبض' : 'سند دفع') + (v ? ' رقم ' + v.no : ' جديد'), fields(fl, vals) + '<p class="muted" id="vEq"></p>', {
-    extra: v ? `${navigator.bluetooth ? '<button type="button" class="btn" id="vBt">🔵 بلوتوث</button>' : ''}<button type="button" class="btn" id="vRc">🧾 إيصال</button><button type="button" class="btn" id="vPrint">🖨 طباعة</button><button type="button" class="btn red" id="vDel">حذف</button>` : '',
+    extra: v ? `<button type="button" class="btn wa" id="vWa">🟢 واتساب</button>${navigator.bluetooth ? '<button type="button" class="btn" id="vBt">🔵 بلوتوث</button>' : ''}<button type="button" class="btn" id="vRc">🧾 إيصال</button><button type="button" class="btn" id="vPrint">🖨 طباعة</button><button type="button" class="btn red" id="vDel">حذف</button>` : '',
     onSave: d => {
       const amount = r2(num(d.amount)), R = num(d.rate);
       if (amount <= 0) { toast('أدخل مبلغاً صحيحاً', 1); return false; }
@@ -2139,6 +2173,7 @@ function voucherForm(v, type, preAcc) {
     $('#vPrint').onclick = () => { $('#dlg').close(); printDoc(voucherHtml(v)); };
     const bt = $('#vBt'); if (bt) bt.onclick = () => { $('#dlg').close(); Receipt.printDirect(v); };
     $('#vRc').onclick = () => { $('#dlg').close(); Receipt.open(v); };
+    $('#vWa').onclick = () => { $('#dlg').close(); waSend(acc(v.acc), waVoucherText(v)); };
   }
 }
 function voucherHtml(v) {
@@ -2176,10 +2211,11 @@ function amountOldHint(f) {
 // طباعة السند: بلوتوث مباشر (إيصال حراري بالجديد والقديم) أو طرق تانية
 function voucherPrintAsk(v, fresh) {
   const f = modal((fresh ? '✓ انحفظ ' : '') + (v.type === 'receipt' ? 'سند قبض' : 'سند دفع') + ' رقم ' + v.no, voucherHtml(v),
-    { extra: `${navigator.bluetooth ? '<button type="button" class="btn pri" id="vBt">🔵 طباعة بلوتوث</button>' : ''}<button type="button" class="btn${navigator.bluetooth ? '' : ' pri'}" id="vRc">🧾 إيصال (طرق تانية)</button><button type="button" class="btn" id="vA4">🖨 A4</button>` });
+    { extra: `<button type="button" class="btn wa" id="vWa">🟢 واتساب</button>${navigator.bluetooth ? '<button type="button" class="btn pri" id="vBt">🔵 طباعة بلوتوث</button>' : ''}<button type="button" class="btn${navigator.bluetooth ? '' : ' pri'}" id="vRc">🧾 إيصال (طرق تانية)</button><button type="button" class="btn" id="vA4">🖨 A4</button>` });
   const bt = $('#vBt', f); if (bt) bt.onclick = () => { $('#dlg').close(); Receipt.printDirect(v); };
   $('#vRc', f).onclick = () => { $('#dlg').close(); Receipt.open(v); };
   $('#vA4', f).onclick = () => { $('#dlg').close(); printDoc(voucherHtml(v)); };
+  $('#vWa', f).onclick = () => { $('#dlg').close(); waSend(acc(v.acc), waVoucherText(v)); };
 }
 // قبض من زبون (المندوب): المصاري بتنزل بصندوقه، وبلا ما يشوف رصيد الزبون
 function sellerReceipt() {

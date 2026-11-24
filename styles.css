@@ -395,3 +395,5 @@ body.locked #calc{display:none}
 #tabCover{position:fixed;inset:0;z-index:200;background:rgba(10,30,26,.82);display:flex;align-items:center;justify-content:center;padding:16px}
 #tabCover .tc-box{background:#fff;color:#16241f;border-radius:16px;padding:22px;max-width:360px;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.35)}
 #tabCover p{color:#5c6f69;margin:8px 0 16px}
+.wa-dir{display:flex;align-items:center;gap:8px;margin:4px 0 10px;font-size:14px;cursor:pointer}
+.wa-dir input{width:20px;height:20px}
