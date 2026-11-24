@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '6.59';
+const APP_VERSION = '6.60';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -1861,7 +1861,7 @@ V.invoice = (id, q, view) => {
       inv.cur = to; toggles(); draw();
     }
   };
-  let savedAt = 0, skipStock = false;
+  let savedAt = 0;
   const doSave = (andNew, print) => {
     if (Date.now() - savedAt < 2000) return; // منع الحفظ المكرر بكبستين ورا بعض
     const lines = inv.lines.filter(l => l.item && num(l.qty) > 0).map(l => ({ item: l.item, qty: num(l.qty), price: num(l.price), cp: num(l.cp) }));
@@ -1890,26 +1890,6 @@ V.invoice = (id, q, view) => {
         return toast(`يجب تعديل سعر مبيع المادة أولاً: ${it.name} — سعرها بالبطاقة ${fmt(num(it.sellPrice))}، وأعلى سعر مسموح ${fmt(r2(num(it.sellPrice) * (1 + MAX_UP)))}`, 1);
       }
     }
-    // الكمية بالمستودع ما بتكفي: تنبيه واضح وبتقرر (ما منمنع — ممكن البضاعة موجودة وفاتورة شرائها لسا ما انسجّلت)
-    // (المدير ما بيطلعله هالتنبيه — بس موبايل المندوب)
-    if (['sale', 'purchaseReturn'].includes(inv.type) && !skipStock && isSeller()) {
-      const need = {}, back = {};
-      lines.forEach(l => { need[l.item] = (need[l.item] || 0) + l.qty; });
-      if (orig && ['sale', 'purchaseReturn'].includes(orig.type)) orig.lines.forEach(l => { back[l.item] = (back[l.item] || 0) + num(l.qty); });
-      const short = Object.keys(need).map(id => {
-        const it = itemById(id); if (!it) return null;
-        const av = r2(stockOf(it) + (back[id] || 0));
-        return need[id] > av + 1e-9 ? { it, need: need[id], av } : null;
-      }).filter(Boolean);
-      if (short.length) {
-        modal('⚠️ الكمية بالمستودع ما بتكفي', `<p class="muted">هالمواد كميتها بالفاتورة أكتر من الموجود. إذا كمّلت، المستودع بيصير بالسالب والكلفة والأرباح بتطلع تقريبية لحتى تسجّل فاتورة الشراء.</p>
-          <table class="acc-sum"><tr><th>المادة</th><th>بالفاتورة</th><th>الموجود</th></tr>${short.map(x => `<tr><td>${esc(x.it.name)}</td><td class="n">${fmt(x.need)}</td><td class="n bad">${fmt(x.av)}</td></tr>`).join('')}</table>`, {
-          saveText: 'احفظ هيك', onSave: () => { skipStock = true; setTimeout(() => doSave(andNew, print), 0); },
-        });
-        return;
-      }
-    }
-    skipStock = false;
     // مواد بلا سعر مبيع ببطاقتها: بياخد سعرها من فاتورة الزبون (وسعر الشراء = المبيع − 20٪ إذا ناقص)
     if (inv.type === 'sale') {
       const badI = inv.lines.findIndex(l => {

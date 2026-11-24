@@ -130,7 +130,7 @@ module.exports = [
     },
   },
   {
-    name: 'المستودع: المدير بيحفظ بلا تنبيه، والمندوب بيطلعله تنبيه و«احفظ هيك» بيحفظ',
+    name: 'المستودع: لا المدير ولا المندوب بيطلعلهن تنبيه، والفاتورة بتنحفظ دغري',
     fn: async base => {
       const draft = pt => JSON.stringify({ lines: [{ item: 'it1', qty: 5, price: 1000 }], payment: '', inv: { date: new Date().toISOString().slice(0, 10), pay: 'cash', cashAcc: pt === 'walkin' ? 'repbox_1' : 'cash', party: 'walkin' }, at: Date.now() });
       // المدير
@@ -147,10 +147,8 @@ module.exports = [
       await p.evaluate(d => localStorage.setItem('daftar_draft_sale', d), draft('walkin'));
       await p.go('#/invoice/new?type=sale'); await p.closeDlg();
       const m0 = await p.evaluate(() => db.invoices.length);
-      await p.click('[data-act=save]'); await p.waitForTimeout(300);
-      assert.match(await p.text('#dlg'), /الكمية بالمستودع ما بتكفي.*بسكوت 5 2/);
-      assert.strictEqual(await p.evaluate(() => db.invoices.length), m0, 'لازم ما ينحفظ قبل الموافقة');
-      await p.click('#dlg button.pri'); await p.waitForTimeout(600);
+      await p.click('[data-act=save]'); await p.waitForTimeout(600);
+      assert.doesNotMatch(await p.text('#dlg').catch(() => ''), /ما بتكفي/);
       assert.strictEqual(await p.evaluate(() => db.invoices.length), m0 + 1);
     },
   },
