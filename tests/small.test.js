@@ -77,7 +77,8 @@ module.exports = [
       assert.strictEqual(r.fresh, true);
       assert.ok(r.home < 4000, 'الشاشة الرئيسية بطيئة كتير مع 20 ألف فاتورة: ' + r.home + 'ms');
       // آخر سعر للزبون (بالطريقة السريعة) = الطريقة القديمة
-      await p.go('#/invoice/new?type=sale'); await p.closeDlg(); await p.click('[data-act=more]');
+      // فاتورة جديدة بلا زبون: نافذة «اختار العميل» بتطلع لحالها — منستناها (على جهاز بطيء بتتأخر) ومنسكّرها
+      await p.go('#/invoice/new?type=sale'); await p.closePicker(); await p.click('[data-act=more]');
       await p.selectOption('[name=party]', 'c7'); await p.dispatchEvent('[name=party]', 'change');
       await p.click('#scanIn'); await p.keyboard.type('مادة 7'); await p.waitForTimeout(300);
       const shown = (await p.locator('.sg-meta').first().innerText()).match(/[\d,]+/)[0].replace(/,/g, '');

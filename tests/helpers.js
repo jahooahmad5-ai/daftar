@@ -61,6 +61,8 @@ async function page(base, state = {}) {
     for (const k in ls) localStorage.setItem(k, ls[k]);
   }, [state.cloud === undefined ? OWNER : state.cloud, state.ls || {}]);
   const p = await ctx.newPage();
+  // CPU_SLOW=4 ← محاكاة جهاز أبطأ (متل موبايل ضعيف أو سيرفر GitHub)
+  if (process.env.CPU_SLOW) { const c = await ctx.newCDPSession(p); await c.send('Emulation.setCPUThrottlingRate', { rate: +process.env.CPU_SLOW }); }
   p.errors = [];
   p.on('pageerror', e => p.errors.push(e.message));
   p.on('dialog', d => (state.dialog === 'dismiss' ? d.dismiss() : d.accept()));
@@ -73,6 +75,8 @@ async function page(base, state = {}) {
   p.text = async sel => (await p.locator(sel || '#view').innerText()).replace(/\s+/g, ' ');
   p.go = async h => { await p.evaluate(x => { location.hash = x; }, h); await p.waitForTimeout(350); };
   p.closeDlg = () => p.evaluate(() => { const d = document.getElementById('dlg'); if (d.open) d.close(); });
+  // فاتورة مبيع جديدة بلا زبون: نافذة «اختار العميل» بتطلع لحالها بعد شوي — منستناها ومنسكّرها
+  p.closePicker = async () => { await p.waitForFunction(() => document.getElementById('dlg').open, null, { timeout: 15000 }); await p.closeDlg(); };
   return p;
 }
 async function close() { if (browser) await browser.close(); browser = null; }

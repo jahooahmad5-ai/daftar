@@ -16,5 +16,6 @@
 npm install --no-save playwright && npx playwright install chromium
 node tests/run.js            # كل فحوصات المتصفح
 node tests/run.js sales      # ملف واحد
+CPU_SLOW=4 node tests/run.js  # كأنه جهاز أبطأ 4 مرات (لتلاقي الفحوصات الحساسة للتوقيت)
 PGHOST=localhost PGUSER=postgres bash tests/sql/run.sh   # قاعدة البيانات (بدها Postgres)
 ```

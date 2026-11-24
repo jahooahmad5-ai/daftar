@@ -91,7 +91,7 @@ module.exports = [
           { id: 'w', type: 'sale', no: 2, date: '2026-01-02', pay: 'cash', party: 'walkin', cur: 'base', rate: '', lines: [{ item: 'it1', qty: 1, price: 1090 }], discount: 0, created: 2 }); save();
       });
       const priceFor = async party => {
-        await p.go('#/invoices'); await p.go('#/invoice/new?type=sale'); await p.closeDlg();
+        await p.go('#/invoices'); await p.go('#/invoice/new?type=sale'); await p.closePicker();
         await p.click('[data-act=more]');
         await p.selectOption('[name=party]', party); await p.dispatchEvent('[name=party]', 'change');
         await p.click('#scanIn'); await p.keyboard.type('سكر'); await p.waitForTimeout(300);
@@ -178,7 +178,7 @@ module.exports = [
     fn: async base => {
       const p = await page(base, { cloud: OWNER });
       await p.evaluate(() => { db.accounts.push({ id: 'c1', code: '112001', name: 'أحمد', type: 'asset', parent: 'customers', group: false }); save(); });
-      await p.go('#/invoice/new?type=sale'); await p.closeDlg();
+      await p.go('#/invoice/new?type=sale'); await p.closePicker();
       assert.strictEqual(await p.locator('#invMore').isVisible(), false, 'لازم تكون مخبّاية');
       assert.strictEqual(await p.locator('[name=date]').isVisible(), false);
       await p.click('[data-act=more]');
