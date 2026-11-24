@@ -134,6 +134,8 @@
   root.addEventListener('click', e => { const b = e.target.closest('[data-k]'); if (b) press(b.dataset.k); });
   addEventListener('resize', place);
   addEventListener('hashchange', () => setTimeout(place, 120));
+  // أي تغيير بطول الصفحة (فتح/سكّر «تعديل»، مواد جديدة…) بيحرّك شريط المجموع — منلحقه
+  if (window.ResizeObserver) { const ro = new ResizeObserver(() => place()); ro.observe(document.body); const v = document.getElementById('view'); if (v) ro.observe(v); }
   let raf = 0; addEventListener('scroll', () => { if (!raf) raf = requestAnimationFrame(() => { raf = 0; place(); }); }, { passive: true });
 
   // النوافذ (dialog) بتطلع فوق كل شي — منحط الحاسبة جوّاها وهي مفتوحة

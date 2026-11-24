@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '6.60';
+const APP_VERSION = '6.61';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -1407,6 +1407,8 @@ V.invoice = (id, q, view) => {
   </div>
   <div id="lastAdd" class="last-add" hidden></div>
   <div id="ln" class="ln-list"></div>
+  ${sideSale && inv.type === 'sale' ? `<button type="button" class="btn more-btn" data-act="more">✏️ تعديل <small id="moreSum"></small></button>` : ''}
+  <div id="invMore" ${sideSale && inv.type === 'sale' ? 'hidden' : ''}>
   <div class="card">
     <div class="grid4">
       ${field({ k: 'date', l: 'التاريخ', t: 'date', req: 1 }, inv.date)}
@@ -1435,6 +1437,7 @@ V.invoice = (id, q, view) => {
         <div id="tBal" class="old-eq"></div>
       </div>
     </div>
+  </div>
   </div>
   <div class="inv-bar">
     <div class="inv-bar-sum"><small id="barInfo"></small><small id="prnPill" class="prn-pill"></small><b id="barNet">0</b><small id="barOld" class="old-bar"></small></div>
@@ -1501,6 +1504,7 @@ V.invoice = (id, q, view) => {
     const tc = $('#topCnt'); if (tc) { tc.hidden = false; tc.textContent = fmt(cnt) + ' قطعة'; }
     $('#barNet', view).textContent = fmt(n) + ' ' + sym;
     $('#barInfo', view).textContent = `${fmt(cnt)} قطعة${val('pay') === 'credit' ? ' — آجل' : ' — نقدي'}`;
+    { const ms = $('#moreSum', view); if (ms) ms.textContent = [accName(val('party')) || 'بلا زبون', val('pay') === 'credit' ? 'آجل' : 'نقدي', val('date'), num(val('discount')) ? 'حسم ' + fmt(num(val('discount'))) : '', num(val('payment')) ? 'دفعة ' + fmt(num(val('payment'))) : ''].filter(Boolean).join(' · '); }
   };
   const toBase = x => (inv.cur === 'fx' ? num(x) * rate() : num(x));
   const lineOld = l => (oldOn() && num(l.price) ? `بالقديم: الإفرادي ${oldAmt(toBase(l.price))} — الإجمالي ${oldAmt(toBase(num(l.qty) * num(l.price)))}${num(l.cp) ? ` — المستهلك ${oldAmt(toBase(l.cp))}` : ''}` : '');
@@ -1861,13 +1865,15 @@ V.invoice = (id, q, view) => {
       inv.cur = to; toggles(); draw();
     }
   };
+  // «✏️ تعديل»: كل خانات الفاتورة (الزبون، الدفع، التاريخ، الحسم، الدفعة، الملاحظات) مخبّاية تحت زر واحد
+  const openMore = (on = true) => { const m = $('#invMore', view), b = $('[data-act=more]', view); if (!m || !b) return; m.hidden = !on; b.classList.toggle('on', on); };
   let savedAt = 0;
   const doSave = (andNew, print) => {
     if (Date.now() - savedAt < 2000) return; // منع الحفظ المكرر بكبستين ورا بعض
     const lines = inv.lines.filter(l => l.item && num(l.qty) > 0).map(l => ({ item: l.item, qty: num(l.qty), price: num(l.price), cp: num(l.cp) }));
     if (!lines.length) return toast('أضف مادة واحدة على الأقل بكمية صحيحة', 1);
     const pay = val('pay'), party = val('party'), cashAcc = val('cashAcc');
-    if (sideSale && !party) { const ps = $('[name=party]', view); ps.focus(); ps.scrollIntoView({ block: 'center' }); return toast(`لازم تختار اسم العميل قبل الحفظ (للبيع المباشر اختار «${WALKIN_NAME}»)`, 1); }
+    if (sideSale && !party) { openMore(); const ps = $('[name=party]', view); ps.focus(); ps.scrollIntoView({ block: 'center' }); return toast(`لازم تختار اسم العميل قبل الحفظ (للبيع المباشر اختار «${WALKIN_NAME}»)`, 1); }
     if (sideSale && isWalkin(party) && pay !== 'cash') return toast(`«${WALKIN_NAME}» دايماً نقدي — ما بينفع آجل`, 1);
     if (pay === 'credit' && !party) return toast(`الفاتورة الآجلة تحتاج ${sideSale ? 'عميلاً' : 'مورداً'}`, 1);
     if (isSeller() && (pay === 'cash' || num(val('payment')) > 0) && !myBox()) return toast(NO_BOX, 1);
@@ -1968,6 +1974,7 @@ V.invoice = (id, q, view) => {
       });
     },
     discard: () => { dropDraft(); route(); },
+    more: () => { const m = $('#invMore', view); openMore(m.hidden); if (!m.hidden) m.scrollIntoView({ block: 'start', behavior: 'smooth' }); },
     clearAll: () => { if (inv.lines.length && !confirm('تفريغ الفاتورة ومسح كل المواد اللي فيها؟')) return; dropDraft(); inv.lines = []; route(); },
     save: () => doSave(false),
     saveNew: () => doSave(true),

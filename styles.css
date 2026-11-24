@@ -386,3 +386,7 @@ body.locked #calc{display:none}
 .su-bar i{display:block;height:100%;background:#0f766e;border-radius:8px}
 .bk-row{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 0;border-top:1px dashed var(--line)}
 .bk-row .acts{flex-wrap:nowrap}
+/* فاتورة المبيع: زر «تعديل» بيفتح الخانات */
+.more-btn{display:flex;flex-direction:column;align-items:center;width:100%;margin:10px 0;padding:12px;font-size:17px;font-weight:700;background:#fff;border:2px dashed var(--line)}
+.more-btn small{font-weight:400;font-size:13px;color:var(--muted,#6b7f79);margin-top:3px}
+.more-btn.on{border-style:solid;border-color:#0f766e}

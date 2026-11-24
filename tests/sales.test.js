@@ -92,6 +92,7 @@ module.exports = [
       });
       const priceFor = async party => {
         await p.go('#/invoices'); await p.go('#/invoice/new?type=sale'); await p.closeDlg();
+        await p.click('[data-act=more]');
         await p.selectOption('[name=party]', party); await p.dispatchEvent('[name=party]', 'change');
         await p.click('#scanIn'); await p.keyboard.type('سكر'); await p.waitForTimeout(300);
         return (await p.locator('.sg-meta').first().innerText()).match(/[\d,]+/)[0];
@@ -170,6 +171,25 @@ module.exports = [
       };
       assert.strictEqual(await trySave('c1'), 1, 'آخر سعر لأحمد (1150) لازم ينقبل');
       assert.strictEqual(await trySave('c2'), 0, 'سامر ما اشترى قبل — 1150 أعلى من البطاقة بـ 15٪ لازم ينرفض');
+    },
+  },
+  {
+    name: 'فاتورة المبيع: الخانات مخبّاية تحت زر «تعديل» واحد، وبتنفتح بكبسة',
+    fn: async base => {
+      const p = await page(base, { cloud: OWNER });
+      await p.evaluate(() => { db.accounts.push({ id: 'c1', code: '112001', name: 'أحمد', type: 'asset', parent: 'customers', group: false }); save(); });
+      await p.go('#/invoice/new?type=sale'); await p.closeDlg();
+      assert.strictEqual(await p.locator('#invMore').isVisible(), false, 'لازم تكون مخبّاية');
+      assert.strictEqual(await p.locator('[name=date]').isVisible(), false);
+      await p.click('[data-act=more]');
+      assert.strictEqual(await p.locator('[name=date]').isVisible(), true);
+      await p.selectOption('[name=party]', 'c1'); await p.dispatchEvent('[name=party]', 'change');
+      assert.match(await p.text('#moreSum'), /أحمد · آجل/);
+      await p.click('[data-act=more]');
+      assert.strictEqual(await p.locator('#invMore').isVisible(), false, 'كبسة تانية بتسكّرها');
+      // فاتورة الشراء ما تغيّرت
+      await p.go('#/invoices'); await p.go('#/invoice/new?type=purchase'); await p.closeDlg();
+      assert.strictEqual(await p.locator('[name=date]').isVisible(), true);
     },
   },
 ];
