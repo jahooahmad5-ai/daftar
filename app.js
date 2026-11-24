@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '6.68';
+const APP_VERSION = '6.69';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -886,7 +886,8 @@ const waCaption = (kind, d) => {
 };
 async function waSendDoc(kind, d, onSent) {
   const a = waPartyOf(kind, d);
-  const mode = db.settings.waMode === 'pdf' ? 'pdf' : db.settings.waMode === 'text' ? 'text' : 'img';
+  // الأساسي: نص (بيروح دغري على رقم الزبون) — والصورة والـ PDF إذا اخترتهن بالإعدادات
+  const mode = db.settings.waMode === 'pdf' ? 'pdf' : db.settings.waMode === 'img' ? 'img' : 'text';
   if (mode === 'text' || !window.Receipt || !Receipt.picture) return waSend(a, waTextFor(kind, d), onSent);
   let blob = null;
   try { toast(mode === 'pdf' ? '📄 عم جهّز الـ PDF…' : '🖼 عم جهّز الصورة…'); blob = mode === 'pdf' ? await Receipt.pdf(d) : await Receipt.picture(d); } catch (e) { /* */ }
@@ -2611,7 +2612,7 @@ V.settings = (id, q, view) => {
       { k: 'oldFactor', l: 'كل ليرة جديدة = كم ليرة قديمة', t: 'number' },
       { k: 'startDate', l: 'تاريخ بداية الفترة المحاسبية', t: 'date', req: 1 },
       { k: 'paperWidth', l: 'عرض ورق الطابعة الحرارية', t: 'select', opts: [['80', '80 مم (3 إنش)'], ['58', '58 مم (2 إنش)']] },
-      { k: 'waMode', l: '🟢 إرسال الفاتورة والسند على واتساب', t: 'select', opts: [['img', '🖼 صورة (عالية الجودة، بتبيّن دغري بالمحادثة)'], ['pdf', '📄 PDF (ملف بجودته الكاملة، الزبون بيفتحه)'], ['text', '✉️ نص (بيروح دغري على رقم الزبون)']] },
+      { k: 'waMode', l: '🟢 إرسال الفاتورة والسند على واتساب', t: 'select', opts: [['text', '✉️ نص (بيروح دغري على رقم الزبون)'], ['img', '🖼 صورة (عالية الجودة، بتبيّن دغري بالمحادثة)'], ['pdf', '📄 PDF (ملف بجودته الكاملة، الزبون بيفتحه)']] },
       { k: 'waAuto', l: '📤 واتساب فواتير وقبوضات المندوب', t: 'select', opts: [['0', 'بس لما المندوب يختار «من موبايل المدير»'], ['1', 'كلها بتروح لصندوق الإرسال عندي لحالها']] },
       { k: 'printFast', l: 'سرعة طباعة البلوتوث', t: 'select', opts: [['1', '⚡ سريعة (ضعف السرعة)'], ['0', 'عادية (أنعم شوي)']] },
       { k: 'receiptCp', l: 'عمود سعر المستهلك بالإيصال', t: 'select', opts: [['1', 'يطلع دايماً'], ['0', 'لا يطلع']] },

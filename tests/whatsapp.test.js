@@ -241,4 +241,18 @@ module.exports = [
       assert.deepStrictEqual(p.errors, []);
     },
   },
+  {
+    name: 'الأساسي (بلا ما تختار شي بالإعدادات): نص بيروح دغري على رقم الزبون',
+    fn: async base => {
+      const p = await page(base, { cloud: OWNER });
+      await setup(p);
+      await p.evaluate(() => { delete db.settings.waMode; navigator.canShare = () => true; navigator.share = async () => { window.__shared = 1; }; waSetDirect('c1', '963933123456'); });
+      await p.go('#/invoice/inv1'); await p.click('[data-act=wa]'); await p.waitForTimeout(400);
+      const o = await opened(p);
+      assert.strictEqual(o.length, 1); assert.match(o[0], /^https:\/\/wa\.me\/963933123456\?text=/); assert.match(o[0], /فاتورة مبيع رقم 4/);
+      assert.ok(!(await p.evaluate(() => window.__shared)), 'ما لازم تنبعت صورة إذا ما اخترتها');
+      await p.go('#/settings');
+      assert.strictEqual(await p.inputValue('[name=waMode]'), 'text', 'بالإعدادات لازم يكون «نص» مختار');
+    },
+  },
 ];
