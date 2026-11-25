@@ -192,4 +192,46 @@ module.exports = [
       assert.strictEqual(await p.locator('[name=date]').isVisible(), true);
     },
   },
+  {
+    name: 'زبون جديد من فاتورة المبيع: من نافذة «اختار العميل» ومن زر جنب خانة العميل',
+    fn: async base => {
+      const p = await page(base, { cloud: OWNER });
+      await p.evaluate(() => { db.items.push({ id: 'it1', code: '1', name: 'سكر', sellPrice: 1000, openQty: 50 }); save(); });
+      await p.go('#/invoice/new?type=sale');
+      await p.waitForFunction(() => document.getElementById('dlg').open);
+      await p.fill('#ppQ', 'أبو خالد');
+      assert.match(await p.text('#ppNew'), /إضافة «أبو خالد» كزبون جديد/);
+      await p.click('#ppNew'); await p.waitForTimeout(150);
+      assert.strictEqual(await p.inputValue('#dlg [name=name]'), 'أبو خالد');
+      await p.fill('#dlg [name=phone]', '0933111222');
+      await p.click('#dlg button.pri'); await p.waitForTimeout(200);
+      const a = await p.evaluate(() => db.accounts.find(x => x.name === 'أبو خالد'));
+      assert.ok(a && a.parent === 'customers' && a.phone === '0933111222');
+      assert.strictEqual(await p.evaluate(() => document.querySelector('[name=party]').value), a.id);
+      assert.strictEqual(await p.evaluate(() => document.getElementById('dlg').open), false);
+      // الزر جنب خانة العميل
+      await p.click('[data-act=more]'); await p.click('[data-act=newParty]'); await p.waitForTimeout(150);
+      await p.fill('#dlg [name=name]', 'محل النور'); await p.click('#dlg button.pri'); await p.waitForTimeout(200);
+      const b = await p.evaluate(() => db.accounts.find(x => x.name === 'محل النور'));
+      assert.strictEqual(await p.evaluate(() => document.querySelector('[name=party]').value), b.id);
+      // الحفظ بيمشي عالزبون الجديد
+      await p.fill('#scanIn', 'سكر'); await p.keyboard.press('Enter'); await p.waitForTimeout(300);
+      await p.click('[data-act=save]'); await p.waitForTimeout(500);
+      assert.strictEqual(await p.evaluate(() => db.invoices.slice(-1)[0].party), b.id);
+      assert.deepStrictEqual(p.errors, []);
+    },
+  },
+  {
+    name: 'بطاقة المادة: تحت سعر الشراء والمبيع بيطلع السعر بالعملة القديمة',
+    fn: async base => {
+      const p = await page(base, { cloud: OWNER });
+      await p.evaluate(() => { db.settings.showOld = '1'; db.settings.oldFactor = 100; db.items.push({ id: 'it1', code: '1', name: 'سكر', sellPrice: 12, buyPrice: 10 }); save(); });
+      await p.go('#/items'); await p.click('[data-act=edit][data-id=it1]'); await p.waitForTimeout(150);
+      const hint = k => p.evaluate(k => document.querySelector(`#dlg [name=${k}]`).closest('.fld').querySelector('.amt-old').textContent, k);
+      assert.match(await hint('sellPrice'), /1,200/); assert.match(await hint('buyPrice'), /1,000/);
+      await p.fill('#dlg [name=sellPrice]', '15');
+      assert.match(await hint('sellPrice'), /1,500/);
+      assert.deepStrictEqual(p.errors, []);
+    },
+  },
 ];

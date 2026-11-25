@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '6.70';
+const APP_VERSION = '6.73';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -1491,6 +1491,13 @@ function itemForm(it, defGroup, after) {
       if (after) after(it); else route();
     },
   });
+  // تحت كل سعر: نفس السعر بالعملة القديمة — بيتحدّث وإنت عم تكتب
+  if (oldOn()) ['buyPrice', 'sellPrice', 'consumerPrice', 'openCost'].forEach(k => {
+    const inp = $(`[name=${k}]`, f); if (!inp) return;
+    const h = document.createElement('div'); h.className = 'amt-old'; inp.closest('.fld').appendChild(h);
+    const upd = () => { const v = num(inp.value); h.textContent = v ? `بالعملة القديمة: ${oldAmt(v)}` : ''; };
+    inp.addEventListener('input', upd); upd();
+  });
   const ta = $('[name=barcodes]', f);
   ta.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); ta.value = ta.value.replace(/\s*$/, '') + '\n'; } });
   const sb = $('#bcScan', f);
@@ -1641,7 +1648,8 @@ V.invoice = (id, q, view) => {
       ${field({ k: 'date', l: 'التاريخ', t: 'date', req: 1 }, inv.date)}
       ${field({ k: 'pay', l: 'طريقة الدفع', t: 'select', opts: [['cash', 'نقدي'], ['credit', 'آجل (على الحساب)']] }, inv.pay)}
       <div id="cashWrap">${field({ k: 'cashAcc', l: 'الصندوق', t: 'select', opts: accOpts(isSeller() ? [myBox()].filter(Boolean) : cashAccounts()) }, inv.cashAcc)}</div>
-      ${field({ k: 'party', l: sideSale ? 'العميل' : 'المورد', t: 'select', opts: accOpts(parties, sideSale ? '— اختر العميل —' : '— بدون —') }, inv.party)}
+      <div class="party-wrap">${field({ k: 'party', l: sideSale ? 'العميل' : 'المورد', t: 'select', opts: accOpts(parties, sideSale ? '— اختر العميل —' : '— بدون —') }, inv.party)}
+        <button type="button" class="mini new-party" data-act="newParty">➕ ${sideSale ? 'زبون' : 'مورد'} جديد</button></div>
       ${field({ k: 'cur', l: 'عملة الفاتورة', t: 'select', opts: curOpts() }, inv.cur)}
       <div id="rateWrap">${field({ k: 'rate', l: `سعر الصرف (${cur()} لكل 1 ${FX().sym})`, t: 'number' }, inv.rate)}</div>
     </div>
@@ -1802,17 +1810,52 @@ V.invoice = (id, q, view) => {
   let lastId = null, lastBase = 0;
   // فاتورة المبيع: لازم تختار العميل قبل ما تنزل أي مادة
   const needParty = () => sideSale && !val('party');
+  // زبون/مورد جديد من الفاتورة نفسها: بينضاف وبينختار دغري بلا ما تضيع الفاتورة
+  const newParty = (typed, then) => {
+    const parent = sideSale ? 'customers' : 'suppliers', p = acc(parent), word = sideSale ? 'الزبون' : 'المورد';
+    if (!p) return toast('ما لقيت حساب ' + (sideSale ? 'العملاء' : 'الموردين'), 1);
+    const d = $('#dlg'); if (d.open) d.close();
+    modal(sideSale ? '➕ زبون جديد' : '➕ مورد جديد', fields([
+      { k: 'name', l: 'الاسم', req: 1 }, { k: 'phone', l: 'الهاتف', t: 'tel' },
+      { k: 'address', l: 'العنوان', full: 1 },
+    ], { name: String(typed || '').trim() }), {
+      saveText: 'حفظ واختياره',
+      onSave: dd => {
+        const name = String(dd.name || '').replace(/\s+/g, ' ').trim();
+        if (!name) { toast('اكتب الاسم', 1); return false; }
+        const same = (sideSale ? customers() : suppliers()).find(a => normAr(a.name) === normAr(name));
+        if (same && !confirm(`في ${word} اسمه «${same.name}» من قبل. بدك تضيف واحد جديد بنفس الاسم؟`)) return false;
+        const na = { id: uid(), code: nextCode(p), name, type: p.type, parent, group: false, phone: String(dd.phone || '').trim(), address: String(dd.address || '').trim(), notes: '', aliases: [] };
+        db.accounts.push(na); parties.push(na); save();
+        const ps = $('[name=party]', view);
+        ps.add(new Option(na.code + ' - ' + na.name, na.id)); ps.value = na.id;
+        ps.dispatchEvent(new Event('input', { bubbles: true })); ps.dispatchEvent(new Event('change', { bubbles: true }));
+        const si = $('.party-wrap .sx-in', view); if (si) si.value = '';
+        toast(`✅ انضاف ${word}: ${name}`);
+        if (then) setTimeout(then, 50);
+      },
+    });
+    setTimeout(() => { const n = $('#dlg [name=name]'); if (n) { n.focus(); n.select(); } }, 50);
+  };
   let picking = false;
   const pickParty = then => {
     if (picking) return; picking = true;
     const list = parties;
     modal('👤 اختار العميل أولاً', `<input class="search" id="ppQ" placeholder="🔎 ابحث بالاسم أو الهاتف" autocomplete="off" style="margin-bottom:8px">
-      <div id="ppList" class="pp-list">${list.map(a => `<button type="button" class="pp-item${isWalkin(a.id) ? ' wk' : ''}" data-id="${a.id}" data-name="${esc(normAr((a.name || '') + ' ' + (a.phone || '')))}"><b>${esc(a.name)}</b>${isWalkin(a.id) ? '<small>نقدي — بيع مباشر</small>' : a.phone ? `<small>${esc(a.phone)}</small>` : ''}</button>`).join('') || '<p class="muted">ما في عملاء — ضيفهم من صفحة العملاء</p>'}</div>`);
+      <button type="button" class="btn pp-new" id="ppNew">➕ زبون جديد</button>
+      <div id="ppList" class="pp-list">${list.map(a => `<button type="button" class="pp-item${isWalkin(a.id) ? ' wk' : ''}" data-id="${a.id}" data-name="${esc(normAr((a.name || '') + ' ' + (a.phone || '')))}"><b>${esc(a.name)}</b>${isWalkin(a.id) ? '<small>نقدي — بيع مباشر</small>' : a.phone ? `<small>${esc(a.phone)}</small>` : ''}</button>`).join('') || '<p class="muted">ما في عملاء — كبّس «➕ زبون جديد»</p>'}</div>`);
     const d = $('#dlg'), q = $('#ppQ', d);
     const done = () => { picking = false; d.removeEventListener('close', done); };
     d.addEventListener('close', done);
-    q.oninput = () => { const t = normAr(q.value.trim()); $$('.pp-item', d).forEach(b => (b.style.display = !t || b.dataset.name.includes(t) ? '' : 'none')); };
-    q.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); const f = $$('.pp-item', d).find(b => b.style.display !== 'none'); if (f) f.click(); } };
+    // إذا الاسم مو موجود: «➕ إضافة «الاسم» كزبون جديد» بيطلع دغري تحت البحث
+    q.oninput = () => {
+      const t = normAr(q.value.trim()); let n = 0;
+      $$('.pp-item', d).forEach(b => { const on = !t || b.dataset.name.includes(t); b.style.display = on ? '' : 'none'; if (on) n++; });
+      $('#ppNew', d).textContent = q.value.trim() ? `➕ إضافة «${q.value.trim()}» كزبون جديد` : '➕ زبون جديد';
+      $('#ppNew', d).classList.toggle('hot', !!t && !n);
+    };
+    q.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); const f = $$('.pp-item', d).find(b => b.style.display !== 'none'); if (f) f.click(); else if (q.value.trim()) newParty(q.value, then); } };
+    $('#ppNew', d).onclick = () => newParty(q.value, then);
     $('#ppList', d).onclick = e => {
       const b = e.target.closest('.pp-item'); if (!b) return;
       const sel = $('[name="party"]', view);
@@ -2210,6 +2253,7 @@ V.invoice = (id, q, view) => {
         items.sort(byCode); draw(+i);
       });
     },
+    newParty: () => newParty(($('.party-wrap .sx-in', view) || {}).value || ''),
     discard: () => { dropDraft(); route(); },
     more: () => { const m = $('#invMore', view); openMore(m.hidden); if (!m.hidden) m.scrollIntoView({ block: 'start', behavior: 'smooth' }); },
     clearAll: () => { if (inv.lines.length && !confirm('تفريغ الفاتورة ومسح كل المواد اللي فيها؟')) return; dropDraft(); inv.lines = []; route(); },
