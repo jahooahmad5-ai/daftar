@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '6.77';
+const APP_VERSION = '6.78';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -1071,6 +1071,25 @@ function sellerHome(view) {
   if (window.Cloud) Cloud.pill();
 }
 
+// فواتير نقطة البيع (المندوبين) لليوم بجدول لحالها: قديش انباع، قديش انقبض، وقديش زاد على حسابات الزباين
+function posTodayCard() {
+  if (!db.invoices.some(i => i.rep)) return '';
+  const t = today();
+  const list = db.invoices.filter(i => i.rep && i.date === t).sort((a, b) => (b.created || 0) - (a.created || 0));
+  const reps = new Set(list.map(i => i.rep));
+  let S = 0, P = 0, A = 0;
+  const rows = list.map(i => {
+    const net = r2(invTotals(i).net * docRate(i)), paid = i.pay === 'cash' ? net : r2(paidBase(i)), added = r2(net - paid);
+    S += net; P += paid; A += added;
+    return `<tr data-act="open" data-id="${esc(i.id)}"><td class="n">${esc(i.no)}</td><td>${esc(accName(i.party) || WALKIN_NAME)}${reps.size > 1 ? `<br><small class="badge rep">${esc(i.rep)}</small>` : ''}</td>
+      <td class="n">${fmt(net)}</td><td class="n">${fmt(paid)}</td><td class="n ${added > 0 ? 'neg' : ''}">${added ? `<span dir="ltr">${added > 0 ? '+' : ''}${fmt(added)}</span>` : '—'}</td></tr>`;
+  }).join('');
+  const C = esc(cur());
+  return `<div class="card pos-today"><h3>🧑‍💼 فواتير نقطة البيع — اليوم <a class="mini" href="#/invoices?t=sale&rep=${encodeURIComponent([...reps][0] || db.invoices.find(i => i.rep).rep)}">كلها ←</a></h3>
+    <div class="kpis k3">${kpi('مبيعات (' + C + ')', fmt(r2(S)), 'p')}${kpi('انقبض (' + C + ')', fmt(r2(P)), 'g')}${kpi('زاد على الزباين', fmt(r2(A)), 'r')}</div>
+    ${table(['الرقم', 'الزبون', 'الصافي', 'دفع', 'زاد عحسابه'], rows,
+      list.length ? `<tr><td colspan="2">المجموع (${list.length} فاتورة)</td><td class="n">${fmt(r2(S))}</td><td class="n">${fmt(r2(P))}</td><td class="n">${fmt(r2(A))}</td></tr>` : '')}</div>`;
+}
 V.home = (id, q, view) => {
   if (isSeller()) return sellerHome(view);
   ensureAllRepBoxes();
@@ -1083,7 +1102,7 @@ V.home = (id, q, view) => {
   const profit = natural(acc('revenue'), YR.revenue) - natural(acc('expenses'), YR.expenses);
   const st = engine().stock;
   const low = db.items.filter(i => num(i.minQty) > 0 && (st[i.id]?.qty || 0) <= num(i.minQty));
-  const recent = [...db.invoices].sort((a, b) => b.date.localeCompare(a.date) || (b.created || 0) - (a.created || 0)).slice(0, 8);
+  const recent = db.invoices.filter(i => !i.rep).sort((a, b) => b.date.localeCompare(a.date) || (b.created || 0) - (a.created || 0)).slice(0, 8);
 
   view.innerHTML = head('الرئيسية', `<button class="btn pri sync-btn" id="homeSync" data-act="sync">🔄 مزامنة</button>${(() => { const lb = lastBackup(), old = Date.now() - lb > 864e5; return `<button class="btn sync-btn ${old ? 'warn pri' : 'ok'}" data-act="backup">💾 نسخة احتياطية${lb ? (old ? ' — صرلها أكتر من يوم' : ' — اليوم ✓') : ' — ما في ولا نسخة'}</button>`; })()}<span class="muted">${today()}</span>`) + `
   <div class="quick">
@@ -1098,8 +1117,9 @@ V.home = (id, q, view) => {
   ${(() => { const n = outboxDocs().length; return n ? `<a class="card ob-home" href="#/outbox">📤 <b>${n} رسالة من المندوب</b> بانتظار تنبعت للزباين من موبايلك ← <u>افتح</u></a>` : ''; })()}
   ${(() => { const n = debtors().filter(promiseDue).length; return n ? `<a class="card ob-home" href="#/debts?f=due">📅 <b>${n} زبون</b> موعد دفعتهم اليوم أو فات ← <u>الديون</u></a>` : ''; })()}
   ${(() => { const bx = postable().filter(a => a.repBox); return bx.length ? `<div class="card"><h3>💰 صناديق المندوبين</h3>${table(['الصندوق', 'الرصيد', ''], bx.map(a => `<tr><td>${esc(a.name)}</td><td class="n">${fmt(bal(a.id))} ${esc(cur())}</td><td><button class="btn pri" data-act="takeBox" data-id="${a.id}">📥 استلام</button></td></tr>`).join(''))}</div>` : ''; })()}
+  ${posTodayCard()}
   <div class="cols2">
-    <div class="card"><h3>آخر الفواتير</h3>${table(['الرقم', 'النوع', 'التاريخ', 'الطرف', 'الصافي'],
+    <div class="card"><h3>آخر الفواتير${db.invoices.some(i => i.rep) ? ' (من موبايلك)' : ''}</h3>${table(['الرقم', 'النوع', 'التاريخ', 'الطرف', 'الصافي'],
       recent.map(i => `<tr data-act="open" data-id="${esc(i.id)}"><td>${esc(i.no)}</td><td><span class="badge ${typeCls(i.type)}">${INV_TYPES[i.type]}</span></td><td class="n">${esc(i.date)}</td><td>${esc(accName(i.party) || 'نقدي')}</td><td class="n">${fmt(invTotals(i).net)} <small class="muted">${esc(docSym(i))}</small></td></tr>`).join(''))}</div>
     <div class="card"><h3>مواد وصلت للحد الأدنى</h3>${table(['المادة', 'الكمية', 'الحد الأدنى'],
       low.map(i => `<tr><td>${esc(i.name)}</td><td class="n"><span class="badge low">${fmt(st[i.id]?.qty || 0)}</span></td><td class="n">${fmt(i.minQty)}</td></tr>`).join(''))}
