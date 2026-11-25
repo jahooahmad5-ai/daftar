@@ -1,0 +1,895 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>مونتاج — محرر فيديو</title>
+<meta name="theme-color" content="#16181d">
+<style>
+:root{
+  --bg:#111317; --panel:#1a1d23; --panel2:#22262e; --line:#2e333d; --text:#e8eaed; --mute:#8b93a1;
+  --acc:#4f8cff; --acc2:#3a6fd6; --danger:#e5484d; --ok:#30a46c;
+  --vclip:#3b6fb8; --iclip:#7a4fb8; --tclip:#b8783b; --aclip:#2f8f63;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font:14px/1.4 system-ui,"Segoe UI",Tahoma,sans-serif;overflow:hidden}
+button,select,input,textarea{font:inherit;color:inherit}
+button{background:var(--panel2);border:1px solid var(--line);border-radius:7px;padding:6px 10px;cursor:pointer;white-space:nowrap}
+button:hover{border-color:var(--acc)}
+button.pri{background:var(--acc);border-color:var(--acc);color:#fff}
+button.pri:hover{background:var(--acc2)}
+button.icon{padding:6px 9px;min-width:34px}
+button:disabled{opacity:.4;cursor:default}
+input[type=text],input[type=number],select,textarea{background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:5px 7px;width:100%}
+input[type=range]{width:100%;accent-color:var(--acc)}
+input[type=color]{width:40px;height:28px;border:1px solid var(--line);background:none;border-radius:6px;padding:0}
+#app{display:grid;height:100%;grid-template-rows:auto minmax(0,1fr) auto minmax(150px,38%);grid-template-columns:260px minmax(0,1fr) 280px;
+  grid-template-areas:"top top top" "bin view props" "bin ctrl props" "tl tl tl"}
+header{grid-area:top;display:flex;align-items:center;gap:8px;padding:6px 10px;background:var(--panel);border-bottom:1px solid var(--line);flex-wrap:wrap}
+header h1{font-size:16px;margin:0 0 0 10px}
+header .sp{flex:1}
+.panel{background:var(--panel);overflow:auto;min-height:0}
+#bin{grid-area:bin;border-left:1px solid var(--line);padding:8px}
+#props{grid-area:props;border-right:1px solid var(--line);padding:8px}
+.ph{font-weight:600;color:var(--mute);font-size:12px;margin:2px 0 8px;display:flex;justify-content:space-between;align-items:center}
+#drop{border:2px dashed var(--line);border-radius:10px;padding:14px;text-align:center;color:var(--mute);cursor:pointer;margin-bottom:8px}
+#drop.over{border-color:var(--acc);color:var(--text)}
+.media{display:flex;gap:8px;align-items:center;padding:5px;border-radius:8px;border:1px solid transparent;cursor:grab;margin-bottom:4px;background:var(--panel2)}
+.media:hover{border-color:var(--line)}
+.media .th{width:64px;height:38px;border-radius:5px;background:#000 center/cover no-repeat;flex:none;display:grid;place-items:center;font-size:18px}
+.media .nm{flex:1;min-width:0;font-size:12px}
+.media .nm b{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500}
+.media .nm span{color:var(--mute)}
+#view{grid-area:view;display:grid;place-items:center;padding:10px;min-height:0;background:#0b0c0f}
+#canvasWrap{position:relative;max-width:100%;max-height:100%;aspect-ratio:16/9;background:#000;box-shadow:0 4px 30px #0008}
+#cv{display:block;width:100%;height:100%;touch-action:none}
+#ctrl{grid-area:ctrl;display:flex;align-items:center;justify-content:center;gap:6px;padding:6px;background:var(--panel);border-top:1px solid var(--line);flex-wrap:wrap}
+#tc{font-variant-numeric:tabular-nums;font-family:ui-monospace,Consolas,monospace;min-width:150px;text-align:center;direction:ltr}
+#tl{grid-area:tl;display:flex;flex-direction:column;background:var(--panel);border-top:1px solid var(--line);min-height:0}
+#tlbar{display:flex;gap:6px;align-items:center;padding:5px 8px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+#tlbar .sp{flex:1}
+#tlbody{flex:1;display:flex;direction:ltr;min-height:0;overflow:hidden}
+#heads{width:70px;flex:none;border-right:1px solid var(--line);overflow:hidden}
+#heads .rh{height:22px}
+.th2{height:56px;border-bottom:1px solid var(--line);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;font-size:12px;color:var(--mute)}
+.th2 button{padding:0 5px;font-size:11px;border-radius:4px}
+.th2.audio{height:44px}
+#scroll{flex:1;overflow:auto;position:relative}
+#lane{position:relative;min-height:100%}
+#ruler{height:22px;position:sticky;top:0;z-index:5;background:var(--panel2);border-bottom:1px solid var(--line);cursor:col-resize}
+.track{height:56px;border-bottom:1px solid var(--line);position:relative;background:repeating-linear-gradient(90deg,transparent 0 99px,#ffffff06 99px 100px)}
+.track.audio{height:44px}
+.track.dropover{background:#4f8cff22}
+.clip{position:absolute;top:3px;bottom:3px;border-radius:6px;overflow:hidden;cursor:grab;border:1px solid #0006;color:#fff;font-size:11px;touch-action:none;user-select:none}
+.clip.video{background:var(--vclip)} .clip.image{background:var(--iclip)} .clip.text{background:var(--tclip)} .clip.audio{background:var(--aclip)}
+.clip.sel{outline:2px solid #fff;z-index:2}
+.clip .lbl{position:absolute;top:2px;left:6px;right:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-shadow:0 1px 2px #000;pointer-events:none;z-index:1}
+.clip .strip{position:absolute;inset:0;background-repeat:repeat-x;background-size:auto 100%;opacity:.55;pointer-events:none}
+.clip canvas{position:absolute;left:0;bottom:0;width:100%;height:60%;pointer-events:none;opacity:.8}
+.clip .h{position:absolute;top:0;bottom:0;width:9px;cursor:ew-resize;z-index:3}
+.clip .h.l{left:0;border-left:3px solid #fff8} .clip .h.r{right:0;border-right:3px solid #fff8}
+.clip .fade{position:absolute;top:0;height:100%;pointer-events:none;z-index:1}
+#playhead{position:absolute;top:0;bottom:0;width:2px;background:#ff4d4d;z-index:6;pointer-events:none}
+#playhead::before{content:"";position:absolute;top:0;left:-6px;border:7px solid transparent;border-top:9px solid #ff4d4d}
+#snapline{position:absolute;top:0;bottom:0;width:1px;background:#ffd60a;z-index:6;pointer-events:none;display:none}
+.row{margin-bottom:9px}
+.row label{display:block;font-size:12px;color:var(--mute);margin-bottom:3px}
+.row .val{float:left;color:var(--text);font-variant-numeric:tabular-nums}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.sec{border-top:1px solid var(--line);margin:12px 0 8px;padding-top:8px;font-weight:600;font-size:12px;color:var(--acc)}
+.empty{color:var(--mute);font-size:13px;padding:14px 4px;text-align:center}
+.chk{display:flex;align-items:center;gap:6px;font-size:13px;margin-bottom:8px}
+#modal{position:fixed;inset:0;background:#000a;display:none;place-items:center;z-index:50}
+#modal .box{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px;width:min(420px,92vw)}
+#modal h3{margin:0 0 12px}
+.bar{height:10px;background:var(--bg);border-radius:5px;overflow:hidden;margin:10px 0}
+.bar i{display:block;height:100%;width:0;background:var(--acc)}
+#toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#000d;padding:8px 16px;border-radius:8px;display:none;z-index:60}
+#tabs{display:none}
+kbd{background:var(--panel2);border:1px solid var(--line);border-radius:4px;padding:0 4px;font-size:11px}
+/* موبايل */
+@media (max-width:860px){
+  #app{grid-template-columns:minmax(0,1fr);grid-template-rows:auto auto auto auto minmax(110px,1fr) minmax(170px,34%);
+    grid-template-areas:"top" "view" "ctrl" "tabs" "side" "tl"}
+  #view{padding:6px;height:30vh}
+  header{gap:5px;padding:5px 6px}
+  header button,header select{padding:5px 7px}
+  #selFps{display:none}
+  #tabs{grid-area:tabs;display:flex;background:var(--panel);border-top:1px solid var(--line)}
+  #tabs button{flex:1;border-radius:0;border:0;border-bottom:2px solid transparent;background:none}
+  #tabs button.on{border-bottom-color:var(--acc);color:var(--acc)}
+  #bin,#props{grid-area:side;border:0}
+  #app[data-tab=bin] #props,#app[data-tab=props] #bin{display:none}
+  header h1{font-size:14px}
+  .hide-m{display:none}
+}
+</style>
+</head>
+<body>
+<div id="app" data-tab="bin">
+  <header>
+    <h1>🎬 مونتاج</h1>
+    <button id="bImport" class="pri">＋ استيراد</button>
+    <button id="bText">T نص</button>
+    <button id="bUndo" class="icon" title="تراجع (Ctrl+Z)">↶</button>
+    <button id="bRedo" class="icon" title="إعادة (Ctrl+Y)">↷</button>
+    <span class="sp"></span>
+    <select id="selRes" title="مقاس الفيديو" style="width:auto">
+      <option value="1920x1080">١٦:٩ — 1080p</option>
+      <option value="1280x720" selected>١٦:٩ — 720p</option>
+      <option value="1080x1920">٩:١٦ — ستوري/ريلز</option>
+      <option value="720x1280">٩:١٦ — 720</option>
+      <option value="1080x1080">١:١ — مربّع</option>
+      <option value="1080x1350">٤:٥ — منشور</option>
+    </select>
+    <select id="selFps" title="عدد الإطارات" style="width:auto"><option>24</option><option selected>30</option><option>60</option></select>
+    <button id="bExport" class="pri">⬇ تصدير</button>
+    <input type="file" id="file" multiple accept="video/*,image/*,audio/*" hidden>
+  </header>
+
+  <aside id="bin" class="panel">
+    <div id="drop">📂 اسحب ملفات الفيديو والصور والصوت لهون<br><small>أو اضغط للاختيار</small></div>
+    <div class="ph">المكتبة <span id="binCount"></span></div>
+    <div id="binList"></div>
+    <div class="empty" id="binEmpty">ما في ملفات لسا.<br>اضغط على الملف أو اسحبه للخط الزمني.</div>
+  </aside>
+
+  <main id="view"><div id="canvasWrap"><canvas id="cv"></canvas></div></main>
+
+  <div id="ctrl" dir="ltr">
+    <button class="icon" id="bStart" title="البداية (Home)">⏮</button>
+    <button class="icon" id="bPrevF" title="إطار للخلف (←)">◀︎|</button>
+    <button class="icon pri" id="bPlay" title="تشغيل/إيقاف (Space)">▶</button>
+    <button class="icon" id="bNextF" title="إطار للأمام (→)">|▶︎</button>
+    <button class="icon" id="bEnd" title="النهاية (End)">⏭</button>
+    <span id="tc">00:00:00.00 / 00:00:00.00</span>
+  </div>
+
+  <nav id="tabs"><button data-t="bin" class="on">📂 المكتبة</button><button data-t="props">🎛 الخصائص</button></nav>
+
+  <aside id="props" class="panel"><div class="ph">الخصائص</div><div id="propBody"></div></aside>
+
+  <section id="tl">
+    <div id="tlbar">
+      <button id="bSplit" title="قص عند المؤشر (S)">✂ قص</button>
+      <button id="bDel" title="حذف (Delete)">🗑 حذف</button>
+      <button id="bDup" title="نسخ (Ctrl+D)">⧉ تكرار</button>
+      <button id="bRipple" title="حذف المقطع وسحب اللي بعده">⇤ حذف مع السحب</button>
+      <label class="chk hide-m" style="margin:0"><input type="checkbox" id="chkSnap" checked> مغناطيس</label>
+      <span class="sp"></span>
+      <button id="bAddV" class="hide-m">＋ مسار فيديو</button>
+      <button id="bAddA" class="hide-m">＋ مسار صوت</button>
+      <button class="icon" id="bZo" title="تصغير">－</button>
+      <input type="range" id="zoom" min="5" max="400" value="60" style="width:110px">
+      <button class="icon" id="bZi" title="تكبير">＋</button>
+      <button id="bFit" title="ملاءمة">⇔</button>
+    </div>
+    <div id="tlbody">
+      <div id="heads"><div class="rh"></div><div id="headList"></div></div>
+      <div id="scroll"><div id="lane"><canvas id="ruler"></canvas><div id="tracks"></div><div id="playhead"></div><div id="snapline"></div></div></div>
+    </div>
+  </section>
+</div>
+
+<div id="modal"><div class="box">
+  <h3>⬇ تصدير الفيديو</h3>
+  <div id="expSetup">
+    <div class="row"><label>الجودة</label>
+      <select id="expQ"><option value="2500000">عادية — ملف أصغر</option><option value="6000000" selected>عالية</option><option value="12000000">عالية جداً</option></select></div>
+    <div class="row"><label>الصيغة</label><select id="expFmt"></select></div>
+    <p style="color:var(--mute);font-size:12px">التصدير بيصير بنفس سرعة التشغيل. خلّي الصفحة مفتوحة وقدّامك لحتى يخلص.</p>
+    <div style="display:flex;gap:8px;justify-content:flex-end"><button id="expCancel0">إلغاء</button><button class="pri" id="expGo">ابدأ التصدير</button></div>
+  </div>
+  <div id="expRun" style="display:none">
+    <div id="expMsg">جاري التصدير…</div>
+    <div class="bar"><i id="expBar"></i></div>
+    <div style="display:flex;justify-content:flex-end"><button id="expCancel">إيقاف</button></div>
+  </div>
+</div></div>
+<div id="toast"></div>
+
+<script>
+'use strict';
+// ====================== أدوات ======================
+const $ = s => document.querySelector(s);
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const uid = () => Math.random().toString(36).slice(2, 10);
+const fmt = (t, frames) => {
+  t = Math.max(0, t);
+  const h = Math.floor(t / 3600), m = Math.floor(t / 60) % 60, s = Math.floor(t) % 60, f = Math.floor((t % 1) * 100);
+  const p = n => String(n).padStart(2, '0');
+  return (h ? p(h) + ':' : '00:') + p(m) + ':' + p(s) + (frames === false ? '' : '.' + p(f));
+};
+function toast(msg, ms = 2200) { const el = $('#toast'); el.textContent = msg; el.style.display = 'block'; clearTimeout(toast.t); toast.t = setTimeout(() => el.style.display = 'none', ms); }
+
+// ====================== الحالة ======================
+const S = {
+  W: 1280, H: 720, fps: 30,
+  media: [],                 // {id,name,type,url,duration,w,h,thumb,img,peaks,strip}
+  tracks: [ {id:'v2', type:'video', name:'V2'}, {id:'v1', type:'video', name:'V1'}, {id:'a1', type:'audio', name:'A1'} ],
+  clips: [],
+  sel: null, t: 0, playing: false, pps: 60,
+};
+const hidden = {};           // مسارات مخفية/مكتومة: id -> {hide,mute}
+const undoStack = [], redoStack = [];
+const snapState = () => JSON.stringify({ clips: S.clips, tracks: S.tracks, sel: S.sel });
+function commit() { undoStack.push(snapState()); if (undoStack.length > 200) undoStack.shift(); redoStack.length = 0; updUndo(); }
+function restore(js) { const o = JSON.parse(js); S.clips = o.clips; S.tracks = o.tracks; S.sel = o.sel; renderAll(); }
+function undo() { if (!undoStack.length) return; redoStack.push(snapState()); restore(undoStack.pop()); updUndo(); }
+function redo() { if (!redoStack.length) return; undoStack.push(snapState()); restore(redoStack.pop()); updUndo(); }
+function updUndo() { $('#bUndo').disabled = !undoStack.length; $('#bRedo').disabled = !redoStack.length; }
+
+const mediaById = id => S.media.find(m => m.id === id);
+const clipById = id => S.clips.find(c => c.id === id);
+const trackById = id => S.tracks.find(t => t.id === id);
+const selClip = () => clipById(S.sel);
+const projectDur = () => S.clips.reduce((a, c) => Math.max(a, c.start + c.dur), 0);
+const defFilters = () => ({ brightness: 100, contrast: 100, saturate: 100, hue: 0, grayscale: 0, sepia: 0, blur: 0, invert: 0 });
+
+// ====================== الصوت ======================
+let AC = null, master = null, expDest = null;
+function audio() {
+  if (!AC) {
+    AC = new (window.AudioContext || window.webkitAudioContext)();
+    master = AC.createGain(); master.connect(AC.destination);
+  }
+  if (AC.state === 'suspended') AC.resume();
+  return AC;
+}
+const els = {};              // clipId -> {el, gain}
+function ensureEl(c) {
+  if (els[c.id]) return els[c.id];
+  if (c.kind !== 'video' && c.kind !== 'audio') return null;
+  const m = mediaById(c.mediaId); if (!m) return null;
+  const el = document.createElement(c.kind === 'video' ? 'video' : 'audio');
+  el.src = m.url; el.preload = 'auto'; el.playsInline = true; el.crossOrigin = 'anonymous';
+  el.addEventListener('seeked', () => needDraw = true);
+  el.addEventListener('loadeddata', () => needDraw = true);
+  let gain = null;
+  try { audio(); const src = AC.createMediaElementSource(el); gain = AC.createGain(); src.connect(gain).connect(master); } catch (e) { console.warn(e); }
+  return els[c.id] = { el, gain };
+}
+function gcEls() {
+  for (const id in els) if (!clipById(id)) { const e = els[id]; e.el.pause(); e.el.removeAttribute('src'); e.el.load(); if (e.gain) e.gain.disconnect(); delete els[id]; }
+}
+
+// ====================== الاستيراد ======================
+async function importFiles(files) {
+  audio();
+  for (const f of files) {
+    const type = f.type.startsWith('video') ? 'video' : f.type.startsWith('image') ? 'image' : f.type.startsWith('audio') ? 'audio' : null;
+    if (!type) { toast('نوع ملف غير مدعوم: ' + f.name); continue; }
+    const m = { id: uid(), name: f.name, type, url: URL.createObjectURL(f), duration: 5, w: 0, h: 0, thumb: '', peaks: null, strip: '' };
+    try {
+      if (type === 'image') {
+        const img = new Image(); img.src = m.url; await img.decode();
+        m.img = img; m.w = img.naturalWidth; m.h = img.naturalHeight; m.thumb = m.url; m.strip = m.url;
+      } else {
+        const el = document.createElement(type);
+        el.preload = 'auto'; el.muted = true; el.src = m.url;
+        await new Promise((ok, no) => { el.onloadedmetadata = ok; el.onerror = () => no(new Error('ما قدرت افتح الملف')); });
+        m.duration = isFinite(el.duration) ? el.duration : 10;
+        if (type === 'video') {
+          m.w = el.videoWidth; m.h = el.videoHeight;
+          const shots = await thumbs(el, m);
+          m.thumb = shots[0] || ''; m.strip = shots.length ? stripImage(shots) : '';
+        }
+      }
+      S.media.push(m); renderBin();
+      if (type !== 'image') peaksFor(f, m);
+    } catch (e) { toast('خطأ بالملف ' + f.name + ': ' + e.message); }
+  }
+}
+async function thumbs(el, m) {
+  const out = []; const c = document.createElement('canvas'); c.height = 72; c.width = Math.round(72 * (m.w / m.h || 16 / 9));
+  const x = c.getContext('2d');
+  const n = 6;
+  for (let i = 0; i < n; i++) {
+    const t = Math.min(m.duration - 0.05, m.duration * (i + 0.5) / n);
+    await new Promise(r => { el.onseeked = r; el.currentTime = Math.max(0, t); setTimeout(r, 1500); });
+    try { x.drawImage(el, 0, 0, c.width, c.height); out.push(c.toDataURL('image/jpeg', .6)); } catch (e) {}
+  }
+  return out;
+}
+function stripImage(shots) {
+  // صورة واحدة فيها كل اللقطات جنب بعض
+  const c = document.createElement('canvas'); const imgs = shots.map(s => { const i = new Image(); i.src = s; return i; });
+  return Promise.all(imgs.map(i => i.decode())).then(() => {
+    c.width = imgs.reduce((a, i) => a + i.width, 0); c.height = imgs[0].height;
+    let x = 0; const g = c.getContext('2d'); imgs.forEach(i => { g.drawImage(i, x, 0); x += i.width; });
+    return c.toDataURL('image/jpeg', .6);
+  });
+}
+async function peaksFor(file, m) {
+  try {
+    if (file.size > 400e6) return;
+    const buf = await file.arrayBuffer();
+    const ab = await new OfflineAudioContext(1, 1, 44100).decodeAudioData(buf);
+    const ch = ab.getChannelData(0), per = Math.max(1, Math.floor(ab.sampleRate / 50)); // 50 قمة بالثانية
+    const peaks = new Float32Array(Math.ceil(ch.length / per));
+    for (let i = 0; i < peaks.length; i++) { let mx = 0; const e = Math.min(ch.length, (i + 1) * per); for (let j = i * per; j < e; j += 4) { const v = Math.abs(ch[j]); if (v > mx) mx = v; } peaks[i] = mx; }
+    m.peaks = peaks; renderTracks();
+  } catch (e) { /* فيديو بلا صوت أو صيغة ما بتنفك */ }
+}
+
+// ====================== المقاطع ======================
+function newClip(m, trackId, start) {
+  const base = { id: uid(), mediaId: m ? m.id : null, track: trackId, start, in: 0, dur: 5, speed: 1, volume: 1, muted: false,
+    fadeIn: 0, fadeOut: 0, opacity: 1, x: .5, y: .5, scale: 1, rot: 0, fit: 'contain', filters: defFilters(), anim: 'none', name: m ? m.name : 'نص' };
+  if (!m) return Object.assign(base, { kind: 'text', dur: 3, text: 'اكتب النص هون', size: 64, color: '#ffffff', bold: true, font: 'Tahoma', bg: false, bgColor: '#000000', stroke: true, y: .82, anim: 'fade' });
+  base.kind = m.type;
+  if (m.type !== 'image') base.dur = m.duration;
+  return base;
+}
+function freeTrack(type, start, dur, prefer) {
+  const ok = t => t.type === type && !S.clips.some(c => c.track === t.id && c.start < start + dur - 1e-6 && c.start + c.dur > start + 1e-6);
+  const p = prefer && trackById(prefer);
+  if (p && ok(p)) return p.id;
+  const list = type === 'video' ? [...S.tracks].reverse() : S.tracks; // الفيديو: من المسار السفلي لفوق
+  const t = list.find(ok);
+  if (t) return t.id;
+  return addTrack(type, true);
+}
+function addToTimeline(m, at, trackId) {
+  commit();
+  const c = newClip(m, null, at ?? S.t);
+  const type = c.kind === 'audio' ? 'audio' : 'video';
+  if (trackId && trackById(trackId)?.type === type) { c.track = trackId; resolveOverlap(c); }
+  else c.track = freeTrack(type, c.start, c.dur, c.kind === 'text' ? S.tracks.find(t => t.type === 'video')?.id : null);
+  S.clips.push(c); S.sel = c.id; renderAll();
+}
+function resolveOverlap(c) {
+  // إذا المكان محجوز، حط المقطع بعد آخر مقطع متداخل
+  for (let i = 0; i < 50; i++) {
+    const hit = S.clips.find(o => o !== c && o.track === c.track && o.start < c.start + c.dur - 1e-6 && o.start + o.dur > c.start + 1e-6);
+    if (!hit) return; c.start = hit.start + hit.dur;
+  }
+}
+function addTrack(type, silent) {
+  const n = S.tracks.filter(t => t.type === type).length + 1;
+  const t = { id: uid(), type, name: (type === 'video' ? 'V' : 'A') + n };
+  if (type === 'video') S.tracks.unshift(t); else S.tracks.push(t);
+  if (!silent) { commit(); renderAll(); }
+  return t.id;
+}
+function splitAt(c, t) {
+  if (!c || t <= c.start + 0.02 || t >= c.start + c.dur - 0.02) return false;
+  const local = t - c.start;
+  const b = JSON.parse(JSON.stringify(c)); b.id = uid();
+  b.start = t; b.dur = c.dur - local; b.in = c.in + local * c.speed; b.fadeIn = 0;
+  c.dur = local; c.fadeOut = 0;
+  S.clips.push(b); return b;
+}
+function doSplit() {
+  let targets = S.clips.filter(c => c.start < S.t && c.start + c.dur > S.t);
+  const sc = selClip();
+  if (sc && targets.includes(sc)) targets = [sc];
+  if (!targets.length) return toast('حط المؤشر الأحمر فوق مقطع لتقصّه');
+  commit(); let last; targets.forEach(c => last = splitAt(c, S.t) || last);
+  if (last && sc) S.sel = last.id; renderAll();
+}
+function doDelete(ripple) {
+  const c = selClip(); if (!c) return toast('اختار مقطع أول');
+  commit(); S.clips = S.clips.filter(x => x !== c);
+  if (ripple) S.clips.forEach(x => { if (x.track === c.track && x.start >= c.start + c.dur - 1e-6) x.start -= c.dur; });
+  S.sel = null; renderAll();
+}
+function doDup() {
+  const c = selClip(); if (!c) return toast('اختار مقطع أول');
+  commit(); const b = JSON.parse(JSON.stringify(c)); b.id = uid(); b.start = c.start + c.dur; resolveOverlap(b);
+  S.clips.push(b); S.sel = b.id; renderAll();
+}
+function maxSrc(c) { const m = mediaById(c.mediaId); return (c.kind === 'video' || c.kind === 'audio') && m ? m.duration : Infinity; }
+
+// ====================== الرسم على الشاشة ======================
+const cv = $('#cv'), ctx = cv.getContext('2d');
+let needDraw = true;
+function setRes(v) {
+  const [w, h] = v.split('x').map(Number); S.W = w; S.H = h; cv.width = w; cv.height = h;
+  $('#canvasWrap').style.aspectRatio = w + '/' + h; fitCanvas(); needDraw = true;
+}
+function fitCanvas() {
+  const v = $('#view'), r = S.W / S.H, pad = innerWidth <= 860 ? 12 : 20; const aw = v.clientWidth - pad, ah = v.clientHeight - pad;
+  let w = aw, h = aw / r; if (h > ah) { h = ah; w = ah * r; }
+  const wr = $('#canvasWrap'); wr.style.width = Math.max(50, w) + 'px'; wr.style.height = Math.max(30, h) + 'px';
+}
+function fadeK(c, local) {
+  let k = 1;
+  if (c.fadeIn > 0 && local < c.fadeIn) k = Math.min(k, local / c.fadeIn);
+  if (c.fadeOut > 0 && local > c.dur - c.fadeOut) k = Math.min(k, (c.dur - local) / c.fadeOut);
+  return clamp(k, 0, 1);
+}
+function filterStr(f) {
+  const p = [];
+  if (f.brightness !== 100) p.push(`brightness(${f.brightness}%)`);
+  if (f.contrast !== 100) p.push(`contrast(${f.contrast}%)`);
+  if (f.saturate !== 100) p.push(`saturate(${f.saturate}%)`);
+  if (f.hue) p.push(`hue-rotate(${f.hue}deg)`);
+  if (f.grayscale) p.push(`grayscale(${f.grayscale}%)`);
+  if (f.sepia) p.push(`sepia(${f.sepia}%)`);
+  if (f.invert) p.push(`invert(${f.invert}%)`);
+  if (f.blur) p.push(`blur(${f.blur * S.H / 720}px)`);
+  return p.join(' ') || 'none';
+}
+function activeAt(t) { return S.clips.filter(c => t >= c.start && t < c.start + c.dur); }
+const boxes = {}; // clipId -> حدود الرسم للسحب على الشاشة
+function drawFrame(t) {
+  ctx.save(); ctx.fillStyle = '#000'; ctx.fillRect(0, 0, S.W, S.H); ctx.restore();
+  const vtr = S.tracks.filter(tr => tr.type === 'video').reverse(); // المسار الأعلى يترسم أخير
+  for (const tr of vtr) {
+    if (hidden[tr.id]?.hide) continue;
+    for (const c of S.clips) {
+      if (c.track !== tr.id || t < c.start || t >= c.start + c.dur) continue;
+      drawClip(c, t - c.start);
+    }
+  }
+  if (S.sel && !exporting) { const b = boxes[S.sel]; const c = selClip(); if (b && c && t >= c.start && t < c.start + c.dur) drawSel(b); }
+}
+function drawClip(c, local) {
+  let src = null, sw = 0, sh = 0;
+  if (c.kind === 'video') { const e = ensureEl(c); if (!e || e.el.readyState < 2) return; src = e.el; sw = src.videoWidth; sh = src.videoHeight; }
+  else if (c.kind === 'image') { const m = mediaById(c.mediaId); if (!m?.img) return; src = m.img; sw = m.w; sh = m.h; }
+  let alpha = c.opacity * fadeK(c, local), sc = c.scale, dx = 0, dy = 0;
+  // حركة الدخول
+  const ad = Math.min(0.6, c.dur / 2), p = clamp(local / ad, 0, 1), ease = 1 - Math.pow(1 - p, 3);
+  if (c.anim === 'fade') alpha *= ease;
+  else if (c.anim === 'zoom') { sc *= 0.5 + 0.5 * ease; alpha *= ease; }
+  else if (c.anim === 'slide') { dy = (1 - ease) * S.H * 0.15; alpha *= ease; }
+  else if (c.anim === 'kenburns') sc *= 1 + 0.12 * (local / c.dur);
+  if (alpha <= 0.001) return;
+  ctx.save();
+  ctx.globalAlpha = alpha; ctx.filter = filterStr(c.filters || defFilters());
+  ctx.translate(S.W * c.x + dx, S.H * c.y + dy); ctx.rotate(c.rot * Math.PI / 180);
+  if (c.kind === 'text') { const b = drawText(c, local, sc); boxes[c.id] = { x: S.W * c.x, y: S.H * c.y, w: b.w * sc, h: b.h * sc, rot: c.rot }; ctx.restore(); return; }
+  let w, h; const r = Math.min(S.W / sw, S.H / sh), rc = Math.max(S.W / sw, S.H / sh);
+  if (c.fit === 'cover') { w = sw * rc; h = sh * rc; } else if (c.fit === 'stretch') { w = S.W; h = S.H; } else { w = sw * r; h = sh * r; }
+  w *= sc; h *= sc;
+  ctx.drawImage(src, -w / 2, -h / 2, w, h);
+  ctx.restore();
+  boxes[c.id] = { x: S.W * c.x, y: S.H * c.y, w, h, rot: c.rot };
+}
+function drawText(c, local, sc) {
+  const size = c.size * S.H / 720;
+  ctx.scale(sc, sc);
+  ctx.font = `${c.bold ? 'bold ' : ''}${size}px ${c.font}, Tahoma, sans-serif`;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.direction = 'rtl';
+  let txt = c.text || '';
+  if (c.anim === 'type') txt = [...txt].slice(0, Math.ceil([...txt].length * clamp(local / Math.max(0.5, c.dur * 0.5), 0, 1))).join('');
+  const lines = (c.anim === 'type' ? txt : c.text || '').split('\n');
+  const shown = txt.split('\n');
+  const lh = size * 1.3; const w = Math.max(10, ...lines.map(l => ctx.measureText(l).width)) + size * 0.6; const h = lh * lines.length + size * 0.3;
+  if (c.bg) { ctx.save(); ctx.fillStyle = c.bgColor; ctx.globalAlpha *= 0.75; roundRect(-w / 2, -h / 2, w, h, size * 0.2); ctx.fill(); ctx.restore(); }
+  shown.forEach((l, i) => {
+    const y = -h / 2 + size * 0.15 + lh * (i + 0.5);
+    if (c.stroke) { ctx.lineWidth = size * 0.12; ctx.strokeStyle = '#000'; ctx.lineJoin = 'round'; ctx.strokeText(l, 0, y); }
+    ctx.fillStyle = c.color; ctx.fillText(l, 0, y);
+  });
+  return { w, h };
+}
+function roundRect(x, y, w, h, r) { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); }
+function drawSel(b) {
+  ctx.save(); ctx.translate(b.x, b.y); ctx.rotate(b.rot * Math.PI / 180);
+  ctx.strokeStyle = '#4f8cff'; ctx.lineWidth = Math.max(2, S.H / 360); ctx.setLineDash([10, 6]);
+  ctx.strokeRect(-b.w / 2, -b.h / 2, b.w, b.h); ctx.restore();
+}
+
+// ====================== التشغيل والمزامنة ======================
+let clock0 = 0, t0 = 0;
+function syncMedia(t, playing) {
+  for (const c of S.clips) {
+    if (c.kind !== 'video' && c.kind !== 'audio') continue;
+    const active = t >= c.start && t < c.start + c.dur;
+    const soon = playing && t < c.start && c.start - t < 1.5;
+    if (!active && !soon && !els[c.id]) continue;
+    const e = ensureEl(c); if (!e) continue; const el = e.el;
+    const target = c.in + (t - c.start) * c.speed;
+    if (active) {
+      if (el.playbackRate !== c.speed) el.playbackRate = c.speed;
+      const local = t - c.start; const tm = hidden[c.track]?.mute;
+      if (e.gain) e.gain.gain.setTargetAtTime(c.muted || tm ? 0 : c.volume * fadeK(c, local), AC.currentTime, 0.015);
+      if (playing) {
+        if (el.paused) { el.currentTime = target; el.play().catch(() => {}); }
+        else if (Math.abs(el.currentTime - target) > 0.3) el.currentTime = target;
+      } else {
+        if (!el.paused) el.pause();
+        if (Math.abs(el.currentTime - target) > 0.02 && !el.seeking) el.currentTime = target;
+      }
+    } else {
+      if (!el.paused) el.pause();
+      if (soon && Math.abs(el.currentTime - c.in) > 0.1 && !el.seeking) el.currentTime = c.in; // تجهيز مسبق للقطة الجاية
+    }
+  }
+}
+function play() {
+  if (S.playing) return pause();
+  audio();
+  const end = projectDur(); if (!end) return toast('ضيف مقاطع للخط الزمني أول');
+  if (S.t >= end - 0.05) S.t = 0;
+  S.playing = true; clock0 = performance.now(); t0 = S.t; $('#bPlay').textContent = '⏸';
+}
+function pause() {
+  S.playing = false; $('#bPlay').textContent = '▶';
+  Object.values(els).forEach(e => e.el.pause()); syncMedia(S.t, false); needDraw = true;
+}
+function seek(t) { S.t = clamp(t, 0, Math.max(projectDur(), 0)); if (S.playing) { clock0 = performance.now(); t0 = S.t; } syncMedia(S.t, S.playing); needDraw = true; updPlayhead(); }
+function loop() {
+  if (S.playing) {
+    S.t = t0 + (performance.now() - clock0) / 1000;
+    const end = projectDur();
+    if (S.t >= end) { S.t = end; if (exporting) finishExport(); else pause(); }
+    syncMedia(S.t, S.playing); needDraw = true; updPlayhead(true);
+    if (exporting) $('#expBar').style.width = (100 * S.t / end).toFixed(1) + '%';
+  }
+  if (needDraw || S.playing) { drawFrame(S.t); needDraw = false; updTC(); }
+  requestAnimationFrame(loop);
+}
+function updTC() { $('#tc').textContent = fmt(S.t) + ' / ' + fmt(projectDur()); }
+
+// ====================== الخط الزمني ======================
+const scroll = $('#scroll'), lane = $('#lane'), tracksEl = $('#tracks'), ruler = $('#ruler');
+function renderAll() { gcEls(); renderTracks(); renderProps(); syncMedia(S.t, S.playing); needDraw = true; updTC(); }
+function renderTracks() {
+  const dur = Math.max(projectDur() + 10, scroll.clientWidth / S.pps);
+  const width = dur * S.pps; lane.style.width = width + 'px';
+  $('#headList').innerHTML = S.tracks.map(t => `<div class="th2 ${t.type}" data-id="${t.id}"><b>${t.name}</b><div>
+    ${t.type === 'video' ? `<button data-a="hide" title="إخفاء">${hidden[t.id]?.hide ? '🚫' : '👁'}</button>` : ''}
+    <button data-a="mute" title="كتم">${hidden[t.id]?.mute ? '🔇' : '🔊'}</button>
+    ${S.tracks.filter(x => x.type === t.type).length > 1 ? `<button data-a="del" title="حذف المسار">✕</button>` : ''}</div></div>`).join('');
+  tracksEl.innerHTML = '';
+  for (const t of S.tracks) {
+    const row = document.createElement('div'); row.className = 'track ' + t.type; row.dataset.id = t.id;
+    for (const c of S.clips.filter(c => c.track === t.id)) row.appendChild(clipEl(c));
+    tracksEl.appendChild(row);
+  }
+  drawRuler(); updPlayhead();
+}
+function clipEl(c) {
+  const d = document.createElement('div'); d.className = 'clip ' + c.kind + (c.id === S.sel ? ' sel' : ''); d.dataset.id = c.id;
+  posClip(d, c);
+  const m = mediaById(c.mediaId);
+  const spd = c.speed !== 1 ? ` ×${c.speed}` : '';
+  d.innerHTML = `<div class="lbl">${c.kind === 'text' ? '✎ ' + esc(c.text.split('\n')[0]) : esc(c.name)}${spd}</div><div class="h l"></div><div class="h r"></div>`;
+  if (m && typeof m.strip === 'string' && m.strip && c.kind !== 'audio') {
+    const s = document.createElement('div'); s.className = 'strip'; s.style.backgroundImage = `url(${m.strip})`; d.prepend(s);
+  }
+  if (m?.peaks && (c.kind === 'audio' || c.kind === 'video')) d.appendChild(waveCanvas(c, m));
+  if (c.fadeIn > 0) { const f = document.createElement('div'); f.className = 'fade'; f.style.cssText = `left:0;width:${c.fadeIn * S.pps}px;background:linear-gradient(90deg,#000a,transparent)`; d.appendChild(f); }
+  if (c.fadeOut > 0) { const f = document.createElement('div'); f.className = 'fade'; f.style.cssText = `right:0;width:${c.fadeOut * S.pps}px;background:linear-gradient(270deg,#000a,transparent)`; d.appendChild(f); }
+  return d;
+}
+function waveCanvas(c, m) {
+  const w = Math.min(4000, Math.max(1, Math.round(c.dur * S.pps))), h = 30;
+  const k = document.createElement('canvas'); k.width = w; k.height = h; const g = k.getContext('2d');
+  g.fillStyle = '#ffffffb0';
+  for (let x = 0; x < w; x++) {
+    const s = c.in + (x / w) * c.dur * c.speed, e = c.in + ((x + 1) / w) * c.dur * c.speed;
+    let mx = 0; for (let i = Math.floor(s * 50); i < Math.ceil(e * 50) && i < m.peaks.length; i++) mx = Math.max(mx, m.peaks[i]);
+    const v = Math.max(1, mx * h * Math.min(2, c.volume)); g.fillRect(x, (h - v) / 2, 1, v);
+  }
+  return k;
+}
+const esc = s => String(s).replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
+function posClip(d, c) {
+  d.style.left = c.start * S.pps + 'px'; d.style.width = Math.max(4, c.dur * S.pps) + 'px';
+  const m = mediaById(c.mediaId); const s = d.querySelector('.strip');
+  if (s && m && c.kind === 'video') { const unit = 56 * (m.w / m.h || 16 / 9) * 6; s.style.backgroundSize = `${unit}px 100%`; s.style.backgroundPosition = `${-(c.in / m.duration) * unit}px 0`; }
+}
+function drawRuler() {
+  const w = lane.clientWidth || parseFloat(lane.style.width), dpr = devicePixelRatio || 1;
+  ruler.width = w * dpr; ruler.height = 22 * dpr; ruler.style.width = w + 'px';
+  const g = ruler.getContext('2d'); g.scale(dpr, dpr); g.fillStyle = '#8b93a1'; g.strokeStyle = '#555c68'; g.font = '10px system-ui';
+  const steps = [0.1, 0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300, 600];
+  const major = steps.find(s => s * S.pps >= 70) || 600, minor = major / 5;
+  for (let t = 0; t * S.pps < w; t += minor) {
+    const x = Math.round(t * S.pps) + 0.5, isM = Math.abs(t / major - Math.round(t / major)) < 1e-6;
+    g.beginPath(); g.moveTo(x, isM ? 8 : 15); g.lineTo(x, 22); g.stroke();
+    if (isM) g.fillText(major < 1 ? t.toFixed(1) + 's' : fmt(t, false).replace(/^00:/, ''), x + 3, 10);
+  }
+}
+function updPlayhead(follow) {
+  const x = S.t * S.pps; $('#playhead').style.left = x + 'px';
+  if (follow && (x > scroll.scrollLeft + scroll.clientWidth - 40 || x < scroll.scrollLeft)) scroll.scrollLeft = x - 60;
+}
+function setZoom(pps, anchorT) {
+  const a = anchorT ?? S.t, sx = a * S.pps - scroll.scrollLeft;
+  S.pps = clamp(pps, 5, 400); $('#zoom').value = S.pps; renderTracks(); scroll.scrollLeft = a * S.pps - sx;
+}
+
+// --- سحب وقص المقاطع ---
+let drag = null;
+const xToT = x => (x - scroll.getBoundingClientRect().left + scroll.scrollLeft) / S.pps;
+function snapT(t, ignore) {
+  if (!$('#chkSnap').checked) return { t, hit: false };
+  const th = 8 / S.pps; let best = null, bd = th;
+  const pts = [0, S.t]; S.clips.forEach(c => { if (c.id !== ignore) pts.push(c.start, c.start + c.dur); });
+  for (const p of pts) { const d = Math.abs(p - t); if (d < bd) { bd = d; best = p; } }
+  return best === null ? { t, hit: false } : { t: best, hit: true };
+}
+function showSnap(t) { const s = $('#snapline'); if (t == null) s.style.display = 'none'; else { s.style.display = 'block'; s.style.left = t * S.pps + 'px'; } }
+tracksEl.addEventListener('pointerdown', e => {
+  const d = e.target.closest('.clip');
+  if (!d) { if (e.target.closest('.track')) { S.sel = null; seek(xToT(e.clientX)); renderTracks(); renderProps(); } return; }
+  const c = clipById(d.dataset.id); if (!c) return;
+  e.preventDefault(); d.setPointerCapture(e.pointerId);
+  if (S.sel !== c.id) { S.sel = c.id; tracksEl.querySelectorAll('.clip.sel').forEach(x => x.classList.remove('sel')); d.classList.add('sel'); renderProps(); needDraw = true; }
+  const mode = e.target.classList.contains('l') ? 'l' : e.target.classList.contains('r') ? 'r' : 'move';
+  drag = { c, d, mode, x0: e.clientX, y0: e.clientY, orig: { ...c }, before: snapState(), moved: false };
+});
+tracksEl.addEventListener('pointermove', e => {
+  if (!drag) return;
+  const { c, d, mode, orig } = drag; const dt = (e.clientX - drag.x0) / S.pps;
+  if (!drag.moved && Math.abs(e.clientX - drag.x0) < 3 && Math.abs(e.clientY - drag.y0) < 3) return;
+  drag.moved = true; let sn = null;
+  const hit = (s, du, tr) => S.clips.some(o => o !== c && o.track === tr && o.start < s + du - 1e-6 && o.start + o.dur > s + 1e-6);
+  if (mode === 'move') {
+    let s = Math.max(0, orig.start + dt);
+    const a = snapT(s, c.id), b = snapT(s + c.dur, c.id);
+    if (a.hit) { s = a.t; sn = a.t; } else if (b.hit) { s = b.t - c.dur; sn = b.t; }
+    // تغيير المسار عمودياً
+    const row = document.elementFromPoint(e.clientX, e.clientY)?.closest('.track');
+    let tr = c.track;
+    if (row && trackById(row.dataset.id)?.type === trackById(c.track).type) tr = row.dataset.id;
+    if (!hit(Math.max(0, s), c.dur, tr)) { c.start = Math.max(0, s); if (tr !== c.track) { c.track = tr; row.appendChild(d); } }
+  } else if (mode === 'l') {
+    let s = orig.start + dt; const a = snapT(s, c.id); if (a.hit) { s = a.t; sn = a.t; }
+    s = clamp(s, Math.max(0, orig.start - orig.in / c.speed), orig.start + orig.dur - 0.1);
+    const prev = S.clips.filter(o => o !== c && o.track === c.track && o.start + o.dur <= orig.start + 1e-6).reduce((m, o) => Math.max(m, o.start + o.dur), 0);
+    s = Math.max(s, prev);
+    c.in = orig.in + (s - orig.start) * c.speed; c.dur = orig.dur - (s - orig.start); c.start = s;
+  } else {
+    let en = orig.start + orig.dur + dt; const a = snapT(en, c.id); if (a.hit) { en = a.t; sn = a.t; }
+    const lim = (maxSrc(c) - c.in) / c.speed;
+    const next = S.clips.filter(o => o !== c && o.track === c.track && o.start >= orig.start + orig.dur - 1e-6).reduce((m, o) => Math.min(m, o.start), Infinity);
+    en = clamp(en, c.start + 0.1, Math.min(c.start + lim, next));
+    c.dur = en - c.start;
+  }
+  showSnap(sn); posClip(d, c);
+  seekQuiet(mode === 'l' ? c.start : mode === 'r' ? c.start + c.dur - 0.001 : S.t);
+});
+function seekQuiet(t) { if (!S.playing) { S.t = clamp(t, 0, 1e9); syncMedia(S.t, false); needDraw = true; updPlayhead(); } }
+const endDrag = () => {
+  if (!drag) return;
+  showSnap(null);
+  if (drag.moved) { undoStack.push(drag.before); redoStack.length = 0; updUndo(); renderAll(); }
+  drag = null;
+};
+tracksEl.addEventListener('pointerup', endDrag); tracksEl.addEventListener('pointercancel', endDrag);
+
+// --- المسطرة ---
+let scrub = false;
+ruler.addEventListener('pointerdown', e => { scrub = true; ruler.setPointerCapture(e.pointerId); if (S.playing) pause(); seek(xToT(e.clientX)); });
+ruler.addEventListener('pointermove', e => { if (scrub) seek(xToT(e.clientX)); });
+ruler.addEventListener('pointerup', () => scrub = false);
+scroll.addEventListener('wheel', e => { if (e.ctrlKey || e.metaKey) { e.preventDefault(); setZoom(S.pps * (e.deltaY < 0 ? 1.15 : 0.87), xToT(e.clientX)); } }, { passive: false });
+scroll.addEventListener('scroll', () => { $('#headList').style.transform = `translateY(${-scroll.scrollTop}px)`; });
+
+// --- رؤوس المسارات ---
+$('#headList').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return; const id = b.closest('.th2').dataset.id; const a = b.dataset.a;
+  if (a === 'del') {
+    if (S.clips.some(c => c.track === id) && !confirm('المسار فيه مقاطع، أكيد بدك تحذفه؟')) return;
+    commit(); S.tracks = S.tracks.filter(t => t.id !== id); S.clips = S.clips.filter(c => c.track !== id); renderAll(); return;
+  }
+  hidden[id] = hidden[id] || {}; hidden[id][a] = !hidden[id][a]; renderTracks(); syncMedia(S.t, S.playing); needDraw = true;
+});
+
+// ====================== المكتبة ======================
+function renderBin() {
+  $('#binEmpty').style.display = S.media.length ? 'none' : '';
+  $('#binCount').textContent = S.media.length || '';
+  $('#binList').innerHTML = S.media.map(m => `<div class="media" draggable="true" data-id="${m.id}" title="اضغط لإضافته عند المؤشر">
+    <div class="th" style="${m.thumb ? `background-image:url(${m.thumb})` : ''}">${m.type === 'audio' ? '🎵' : ''}</div>
+    <div class="nm"><b>${esc(m.name)}</b><span>${m.type === 'video' ? '🎞 ' + fmt(m.duration, false) + ` · ${m.w}×${m.h}` : m.type === 'audio' ? '🎵 ' + fmt(m.duration, false) : '🖼 صورة'}</span></div>
+    <button class="icon" data-add title="أضف للخط الزمني">＋</button></div>`).join('');
+  // تحويل شريط اللقطات من Promise لرابط
+  S.media.forEach(m => { if (m.strip instanceof Promise) m.strip.then(u => { m.strip = u; renderTracks(); }); });
+}
+$('#binList').addEventListener('click', e => { const it = e.target.closest('.media'); if (!it) return; addToTimeline(mediaById(it.dataset.id), S.t); if (innerWidth <= 860) toast('انضاف للخط الزمني ✔'); });
+$('#binList').addEventListener('dragstart', e => { const it = e.target.closest('.media'); if (it) e.dataTransfer.setData('text/media', it.dataset.id); });
+tracksEl.addEventListener('dragover', e => { const r = e.target.closest('.track'); if (r && e.dataTransfer.types.includes('text/media')) { e.preventDefault(); tracksEl.querySelectorAll('.dropover').forEach(x => x.classList.remove('dropover')); r.classList.add('dropover'); } });
+tracksEl.addEventListener('dragleave', e => { e.target.closest?.('.track')?.classList.remove('dropover'); });
+tracksEl.addEventListener('drop', e => {
+  const id = e.dataTransfer.getData('text/media'); tracksEl.querySelectorAll('.dropover').forEach(x => x.classList.remove('dropover'));
+  if (!id) return; e.preventDefault(); const r = e.target.closest('.track');
+  addToTimeline(mediaById(id), Math.max(0, snapT(xToT(e.clientX)).t), r?.dataset.id);
+});
+const drop = $('#drop');
+drop.onclick = () => $('#file').click(); $('#bImport').onclick = () => $('#file').click();
+$('#file').onchange = e => { importFiles([...e.target.files]); e.target.value = ''; };
+['dragover', 'dragenter'].forEach(ev => document.addEventListener(ev, e => { if (e.dataTransfer.types.includes('Files')) { e.preventDefault(); drop.classList.add('over'); } }));
+document.addEventListener('dragleave', e => { if (!e.relatedTarget) drop.classList.remove('over'); });
+document.addEventListener('drop', e => { if (e.dataTransfer.files.length) { e.preventDefault(); drop.classList.remove('over'); importFiles([...e.dataTransfer.files]); } });
+
+// ====================== الخصائص ======================
+const slider = (k, label, min, max, step, v, unit = '') => `<div class="row"><label>${label}<span class="val" id="v_${k.replace('.', '_')}">${v}${unit}</span></label><input type="range" data-k="${k}" data-u="${unit}" min="${min}" max="${max}" step="${step}" value="${v}"></div>`;
+function renderProps() {
+  const c = selClip(), b = $('#propBody');
+  if (!c) {
+    b.innerHTML = `<div class="empty">اختار مقطع من الخط الزمني لتعدّل عليه.</div>
+    <div style="font-size:12px;color:var(--mute);line-height:2">
+    <b style="color:var(--text)">اختصارات:</b><br><kbd>Space</kbd> تشغيل/إيقاف<br><kbd>S</kbd> قص عند المؤشر<br><kbd>Delete</kbd> حذف<br>
+    <kbd>Ctrl+Z</kbd> تراجع · <kbd>Ctrl+Y</kbd> إعادة<br><kbd>Ctrl+D</kbd> تكرار<br><kbd>← →</kbd> إطار · <kbd>Shift</kbd>+سهم ثانية<br><kbd>Ctrl</kbd>+عجلة الماوس للتكبير<br>
+    اسحب طرف المقطع لتقصّره، واسحب النص أو الصورة على الشاشة لتحركها.</div>`;
+    return;
+  }
+  const f = c.filters, vis = c.kind !== 'audio', av = c.kind === 'video' || c.kind === 'audio';
+  let h = `<div class="ph">${{ video: '🎞 فيديو', image: '🖼 صورة', text: '✎ نص', audio: '🎵 صوت' }[c.kind]}<span style="font-weight:400">${fmt(c.start)}</span></div>`;
+  if (c.kind === 'text') h += `<div class="row"><textarea data-k="text" rows="3">${esc(c.text)}</textarea></div>
+    <div class="grid2"><div class="row"><label>اللون</label><input type="color" data-k="color" value="${c.color}"></div>
+    <div class="row"><label>الخط</label><select data-k="font">${['Tahoma', 'Arial', 'Georgia', 'Courier New', 'Impact', 'Times New Roman', 'Segoe UI'].map(x => `<option ${x === c.font ? 'selected' : ''}>${x}</option>`).join('')}</select></div></div>
+    ${slider('size', 'حجم الخط', 12, 220, 1, c.size)}
+    <label class="chk"><input type="checkbox" data-k="bold" ${c.bold ? 'checked' : ''}> عريض</label>
+    <label class="chk"><input type="checkbox" data-k="stroke" ${c.stroke ? 'checked' : ''}> إطار أسود حول الحروف</label>
+    <div class="grid2" style="align-items:center"><label class="chk"><input type="checkbox" data-k="bg" ${c.bg ? 'checked' : ''}> خلفية</label><input type="color" data-k="bgColor" value="${c.bgColor}"></div>`;
+  h += `<div class="sec">التوقيت</div><div class="grid2">
+    <div class="row"><label>البداية (ثانية)</label><input type="number" data-k="start" step="0.1" min="0" value="${+c.start.toFixed(2)}"></div>
+    <div class="row"><label>المدة (ثانية)</label><input type="number" data-k="dur" step="0.1" min="0.1" value="${+c.dur.toFixed(2)}"></div></div>`;
+  if (av) h += `<div class="row"><label>السرعة</label><select data-k="speed">${[0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 3, 4].map(s => `<option value="${s}" ${s === c.speed ? 'selected' : ''}>×${s}</option>`).join('')}</select></div>`;
+  h += slider('fadeIn', 'ظهور تدريجي', 0, Math.min(5, c.dur), 0.1, c.fadeIn, 's') + slider('fadeOut', 'اختفاء تدريجي', 0, Math.min(5, c.dur), 0.1, c.fadeOut, 's');
+  if (av) h += `<div class="sec">الصوت</div>${slider('volume', 'مستوى الصوت', 0, 200, 1, Math.round(c.volume * 100), '%')}<label class="chk"><input type="checkbox" data-k="muted" ${c.muted ? 'checked' : ''}> كتم الصوت</label>`;
+  if (vis) {
+    h += `<div class="sec">الشكل والمكان</div>`;
+    if (c.kind !== 'text') h += `<div class="row"><label>الملاءمة</label><select data-k="fit"><option value="contain" ${c.fit === 'contain' ? 'selected' : ''}>كامل (مع حواف)</option><option value="cover" ${c.fit === 'cover' ? 'selected' : ''}>تعبئة الشاشة (قص)</option><option value="stretch" ${c.fit === 'stretch' ? 'selected' : ''}>مط</option></select></div>`;
+    h += slider('scale', 'الحجم', 10, 300, 1, Math.round(c.scale * 100), '%') + slider('x', 'أفقي', 0, 100, 0.5, +(c.x * 100).toFixed(1), '%') + slider('y', 'عمودي', 0, 100, 0.5, +(c.y * 100).toFixed(1), '%')
+      + slider('rot', 'تدوير', -180, 180, 1, c.rot, '°') + slider('opacity', 'الشفافية', 0, 100, 1, Math.round(c.opacity * 100), '%');
+    h += `<button data-act="center" style="width:100%;margin-bottom:8px">↺ رجّع للنص وللحجم الأصلي</button>`;
+    h += `<div class="row"><label>حركة الدخول</label><select data-k="anim">${[['none', 'بدون'], ['fade', 'تلاشي'], ['zoom', 'تكبير'], ['slide', 'انزلاق لفوق'], ['kenburns', 'زوم بطيء (كين بيرنز)'], ...(c.kind === 'text' ? [['type', 'آلة كاتبة']] : [])].map(([v, l]) => `<option value="${v}" ${v === c.anim ? 'selected' : ''}>${l}</option>`).join('')}</select></div>`;
+    h += `<div class="sec">الفلاتر والألوان</div>
+    <div class="row"><label>فلتر جاهز</label><select data-act="preset"><option value="">— اختار —</option><option value="none">بدون فلتر</option><option value="bw">أبيض وأسود</option><option value="vintage">قديم (فينتج)</option><option value="warm">دافئ</option><option value="cool">بارد</option><option value="vivid">ألوان قوية</option><option value="dramatic">درامي</option><option value="fade">باهت</option></select></div>`
+      + slider('f.brightness', 'السطوع', 0, 200, 1, f.brightness, '%') + slider('f.contrast', 'التباين', 0, 200, 1, f.contrast, '%') + slider('f.saturate', 'تشبع الألوان', 0, 300, 1, f.saturate, '%')
+      + slider('f.hue', 'تدوير الألوان', -180, 180, 1, f.hue, '°') + slider('f.grayscale', 'رمادي', 0, 100, 1, f.grayscale, '%') + slider('f.sepia', 'بني قديم', 0, 100, 1, f.sepia, '%')
+      + slider('f.blur', 'تمويه', 0, 30, 0.5, f.blur, 'px') + slider('f.invert', 'عكس الألوان', 0, 100, 1, f.invert, '%');
+  }
+  h += `<div class="sec"></div><div class="grid2"><button data-act="split">✂ قص هون</button><button data-act="dup">⧉ تكرار</button><button data-act="del" style="color:var(--danger)">🗑 حذف</button><button data-act="snapPh">⇥ للمؤشر</button></div>`;
+  b.innerHTML = h;
+}
+const PRESETS = {
+  none: {}, bw: { grayscale: 100, contrast: 115 }, vintage: { sepia: 55, contrast: 90, brightness: 105, saturate: 80 },
+  warm: { sepia: 25, saturate: 130, hue: -8 }, cool: { hue: 15, saturate: 110, brightness: 102 }, vivid: { saturate: 180, contrast: 115 },
+  dramatic: { contrast: 150, brightness: 90, saturate: 70 }, fade: { contrast: 75, brightness: 115, saturate: 70 },
+};
+let propSnap = null;
+const pb = $('#propBody');
+pb.addEventListener('focusin', () => { propSnap = snapState(); });
+pb.addEventListener('pointerdown', () => { propSnap = snapState(); });
+function setProp(el, live) {
+  const c = selClip(); if (!c) return; const k = el.dataset.k; if (!k) return;
+  let v = el.type === 'checkbox' ? el.checked : el.value;
+  const num = el.type === 'range' || el.type === 'number' || k === 'speed';
+  if (num) v = parseFloat(v); if (num && isNaN(v)) return;
+  const lbl = document.getElementById('v_' + k.replace('.', '_')); if (lbl) lbl.textContent = v + (el.dataset.u || '');
+  if (k.startsWith('f.')) c.filters[k.slice(2)] = v;
+  else if (['volume', 'scale', 'opacity'].includes(k)) c[k] = v / 100;
+  else if (k === 'x' || k === 'y') c[k] = v / 100;
+  else if (k === 'speed') { const src = c.dur * c.speed; c.speed = v; c.dur = Math.min(src / v, (maxSrc(c) - c.in) / v); }
+  else if (k === 'dur') { c.dur = clamp(v, 0.1, (maxSrc(c) - c.in) / c.speed); }
+  else if (k === 'start') { c.start = Math.max(0, v); }
+  else c[k] = v;
+  if (k === 'start' || k === 'dur' || k === 'speed') { resolveOverlap(c); }
+  if (k === 'text' || k === 'fadeIn' || k === 'fadeOut' || k === 'volume' || !live) { renderTracks(); }
+  syncMedia(S.t, S.playing); needDraw = true; updTC();
+}
+pb.addEventListener('input', e => setProp(e.target, true));
+pb.addEventListener('change', e => {
+  const el = e.target;
+  if (el.dataset.act === 'preset') { if (!el.value) return; const c = selClip(); commit(); c.filters = Object.assign(defFilters(), PRESETS[el.value]); renderProps(); needDraw = true; return; }
+  setProp(el, false);
+  if (propSnap && propSnap !== snapState()) { undoStack.push(propSnap); redoStack.length = 0; updUndo(); }
+  propSnap = snapState();
+  if (['speed', 'dur', 'start'].includes(el.dataset.k)) renderProps();
+});
+pb.addEventListener('click', e => {
+  const a = e.target.closest('[data-act]')?.dataset.act; if (!a || a === 'preset') return; const c = selClip();
+  if (a === 'center') { commit(); Object.assign(c, { x: .5, y: c.kind === 'text' ? c.y : .5, scale: 1, rot: 0 }); renderProps(); needDraw = true; }
+  if (a === 'split') doSplit(); if (a === 'dup') doDup(); if (a === 'del') doDelete();
+  if (a === 'snapPh') { commit(); c.start = S.t; resolveOverlap(c); renderAll(); }
+});
+
+// --- تحريك النص والصور على الشاشة مباشرة ---
+let cvDrag = null;
+function cvPoint(e) { const r = cv.getBoundingClientRect(); return { x: (e.clientX - r.left) / r.width * S.W, y: (e.clientY - r.top) / r.height * S.H }; }
+function hitBox(b, p) { const a = -b.rot * Math.PI / 180, dx = p.x - b.x, dy = p.y - b.y; const x = dx * Math.cos(a) - dy * Math.sin(a), y = dx * Math.sin(a) + dy * Math.cos(a); return Math.abs(x) <= b.w / 2 && Math.abs(y) <= b.h / 2; }
+cv.addEventListener('pointerdown', e => {
+  const p = cvPoint(e);
+  // المقطع الأعلى أولاً
+  const order = S.tracks.filter(t => t.type === 'video');
+  let hit = null;
+  for (const tr of order) { hit = activeAt(S.t).find(c => c.track === tr.id && boxes[c.id] && hitBox(boxes[c.id], p) && !hidden[tr.id]?.hide); if (hit) break; }
+  if (!hit) { return; }
+  if (S.sel !== hit.id) { S.sel = hit.id; renderTracks(); renderProps(); }
+  cv.setPointerCapture(e.pointerId); cvDrag = { c: hit, p, x: hit.x, y: hit.y, before: snapState(), moved: false }; needDraw = true;
+});
+cv.addEventListener('pointermove', e => {
+  if (!cvDrag) return; const p = cvPoint(e), c = cvDrag.c;
+  c.x = cvDrag.x + (p.x - cvDrag.p.x) / S.W; c.y = cvDrag.y + (p.y - cvDrag.p.y) / S.H;
+  if (Math.abs(c.x - .5) < 0.01) c.x = .5; if (Math.abs(c.y - .5) < 0.01) c.y = .5; // مغناطيس للمنتصف
+  cvDrag.moved = true; needDraw = true;
+});
+cv.addEventListener('pointerup', () => { if (cvDrag?.moved) { undoStack.push(cvDrag.before); redoStack.length = 0; updUndo(); renderProps(); } cvDrag = null; });
+cv.addEventListener('wheel', e => { const c = selClip(); if (!c || c.kind === 'audio') return; e.preventDefault(); c.scale = clamp(c.scale * (e.deltaY < 0 ? 1.05 : 0.95), 0.1, 3); needDraw = true; clearTimeout(cv.wt); cv.wt = setTimeout(renderProps, 200); }, { passive: false });
+
+// ====================== التصدير ======================
+let exporting = false, recorder = null, chunks = [], expCancelled = false;
+function formats() {
+  const list = [
+    ['video/mp4;codecs="avc1.640028,mp4a.40.2"', 'MP4 (H.264)', 'mp4'], ['video/mp4;codecs=avc1,opus', 'MP4 (H.264)', 'mp4'], ['video/mp4', 'MP4', 'mp4'],
+    ['video/webm;codecs=vp9,opus', 'WebM (VP9)', 'webm'], ['video/webm;codecs=vp8,opus', 'WebM (VP8)', 'webm'], ['video/webm', 'WebM', 'webm'],
+  ];
+  const seen = new Set();
+  return list.filter(([m, l]) => window.MediaRecorder && MediaRecorder.isTypeSupported(m) && !seen.has(l) && seen.add(l));
+}
+$('#bExport').onclick = () => {
+  if (!projectDur()) return toast('الخط الزمني فاضي');
+  if (!window.MediaRecorder || !cv.captureStream) return toast('متصفحك ما بيدعم التصدير، جرّب Chrome');
+  const f = formats(); $('#expFmt').innerHTML = f.map(([m, l, x], i) => `<option value="${i}">${l}</option>`).join('');
+  $('#expSetup').style.display = ''; $('#expRun').style.display = 'none'; $('#modal').style.display = 'grid';
+};
+$('#expCancel0').onclick = () => $('#modal').style.display = 'none';
+$('#expGo').onclick = async () => {
+  const [mime, , ext] = formats()[+$('#expFmt').value] || [];
+  audio(); if (S.playing) pause();
+  S.sel = null; renderTracks(); renderProps();
+  if (!expDest) { expDest = AC.createMediaStreamDestination(); master.connect(expDest); }
+  const vs = cv.captureStream(S.fps);
+  const stream = new MediaStream([...vs.getVideoTracks(), ...expDest.stream.getAudioTracks()]);
+  chunks = []; expCancelled = false;
+  try { recorder = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: +$('#expQ').value, audioBitsPerSecond: 192000 }); }
+  catch (e) { recorder = new MediaRecorder(stream); }
+  recorder.ondataavailable = e => e.data.size && chunks.push(e.data);
+  recorder.onstop = () => {
+    vs.getTracks().forEach(t => t.stop());
+    exporting = false; $('#modal').style.display = 'none';
+    if (expCancelled) return toast('انلغى التصدير');
+    const blob = new Blob(chunks, { type: recorder.mimeType || mime });
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+    a.download = 'montaj-' + new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-') + '.' + (ext || 'webm'); a.click();
+    toast('✔ خلص التصدير — ' + (blob.size / 1048576).toFixed(1) + ' MB', 4000);
+  };
+  $('#expSetup').style.display = 'none'; $('#expRun').style.display = ''; $('#expBar').style.width = '0';
+  $('#expMsg').textContent = 'جاري التصدير… (' + fmt(projectDur(), false) + ')';
+  // تجهيز أول لقطة
+  S.t = 0; syncMedia(0, false); drawFrame(0);
+  await new Promise(r => setTimeout(r, 400));
+  exporting = true; recorder.start(500); play();
+};
+function finishExport() { pause(); if (recorder && recorder.state !== 'inactive') setTimeout(() => recorder.stop(), 150); }
+$('#expCancel').onclick = () => { expCancelled = true; finishExport(); };
+
+// ====================== الأزرار والاختصارات ======================
+$('#bPlay').onclick = play;
+$('#bStart').onclick = () => seek(0); $('#bEnd').onclick = () => seek(projectDur());
+$('#bPrevF').onclick = () => seek(S.t - 1 / S.fps); $('#bNextF').onclick = () => seek(S.t + 1 / S.fps);
+$('#bSplit').onclick = doSplit; $('#bDel').onclick = () => doDelete(false); $('#bRipple').onclick = () => doDelete(true); $('#bDup').onclick = doDup;
+$('#bUndo').onclick = undo; $('#bRedo').onclick = redo;
+$('#bText').onclick = () => { addToTimeline(null, S.t); if (innerWidth <= 860) setTab('props'); };
+$('#bAddV').onclick = () => addTrack('video'); $('#bAddA').onclick = () => addTrack('audio');
+$('#zoom').oninput = e => setZoom(+e.target.value);
+$('#bZi').onclick = () => setZoom(S.pps * 1.4); $('#bZo').onclick = () => setZoom(S.pps / 1.4);
+$('#bFit').onclick = () => { const d = projectDur(); if (d) { setZoom((scroll.clientWidth - 30) / d); scroll.scrollLeft = 0; } };
+$('#selRes').onchange = e => setRes(e.target.value);
+$('#selFps').onchange = e => S.fps = +e.target.value;
+function setTab(t) { $('#app').dataset.tab = t; document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.t === t)); }
+$('#tabs').onclick = e => { const b = e.target.closest('button'); if (b) setTab(b.dataset.t); };
+tracksEl.addEventListener('dblclick', e => { if (e.target.closest('.clip') && innerWidth <= 860) setTab('props'); });
+document.addEventListener('keydown', e => {
+  if (exporting) return;
+  const tag = e.target.tagName; if (tag === 'TEXTAREA' || (tag === 'INPUT' && e.target.type !== 'range' && e.target.type !== 'checkbox') || tag === 'SELECT') return;
+  const k = e.key.toLowerCase(), mod = e.ctrlKey || e.metaKey;
+  if (k === ' ') { e.preventDefault(); play(); }
+  else if (mod && k === 'z' && !e.shiftKey) { e.preventDefault(); undo(); }
+  else if (mod && (k === 'y' || (k === 'z' && e.shiftKey))) { e.preventDefault(); redo(); }
+  else if (mod && k === 'd') { e.preventDefault(); doDup(); }
+  else if (k === 's' || k === 'س') { e.preventDefault(); doSplit(); }
+  else if (k === 'delete' || k === 'backspace') { e.preventDefault(); doDelete(e.shiftKey); }
+  else if (k === 'arrowleft') { e.preventDefault(); seek(S.t - (e.shiftKey ? 1 : 1 / S.fps)); }
+  else if (k === 'arrowright') { e.preventDefault(); seek(S.t + (e.shiftKey ? 1 : 1 / S.fps)); }
+  else if (k === 'home') seek(0); else if (k === 'end') seek(projectDur());
+  else if (k === 'escape') { S.sel = null; renderTracks(); renderProps(); needDraw = true; }
+});
+window.addEventListener('beforeunload', e => { if (S.clips.length) { e.preventDefault(); e.returnValue = ''; } });
+new ResizeObserver(() => { fitCanvas(); drawRuler(); }).observe($('#view'));
+
+setRes('1280x720'); renderBin(); renderAll(); updUndo(); requestAnimationFrame(loop);
+</script>
+</body>
+</html>
