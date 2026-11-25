@@ -83,6 +83,7 @@ module.exports = [
         db.accounts.push({ id: 'c1', code: '112001', name: 'أحمد', type: 'asset', parent: 'customers', group: false }); save();
         localStorage.setItem('daftar_draft_sale', JSON.stringify({ lines: [{ item: 'it1', qty: 2, price: 1 }], payment: '', inv: { date: today(), pay: 'credit', cashAcc: 'cash', party: 'c1', cur: 'fx', rate: 13000 }, at: Date.now() }));
       });
+      await p.asReload();
       await p.go('#/invoice/new?type=sale'); await p.closeDlg(); await p.click('[data-act=more]');
       await p.fill('[name=payment]', '0.5'); await p.dispatchEvent('[name=payment]', 'input');
       assert.match(await p.text('#tRest'), /الباقي على الحساب: 1.5 \$ — الدفعة بالقديم: 650,000/);

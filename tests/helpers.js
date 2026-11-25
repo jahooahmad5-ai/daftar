@@ -77,6 +77,8 @@ async function page(base, state = {}) {
   p.closeDlg = () => p.evaluate(() => { const d = document.getElementById('dlg'); if (d.open) d.close(); });
   // فاتورة مبيع جديدة بلا زبون: نافذة «اختار العميل» بتطلع لحالها بعد شوي — منستناها ومنسكّرها
   p.closePicker = async () => { await p.waitForFunction(() => document.getElementById('dlg').open, null, { timeout: 15000 }); await p.closeDlg(); };
+  // كأن البرنامج رجع حمّل وهو على الفاتورة (هي الحالة الوحيدة يلي المسودة بترجع فيها)
+  p.asReload = () => p.evaluate(() => { booted = false; });
   return p;
 }
 async function close() { if (browser) await browser.close(); browser = null; }

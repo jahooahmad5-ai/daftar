@@ -109,7 +109,7 @@ module.exports = [
       for (const [at, want] of [[null, 0], [Date.now(), 1]]) {
         const p = await page(base, { cloud: OWNER });
         await p.evaluate(d => { db.items.push({ id: 'it1', name: 'بسكوت', sellPrice: 950 }); save(); localStorage.setItem('daftar_draft_sale', d); }, draft(at));
-        await p.go('#/invoice/new?type=sale');
+        await p.asReload(); await p.go('#/invoice/new?type=sale');
         assert.strictEqual(await p.locator('.draft-note').count(), want);
       }
     },
@@ -120,7 +120,7 @@ module.exports = [
       const p = await page(base, { cloud: OWNER });
       await p.evaluate(() => { for (let i = 0; i < 8; i++) db.items.push({ id: 'i' + i, name: 'مادة ' + i, sellPrice: 1000, openQty: 50 }); ensureWalkin(); save();
         localStorage.setItem('daftar_draft_sale', JSON.stringify({ lines: db.items.map(it => ({ item: it.id, qty: 1, price: 1000 })), payment: '', inv: { date: today(), pay: 'cash', cashAcc: 'cash', party: 'walkin' }, at: Date.now() })); });
-      await p.go('#/invoice/new?type=sale'); await p.closeDlg();
+      await p.asReload(); await p.go('#/invoice/new?type=sale'); await p.closeDlg();
       const btn = p.locator('.ln-card [data-act=inc]').nth(5);
       await btn.scrollIntoViewIfNeeded(); await p.evaluate(() => window.scrollBy(0, 150)); await p.waitForTimeout(200);
       const y0 = await p.evaluate(() => scrollY);
@@ -138,7 +138,7 @@ module.exports = [
       const o = await page(base, { cloud: OWNER });
       await o.evaluate(() => { db.items.push({ id: 'it1', code: '1', name: 'بسكوت', sellPrice: 1000, buyPrice: 900, openQty: 2 }); ensureWalkin(); save(); });
       await o.evaluate(d => localStorage.setItem('daftar_draft_sale', d), draft('x').replace('"cashAcc":"repbox_1"', '"cashAcc":"cash"'));
-      await o.go('#/invoice/new?type=sale'); await o.closeDlg();
+      await o.asReload(); await o.go('#/invoice/new?type=sale'); await o.closeDlg();
       const n0 = await o.evaluate(() => db.invoices.length);
       await o.click('[data-act=save]'); await o.waitForTimeout(600);
       assert.strictEqual(await o.evaluate(() => db.invoices.length), n0 + 1, 'المدير لازم يحفظ دغري بلا تنبيه');
@@ -146,7 +146,7 @@ module.exports = [
       const p = await page(base, { cloud: REP, ls: { daftar_rep_name: 'محمد' } });
       await p.evaluate(() => { db.accounts.push({ id: 'repbox_1', code: '1113', name: 'صندوق المندوب: محمد', type: 'asset', parent: 'cashGroup', group: false, repBox: 'محمد' }); db.items.push({ id: 'it1', code: '1', name: 'بسكوت', sellPrice: 1000, buyPrice: 900, openQty: 2 }); ensureWalkin(); save(); });
       await p.evaluate(d => localStorage.setItem('daftar_draft_sale', d), draft('walkin'));
-      await p.go('#/invoice/new?type=sale'); await p.closeDlg();
+      await p.asReload(); await p.go('#/invoice/new?type=sale'); await p.closeDlg();
       const m0 = await p.evaluate(() => db.invoices.length);
       await p.click('[data-act=save]'); await p.waitForTimeout(600);
       assert.doesNotMatch(await p.text('#dlg').catch(() => ''), /ما بتكفي/);
@@ -164,7 +164,7 @@ module.exports = [
       });
       const trySave = async party => {
         await p.evaluate(pt => localStorage.setItem('daftar_draft_sale', JSON.stringify({ lines: [{ item: 'it1', qty: 1, price: 1150 }], payment: '', inv: { date: today(), pay: 'credit', cashAcc: 'cash', party: pt }, at: Date.now() })), party);
-        await p.go('#/invoices'); await p.go('#/invoice/new?type=sale'); await p.closeDlg();
+        await p.go('#/invoices'); await p.asReload(); await p.go('#/invoice/new?type=sale'); await p.closeDlg();
         const n0 = await p.evaluate(() => db.invoices.length);
         await p.click('[data-act=save]'); await p.waitForTimeout(500);
         return (await p.evaluate(() => db.invoices.length)) - n0;
@@ -231,6 +231,19 @@ module.exports = [
       assert.match(await hint('sellPrice'), /1,200/); assert.match(await hint('buyPrice'), /1,000/);
       await p.fill('#dlg [name=sellPrice]', '15');
       assert.match(await hint('sellPrice'), /1,500/);
+      assert.deepStrictEqual(p.errors, []);
+    },
+  },
+  {
+    name: 'فاتورة مبيع جديدة دايماً بتفتح فاضية (المسودة بترجع بس إذا البرنامج رجع حمّل عليها)',
+    fn: async base => {
+      const p = await page(base, { cloud: OWNER });
+      await p.evaluate(() => { db.items.push({ id: 'it1', name: 'بسكوت', sellPrice: 950 }); ensureWalkin(); save();
+        localStorage.setItem('daftar_draft_sale', JSON.stringify({ lines: [{ item: 'it1', qty: 3, price: 950 }], payment: '', inv: { date: today(), pay: 'cash', cashAcc: 'cash', party: 'walkin' }, at: Date.now() })); });
+      await p.go('#/invoice/new?type=sale'); await p.closeDlg();
+      assert.strictEqual(await p.locator('.draft-note').count(), 0);
+      assert.strictEqual(await p.locator('.ln-card').count(), 0);
+      assert.strictEqual(await p.evaluate(() => localStorage.getItem('daftar_draft_sale')), null);
       assert.deepStrictEqual(p.errors, []);
     },
   },

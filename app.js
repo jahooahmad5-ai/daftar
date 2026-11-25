@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '6.73';
+const APP_VERSION = '6.74';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -607,6 +607,8 @@ async function posDevsCard(el) {
 }
 
 let keepScrollY = null;
+// أول صفحة بعد ما فتح البرنامج (أو رجع حمّل لحالو بنص الشغل)
+let booted = false;
 function go(h) { if (location.hash === h) route(); else location.hash = h; }
 function route() {
   const h = location.hash.replace(/^#\/?/, '');
@@ -633,7 +635,7 @@ function route() {
   const nav = NAV_MAP[key] || key;
   $$('#nav a').forEach(a => a.classList.toggle('on', a.dataset.r === nav));
   document.body.classList.remove('menu-open');
-  V[key](id, q, view);
+  V[key](id, q, view); booted = true;
   // بعد «حفظ» منضل بنفس المكان بالصفحة؛ غير هيك منطلع لفوق
   if (keepScrollY != null) { const y = keepScrollY; keepScrollY = null; window.scrollTo(0, y); requestAnimationFrame(() => window.scrollTo(0, y)); }
   else window.scrollTo(0, 0);
@@ -1596,6 +1598,8 @@ V.invoice = (id, q, view) => {
   let draftPay = 0, restored = false;
   {
     try {
+      // فاتورة جديدة: دايماً بتفتح فاضية. المسودة بترجع بس إذا البرنامج رجع حمّل وهو على نفس الفاتورة (تحديث أو انسكّر غصب عنك)
+      if (!orig && booted) localStorage.removeItem(DRAFT);
       let d = JSON.parse(localStorage.getItem(DRAFT) || 'null');
       // مسودة الفاتورة الجديدة بتنتسى بعد 3 ساعات (ما بتضل تطلع كل ما تفتح فاتورة)
       if (d && !orig && !(Date.now() - num(d.at) < 3 * 3600e3)) { localStorage.removeItem(DRAFT); d = null; }
