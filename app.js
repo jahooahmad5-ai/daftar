@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '6.79';
+const APP_VERSION = '6.80';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -1960,7 +1960,9 @@ V.invoice = (id, q, view) => {
     const b = lfMap.get(itemId);
     return b ? r2(b.p) : 0;
   };
-  const basePrice = it => (sideSale ? (lastFor(val('party'), it.id) || num(it.sellPrice)) : (num(it.buyPrice) || r2(st[it.id]?.avg || 0)));
+  // آخر سعر للزبون بينفع بس إذا مش أقل من سعر البطاقة (إذا السعر غلي، ما منضل نبيعه بالسعر القديم)
+  const custPrice = it => { const lp = lastFor(val('party'), it.id); return lp && lp >= num(it.sellPrice) - 0.001 ? lp : 0; };
+  const basePrice = it => (sideSale ? (custPrice(it) || num(it.sellPrice)) : (num(it.buyPrice) || r2(st[it.id]?.avg || 0)));
   // إضافة مادة: إذا كانت موجودة بالفاتورة تزيد الكمية
   // lastBase: كم كان عدد المادة قبل آخر إضافة — حتى «عدد 2» بعد تكرار الصنف تنضاف على القديم وما تمسحه
   let lastId = null, lastBase = 0;
@@ -2090,7 +2092,7 @@ V.invoice = (id, q, view) => {
       const s = stockOf(it), low = s <= 0 || (num(it.minQty) > 0 && s <= num(it.minQty));
       return `<button type="button" class="sg" data-i="${i}">
         <b>${esc(it.name)}</b>
-        <span class="sg-meta"><span>💰 ${fmt(toDoc(basePrice(it)))}${oldOn() ? ` <small class="muted">(${oldAmt(basePrice(it))} قديم)</small>` : ''}${sideSale && lastFor(val('party'), it.id) ? ' <small class="muted">· آخر سعر إله</small>' : ''}</span><span class="${s <= 0 ? 'bad' : ''}">📦 ${fmt(s)} ${esc(it.unit || '')}</span></span>
+        <span class="sg-meta"><span>💰 ${fmt(toDoc(basePrice(it)))}${oldOn() ? ` <small class="muted">(${oldAmt(basePrice(it))} قديم)</small>` : ''}${sideSale && custPrice(it) ? ' <small class="muted">· آخر سعر إله</small>' : ''}</span><span class="${s <= 0 ? 'bad' : ''}">📦 ${fmt(s)} ${esc(it.unit || '')}</span></span>
         ${low ? `<small class="bad">${s <= 0 ? 'نفدت المادة' : 'قاربت المادة على النفاد'}</small>` : ''}
       </button>`;
     }).join('') + newBtn() : smartHtml() + newBtn();
@@ -2331,6 +2333,26 @@ V.invoice = (id, q, view) => {
         return toast(`يجب تعديل سعر مبيع المادة أولاً: ${it.name} — سعرها بالبطاقة ${fmt(num(it.sellPrice))}، وأعلى سعر مسموح ${fmt(r2(num(it.sellPrice) * (1 + MAX_UP)))}`, 1);
       }
     }
+    // الحد الأدنى للسعر (بعد حسم الفاتورة): المندوب ما بيبيع تحت سعر المبيع بالبطاقة أبداً،
+    // والمدير إذا باع تحت سعر المبيع أو تحت الكلفة بيطلعله تأكيد
+    if (inv.type === 'sale') {
+      const gross = inv.lines.reduce((t, l) => t + (l.item ? num(l.qty) * num(l.price) : 0), 0);
+      const f = gross > 0 ? (gross - num(val('discount')) + num(val('addition'))) / gross : 1;
+      const lows = [];
+      inv.lines.forEach((l, i) => {
+        const it = l.item && num(l.qty) > 0 && db.items.find(x => x.id === l.item); if (!it) return;
+        const eff = r2(toBase(num(l.price)) * f), sp = num(it.sellPrice), cost = num(it.buyPrice) || r2(st[it.id]?.avg || 0);
+        if (cost > 0 && eff < cost - 0.001) lows.push({ i, it, eff, min: cost, why: 'سعر الشراء' });
+        else if (sp > 0 && eff < sp - 0.001) lows.push({ i, it, eff, min: sp, why: 'سعر المبيع' });
+      });
+      if (lows.length) {
+        const b = lows[0], card = $(`.ln-card[data-i="${b.i}"]`, view);
+        if (card) { card.scrollIntoView({ block: 'center' }); card.classList.add('ln-bad'); setTimeout(() => card.classList.remove('ln-bad'), 4000); }
+        const msg = lows.map(x => `• ${x.it.name}: ${fmt(x.eff)} — أقل من ${x.why} (${fmt(x.min)})`).join('\n');
+        if (isSeller()) return toast(`🚫 ما بينفع تبيع أقل من سعر المبيع: ${b.it.name} — بعتها بـ ${fmt(b.eff)} وسعرها ${fmt(num(b.it.sellPrice) || b.min)}${f < 1 ? ' (مع الحسم)' : ''}`, 1);
+        if (!confirm(`⚠️ في مواد عم تنباع بأقل من سعرها:\n${msg}\n\nبدك تحفظ هيك؟`)) return;
+      }
+    }
     // مواد بلا سعر مبيع ببطاقتها: بياخد سعرها من فاتورة الزبون (وسعر الشراء = المبيع − 20٪ إذا ناقص)
     if (inv.type === 'sale') {
       const badI = inv.lines.findIndex(l => {
@@ -2399,6 +2421,7 @@ V.invoice = (id, q, view) => {
     rmLine: i => { inv.lines.splice(+i, 1); draw(); },
     // ✏️ تعديل بطاقة المادة من جوّا الفاتورة — بلا ما نطلع منها ولا تضيع المواد
     editItem: i => {
+      if (isSeller()) return toast('🔒 تعديل بطاقة المادة (والأسعار) مسكّر بوضع البيّاع — خلّي المدير يعدّلها', 1);
       const l = inv.lines[+i], it = l && db.items.find(x => x.id === l.item); if (!it) return;
       const old = { sellPrice: num(it.sellPrice), buyPrice: num(it.buyPrice), consumerPrice: num(it.consumerPrice) };
       itemForm(it, null, () => {

@@ -85,7 +85,8 @@ module.exports = [
       const expect = await p.evaluate(() => {
         let best = null;
         for (const d of db.invoices) { if (d.type !== 'sale' || d.party !== 'c7') continue; const l = d.lines.find(x => x.item === 'i7'); if (!l || !num(l.price)) continue; const k = d.date + String(d.created).padStart(15, '0'); if (!best || k > best.k) best = { k, p: num(l.price) * docRate(d) }; }
-        return best ? String(r2(best.p)) : String(1000);
+        // آخر سعر للزبون بينفع بس إذا مش أقل من سعر البطاقة (1000)
+        return best && r2(best.p) >= 1000 ? String(r2(best.p)) : String(1000);
       });
       assert.strictEqual(shown, expect);
     },
