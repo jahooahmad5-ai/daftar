@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '6.76';
+const APP_VERSION = '6.77';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -1266,7 +1266,7 @@ V.parties = (id, q, view) => {
       <a class="mini" href="#/vouchers?new=${k === 'c' ? 'receipt' : 'payment'}&acc=${a.id}">${k === 'c' ? 'قبض' : 'دفع'}</a>
       <button class="mini" data-act="edit" data-id="${a.id}">تعديل</button><button class="mini red" data-act="del" data-id="${a.id}">حذف</button></td></tr>`;
   }).join('');
-  view.innerHTML = head('العملاء والموردون', `<button class="btn" data-act="import">📥 استيراد Excel</button><button class="btn pri" data-act="add">+ ${k === 'c' ? 'عميل' : 'مورد'} جديد</button>`) + `
+  view.innerHTML = head('العملاء والموردون', `${k === 'c' ? '<a class="btn" href="#/report/custprofit">📈 أرباح الزباين</a>' : ''}<button class="btn" data-act="import">📥 استيراد Excel</button><button class="btn pri" data-act="add">+ ${k === 'c' ? 'عميل' : 'مورد'} جديد</button>`) + `
     <div class="tabs"><a href="#/parties?t=c" class="${k === 'c' ? 'on' : ''}">العملاء (${customers().length})</a><a href="#/parties?t=s" class="${k === 's' ? 'on' : ''}">الموردون (${suppliers().length})</a></div>
     <div class="card"><input class="search" id="q" placeholder="🔎 بحث بالاسم أو الهاتف" style="margin-bottom:10px">
     ${table(['الرمز', 'الاسم', 'الهاتف', k === 'c' ? 'الرصيد (لنا عليه)' : 'الرصيد (له علينا)', ''], rows,
@@ -1378,7 +1378,7 @@ V.debts = (id, q, view) => {
       </div></div>`;
   }).join('');
   const due = cnt(promiseDue);
-  view.innerHTML = head('💳 الديون', `<a class="btn" href="#/parties?t=c">👥 كل العملاء</a>`) + `
+  view.innerHTML = head('💳 الديون', `<a class="btn" href="#/report/custprofit">📈 أرباح الزباين</a><a class="btn" href="#/parties?t=c">👥 كل العملاء</a>`) + `
     <div class="kpis k2">
       ${kpi('إجمالي الديون لنا', `${fmt(total)} <small>${C}</small>`, 'p')}
       ${kpi('عدد المديونين', all.length, 'g')}
@@ -2674,6 +2674,23 @@ V.entry = (id, q, view) => {
 };
 
 /* ------------------------- التقارير ------------------------- */
+// أرباح كل زبون بفترة: من حركات المستودع (المبيع ناقص المرتجع) — الكلفة بالمتوسط المرجّح وقت البيع
+function custProfit(from, to) {
+  const agg = {}, debts = sums();
+  for (const m of engine().moves) {
+    if ((m.kind !== 'sale' && m.kind !== 'saleReturn') || m.date < from || m.date > to) continue;
+    const a = acc(m.party), id = a && !isWalkin(a.id) ? a.id : '_cash';
+    const c = agg[id] || (agg[id] = { id, acc: id !== '_cash', name: id !== '_cash' ? a.name : 'زباين نقدي', val: 0, cost: 0, qty: 0, refs: new Set() });
+    const sg = m.kind === 'sale' ? 1 : -1;
+    c.val += sg * m.val; c.cost += sg * m.cost; c.qty += sg * (m.out || m.in);
+    if (m.kind === 'sale') c.refs.add(m.ref);
+  }
+  return Object.values(agg).map(c => {
+    const val = r2(c.val), cost = r2(c.cost), profit = r2(val - cost);
+    const d = debts[c.id];
+    return { id: c.id, acc: c.acc, name: c.name, val, cost, profit, qty: r2(c.qty), n: c.refs.size, margin: val > 0 ? profit / val : 0, debt: d ? d.dr - d.cr : 0 };
+  });
+}
 const REPORTS = {
   statement: { t: 'كشف حساب', d: 'حركة أي حساب أو عميل أو مورد مع الرصيد التراكمي' },
   trial: { t: 'ميزان المراجعة', d: 'مجاميع وأرصدة كل الحسابات خلال فترة' },
@@ -2682,6 +2699,7 @@ const REPORTS = {
   stock: { t: 'جرد المستودع', d: 'الكميات الحالية وقيمتها بالكلفة وبسعر المبيع' },
   itemcard: { t: 'بطاقة مادة', d: 'كل حركات مادة معيّنة دخولاً وخروجاً' },
   itemprofit: { t: 'أرباح المواد', d: 'المبيعات والكلفة والربح لكل مادة خلال فترة' },
+  custprofit: { t: 'أرباح الزباين', d: 'مين الأكثر ربحاً ومين الأكثر سحب بضاعة — ومين بيسحب كتير بربح قليل' },
   parties: { t: 'أرصدة العملاء والموردين', d: 'من له ومن عليه بتاريخ معيّن' },
 };
 V.reports = (id, q, view) => {
@@ -2811,6 +2829,52 @@ V.report = (type, q, view) => {
     }).join('');
     body = table(['المادة', 'الكمية المباعة', 'المبيعات', 'الكلفة', 'الربح', 'نسبة الربح'], rows,
       `<tr><td colspan="2">الإجمالي</td><td class="n">${fmt(T.val)}</td><td class="n">${fmt(T.cost)}</td><td class="n">${fmt(T.val - T.cost)}</td><td></td></tr>`);
+  }
+
+  if (type === 'custprofit') {
+    const SORTS = { profit: 'الأكثر ربحاً', val: 'الأكثر سحب بضاعة (بالمبلغ)', qty: 'الأكثر سحب بضاعة (بالكمية)', margin: 'أعلى نسبة ربح', low: 'أضعف نسبة ربح' };
+    const sort = SORTS[q.sort] ? q.sort : 'profit';
+    filters = [F.from, F.to, { k: 'sort', l: 'الترتيب', t: 'select', opts: Object.entries(SORTS) }];
+    vals.sort = sort;
+    const C = custProfit(from, to), T = C.reduce((t, c) => ({ val: t.val + c.val, cost: t.cost + c.cost, qty: t.qty + c.qty }), { val: 0, cost: 0, qty: 0 });
+    const tp = T.val - T.cost, avgM = T.val > 0 ? tp / T.val : 0;
+    const pc = (x, y) => (y ? Math.round(x / y * 100) : 0);
+    const P = m => `<span dir="ltr">${fmt(m * 100)}%</span>`;
+    const key = { profit: c => c.profit, val: c => c.val, qty: c => c.qty, margin: c => c.margin, low: c => -c.margin }[sort];
+    C.sort((a, b) => key(b) - key(a) || b.val - a.val);
+    // التقييم: نسبة ربح الزبون مقارنة بالمتوسط — «سحب كتير وربح قليل» = من أكبر الزباين سحباً ونسبة ربحه أقل من نص المتوسط
+    const byVal = [...C].sort((a, b) => b.val - a.val), bigN = Math.max(1, Math.ceil(C.length / 3));
+    const big = new Set(byVal.slice(0, bigN).filter(c => c.val > 0).map(c => c.id));
+    const rate = c => (c.profit < 0 ? ['r', '🔻 خسارة'] : avgM > 0 && c.margin < avgM * 0.5 ? (big.has(c.id) ? ['r', '⚠️ بيسحب كتير بربح قليل'] : ['a', 'ربح ضعيف']) : avgM > 0 && c.margin >= avgM * 1.3 ? ['g', '⭐ ربح ممتاز'] : ['', 'عادي']);
+    const warn = C.filter(c => rate(c)[1].startsWith('⚠️') || c.profit < 0);
+    const top = [...C].sort((a, b) => b.profit - a.profit)[0], topV = byVal[0];
+    const bar = (v, max, cls) => `<span class="cp-bar"><i class="${cls}" style="width:${max > 0 ? Math.max(0, Math.round(v / max * 100)) : 0}%"></i></span>`;
+    const maxV = byVal[0] ? byVal[0].val : 0, maxP = Math.max(0, ...C.map(c => c.profit));
+    const rows = C.map((c, i) => {
+      const [cls, lbl] = rate(c);
+      return `<tr ${c.acc ? `data-act="st" data-id="${esc(c.id)}"` : ''}><td class="n">${i + 1}</td><td><b>${esc(c.name)}</b></td>
+        <td class="n">${c.n}</td><td class="n">${fmt(c.qty)}</td>
+        <td class="n">${fmt(c.val)}${bar(c.val, maxV, 'v')}<small class="muted">${pc(c.val, T.val)}٪ من المبيعات</small></td>
+        <td class="n ${c.profit < 0 ? 'neg' : 'pos'}">${fmt(c.profit)}${bar(c.profit, maxP, 'p')}<small class="muted">${pc(c.profit, tp)}٪ من الربح</small></td>
+        <td class="n"><b>${c.val ? P(c.margin) : ''}</b></td>
+        <td>${lbl === 'عادي' ? '<span class="muted">عادي</span>' : `<span class="tag ${cls}">${lbl}</span>`}</td>
+        <td class="n">${c.acc && r2(c.debt) > 0 ? fmt(c.debt) : '—'}</td></tr>`;
+    }).join('');
+    body = !C.length ? '<p class="muted">ما في مبيعات بهالفترة.</p>' : `
+      <div class="kpis k2">
+        ${kpi('🏆 الأكثر ربحاً', `${esc(top.name)}<small class="muted cp-sub">ربح ${fmt(top.profit)} — نسبة ${P(top.margin)}</small>`, 'g')}
+        ${kpi('📦 الأكثر سحب بضاعة', `${esc(topV.name)}<small class="muted cp-sub">مبيعات ${fmt(topV.val)} — نسبة ربح ${P(topV.margin)}</small>`, 'p')}
+        ${kpi('متوسط نسبة الربح', `${P(avgM)}<small class="muted cp-sub">ربح ${fmt(tp)} من مبيعات ${fmt(T.val)}</small>`, 'a')}
+        ${kpi('⚠️ سحب كتير بربح قليل', `${warn.length} زبون<small class="muted cp-sub">${warn.slice(0, 3).map(c => esc(c.name)).join('، ') || 'ما في 👍'}</small>`, 'r')}
+      </div>
+      <p class="muted cp-help">الربح = سعر المبيع (بعد الحسم) ناقص كلفة البضاعة، والمرتجعات منقوصة. «ربح ضعيف» = نسبة ربحه أقل من نص المتوسط، و«ربح ممتاز» = أعلى من المتوسط بـ ٣٠٪. اكبس على أي زبون لتشوف كشف حسابه.</p>
+      ${table(['#', 'الزبون', 'فواتير', 'الكمية', 'المبيعات', 'الربح', 'نسبة الربح', 'التقييم', 'الدين عليه'], rows,
+      `<tr><td colspan="3">الإجمالي</td><td class="n">${fmt(T.qty)}</td><td class="n">${fmt(T.val)}</td><td class="n">${fmt(tp)}</td><td class="n">${P(avgM)}</td><td colspan="2"></td></tr>`, 'cp-tbl')}
+      <div class="cp-cards">${C.map((c, i) => { const [cls, lbl] = rate(c); return `<div class="cp-card ${cls}" ${c.acc ? `data-act="st" data-id="${esc(c.id)}"` : ''}>
+        <div class="cp-h"><b>${i + 1}. ${esc(c.name)}</b>${lbl === 'عادي' ? '' : `<span class="tag ${cls}">${lbl}</span>`}</div>
+        <div class="cp-row"><span>📦 سحب بضاعة: <b>${fmt(c.val)}</b> <small class="muted">(${fmt(c.qty)} قطعة، ${c.n} فاتورة)</small></span><small class="muted">${pc(c.val, T.val)}٪</small></div>${bar(c.val, maxV, 'v')}
+        <div class="cp-row"><span>💰 الربح: <b class="${c.profit < 0 ? 'neg' : 'pos'}">${fmt(c.profit)}</b> — نسبة <b>${P(c.margin)}</b></span><small class="muted">${pc(c.profit, tp)}٪</small></div>${bar(c.profit, maxP, 'p')}
+        ${c.acc && r2(c.debt) > 0 ? `<small class="muted">💳 الدين عليه: ${fmt(c.debt)}</small>` : ''}</div>`; }).join('')}</div>`;
   }
 
   if (type === 'parties') {

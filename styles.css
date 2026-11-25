@@ -437,3 +437,21 @@ body.locked #calc{display:none}
 .mini.dpay{background:var(--pri);color:#fff;border-color:var(--pri)}
 .limit-warn{margin:8px 0 0;padding:8px 10px;border-radius:8px;background:#fde8e8;color:#a32626;font-size:14px}
 @media (max-width:520px){.kpis.k2{grid-template-columns:1fr 1fr;gap:8px}.kpis.k2 .kpi{padding:10px 12px}.kpis.k2 .kpi b{font-size:17px}}
+/* ---------- أرباح الزباين ---------- */
+.cp-sub{display:block;font-size:12.5px;font-weight:400;margin-top:2px}
+.kpis .kpi b .cp-sub{font-size:12.5px}
+.cp-help{font-size:13px;margin:0 0 10px}
+.cp-bar{display:block;height:5px;background:var(--line);border-radius:999px;overflow:hidden;margin:4px 0 2px;min-width:70px}
+.cp-bar i{display:block;height:100%}.cp-bar i.v{background:#4c7bd9}.cp-bar i.p{background:#22a06b}
+.cp-tbl td small.muted{display:block;font-size:11.5px;white-space:nowrap}
+.cp-tbl tr[data-act]{cursor:pointer}
+.cp-cards{display:none}
+@media (max-width:700px){
+  #rep .cp-tbl{display:none}#rep .tbl:has(.cp-tbl){display:none}
+  .cp-cards{display:grid;gap:10px}
+  .cp-card{border:1px solid var(--line);border-inline-start:4px solid var(--line);border-radius:var(--r);padding:10px 12px;cursor:pointer}
+  .cp-card.g{border-inline-start-color:#22a06b}.cp-card.a{border-inline-start-color:#f5b83d}.cp-card.r{border-inline-start-color:var(--red)}
+  .cp-h{display:flex;justify-content:space-between;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:6px}
+  .cp-row{display:flex;justify-content:space-between;gap:8px;font-size:14px;margin-top:4px}
+}
+@media print{.cp-cards{display:none!important}}
