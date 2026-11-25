@@ -460,3 +460,12 @@ body.locked #calc{display:none}
 .kpis.k3{grid-template-columns:repeat(3,1fr);gap:8px}
 .kpis.k3 .kpi{padding:10px 12px}.kpis.k3 .kpi b{font-size:17px}
 @media (max-width:520px){.kpis.k3 .kpi b{font-size:15px}.kpis.k3 .kpi span{font-size:12px}}
+td.rest{white-space:nowrap}
+.m-date{display:none;font-size:11px;color:var(--muted)}
+/* الموبايل: جداول الفواتير بتبيّن الأهم (الطرف، الصافي، زاد عالحساب) بلا سحب لجنب */
+@media (max-width:600px){
+  .home-inv th:nth-child(2),.home-inv tbody td:nth-child(2),.home-inv th:nth-child(3),.home-inv tbody td:nth-child(3){display:none}
+  .list-inv th:nth-child(2),.list-inv td:nth-child(2),.list-inv th:nth-child(3),.list-inv td:nth-child(3),.list-inv th:nth-child(5),.list-inv td:nth-child(5){display:none}
+  .list-inv .m-date{display:block}
+  .inv-mini td,.inv-mini th{padding-inline:6px}
+}

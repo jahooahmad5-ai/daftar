@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '6.78';
+const APP_VERSION = '6.79';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -1071,6 +1071,9 @@ function sellerHome(view) {
   if (window.Cloud) Cloud.pill();
 }
 
+// قديش زاد على الحساب من فاتورة: الآجل ناقص الدفعة يلي معها (بالعملة الأساسية) — النقدي ما بيزيد شي
+const invRest = i => (i.pay === 'cash' ? 0 : r2(invTotals(i).net * docRate(i) - paidBase(i)));
+const restCell = x => `<td class="n rest ${x > 0 ? 'neg' : ''}">${x ? `<span dir="ltr">${x > 0 ? '+' : ''}${fmt(x)}</span>` : '<span class="muted">—</span>'}</td>`;
 // فواتير نقطة البيع (المندوبين) لليوم بجدول لحالها: قديش انباع، قديش انقبض، وقديش زاد على حسابات الزباين
 function posTodayCard() {
   if (!db.invoices.some(i => i.rep)) return '';
@@ -1079,10 +1082,10 @@ function posTodayCard() {
   const reps = new Set(list.map(i => i.rep));
   let S = 0, P = 0, A = 0;
   const rows = list.map(i => {
-    const net = r2(invTotals(i).net * docRate(i)), paid = i.pay === 'cash' ? net : r2(paidBase(i)), added = r2(net - paid);
+    const net = r2(invTotals(i).net * docRate(i)), added = invRest(i), paid = r2(net - added);
     S += net; P += paid; A += added;
     return `<tr data-act="open" data-id="${esc(i.id)}"><td class="n">${esc(i.no)}</td><td>${esc(accName(i.party) || WALKIN_NAME)}${reps.size > 1 ? `<br><small class="badge rep">${esc(i.rep)}</small>` : ''}</td>
-      <td class="n">${fmt(net)}</td><td class="n">${fmt(paid)}</td><td class="n ${added > 0 ? 'neg' : ''}">${added ? `<span dir="ltr">${added > 0 ? '+' : ''}${fmt(added)}</span>` : '—'}</td></tr>`;
+      <td class="n">${fmt(net)}</td><td class="n">${fmt(paid)}</td>${restCell(added)}</tr>`;
   }).join('');
   const C = esc(cur());
   return `<div class="card pos-today"><h3>🧑‍💼 فواتير نقطة البيع — اليوم <a class="mini" href="#/invoices?t=sale&rep=${encodeURIComponent([...reps][0] || db.invoices.find(i => i.rep).rep)}">كلها ←</a></h3>
@@ -1119,8 +1122,8 @@ V.home = (id, q, view) => {
   ${(() => { const bx = postable().filter(a => a.repBox); return bx.length ? `<div class="card"><h3>💰 صناديق المندوبين</h3>${table(['الصندوق', 'الرصيد', ''], bx.map(a => `<tr><td>${esc(a.name)}</td><td class="n">${fmt(bal(a.id))} ${esc(cur())}</td><td><button class="btn pri" data-act="takeBox" data-id="${a.id}">📥 استلام</button></td></tr>`).join(''))}</div>` : ''; })()}
   ${posTodayCard()}
   <div class="cols2">
-    <div class="card"><h3>آخر الفواتير${db.invoices.some(i => i.rep) ? ' (من موبايلك)' : ''}</h3>${table(['الرقم', 'النوع', 'التاريخ', 'الطرف', 'الصافي'],
-      recent.map(i => `<tr data-act="open" data-id="${esc(i.id)}"><td>${esc(i.no)}</td><td><span class="badge ${typeCls(i.type)}">${INV_TYPES[i.type]}</span></td><td class="n">${esc(i.date)}</td><td>${esc(accName(i.party) || 'نقدي')}</td><td class="n">${fmt(invTotals(i).net)} <small class="muted">${esc(docSym(i))}</small></td></tr>`).join(''))}</div>
+    <div class="card"><h3>آخر الفواتير${db.invoices.some(i => i.rep) ? ' (من موبايلك)' : ''}</h3>${table(['الرقم', 'النوع', 'التاريخ', 'الطرف', 'الصافي', 'زاد عالحساب'],
+      recent.map(i => `<tr data-act="open" data-id="${esc(i.id)}"><td>${esc(i.no)}</td><td><span class="badge ${typeCls(i.type)}">${INV_TYPES[i.type]}</span></td><td class="n">${esc(i.date)}</td><td>${esc(accName(i.party) || 'نقدي')}</td><td class="n">${fmt(invTotals(i).net)} <small class="muted">${esc(docSym(i))}</small></td>${restCell(invRest(i))}</tr>`).join(''), '', 'inv-mini home-inv')}</div>
     <div class="card"><h3>مواد وصلت للحد الأدنى</h3>${table(['المادة', 'الكمية', 'الحد الأدنى'],
       low.map(i => `<tr><td>${esc(i.name)}</td><td class="n"><span class="badge low">${fmt(st[i.id]?.qty || 0)}</span></td><td class="n">${fmt(i.minQty)}</td></tr>`).join(''))}
       ${!db.items.length ? `<p class="muted">لا توجد بيانات بعد. ابدأ بإضافة <a href="#/items">المواد</a> و<a href="#/parties">العملاء</a>، أو جرّب <a href="#/settings">البيانات التجريبية</a>.</p>` : ''}</div>
@@ -1694,11 +1697,11 @@ V.invoices = (id, q, view) => {
   const reps = [...new Set(db.invoices.map(i => i.rep).filter(Boolean))];
   const rf = isSeller() ? myRep() : (q.rep || '');
   const list = db.invoices.filter(i => (t === 'all' || i.type === t) && (isSeller() ? i.rep === rf : !rf ? true : rf === '-' ? !i.rep : i.rep === rf)).sort((a, b) => b.date.localeCompare(a.date) || (b.created || 0) - (a.created || 0));
-  let tot = 0;
+  let tot = 0, totR = 0;
   const rows = list.map(i => {
-    const n = invTotals(i).net; tot += n * docRate(i);
-    return `<tr data-act="open" data-id="${esc(i.id)}" data-name="${esc(i.no + ' ' + accName(i.party))}"><td class="n">${esc(i.no)}</td><td><span class="badge ${typeCls(i.type)}">${INV_TYPES[i.type] || ''}</span></td><td class="n">${esc(i.date)}</td>
-      <td>${esc(accName(i.party) || '—')}${waBadge(i)}${i.rep && !isSeller() ? `<br><small class="badge rep">مندوب: ${esc(i.rep)}</small>` : ''}</td><td>${i.pay === 'cash' ? 'نقدي' : 'آجل'}</td><td class="n">${fmt(n)} <small class="muted">${esc(docSym(i))}</small></td></tr>`;
+    const n = invTotals(i).net, rs = invRest(i); tot += n * docRate(i); totR += rs;
+    return `<tr data-act="open" data-id="${esc(i.id)}" data-name="${esc(i.no + ' ' + accName(i.party))}"><td class="n">${esc(i.no)}<small class="m-date">${esc(i.date.slice(5))}</small></td><td><span class="badge ${typeCls(i.type)}">${INV_TYPES[i.type] || ''}</span></td><td class="n">${esc(i.date)}</td>
+      <td>${esc(accName(i.party) || '—')}${waBadge(i)}${i.rep && !isSeller() ? `<br><small class="badge rep">مندوب: ${esc(i.rep)}</small>` : ''}</td><td>${i.pay === 'cash' ? 'نقدي' : 'آجل'}</td><td class="n">${fmt(n)} <small class="muted">${esc(docSym(i))}</small></td>${restCell(rs)}</tr>`;
   }).join('');
   const tab = (k, l) => `<a href="#/invoices?t=${k}${rf ? '&rep=' + encodeURIComponent(rf) : ''}" class="${t === k ? 'on' : ''}">${l}</a>`;
   const rtab = (k, l) => `<a href="#/invoices?t=${t}${k ? '&rep=' + encodeURIComponent(k) : ''}" class="${rf === k ? 'on' : ''}">${l}</a>`;
@@ -1706,7 +1709,7 @@ V.invoices = (id, q, view) => {
   view.innerHTML = head(isSeller() ? `فواتيري — مندوب: ${esc(myRep())}` : 'الفواتير', Object.entries(INV_TYPES).map(([k, l]) => `<a class="btn ${k === 'sale' ? 'pri' : ''}" href="#/invoice/new?type=${k}">+ ${l}</a>`).join('')) + `
     ${repTabs}<div class="tabs">${tab('all', 'الكل')}${Object.entries(INV_TYPES).map(([k, l]) => tab(k, l)).join('')}</div>
     <div class="card"><input class="search" id="q" placeholder="🔎 بحث برقم الفاتورة أو الاسم" style="margin-bottom:10px">
-    ${table(['الرقم', 'النوع', 'التاريخ', 'الطرف', 'الدفع', 'الصافي'], rows, t !== 'all' ? `<tr><td colspan="5">المجموع (بـ ${esc(cur())})</td><td class="n">${fmt(tot)}</td></tr>` : '')}</div>`;
+    ${table(['الرقم', 'النوع', 'التاريخ', 'الطرف', 'الدفع', 'الصافي', 'زاد عالحساب'], rows, t !== 'all' ? `<tr><td></td><td></td><td></td><td>المجموع (بـ ${esc(cur())})</td><td></td><td class="n">${fmt(tot)}</td><td class="n">${fmt(r2(totR))}</td></tr>` : '', 'inv-mini list-inv')}</div>`;
   $('#q', view).oninput = e => { const s = e.target.value.trim(); $$('tbody tr[data-name]', view).forEach(tr => (tr.style.display = tr.dataset.name.includes(s) ? '' : 'none')); };
   onAct(view, { open: id => go('#/invoice/' + id) });
 };
