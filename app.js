@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '6.81';
+const APP_VERSION = '6.84';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -1090,7 +1090,7 @@ function posTodayCard() {
       <td class="n">${fmt(net)}</td><td class="n">${fmt(paid)}</td>${restCell(added)}</tr>`;
   }).join('');
   const C = esc(cur());
-  return `<div class="card pos-today"><h3>🧑‍💼 فواتير نقطة البيع — اليوم <a class="mini" href="#/invoices?t=sale&rep=${encodeURIComponent([...reps][0] || db.invoices.find(i => i.rep).rep)}">كلها ←</a></h3>
+  return `<div class="card pos-today"><h3>🧑‍💼 فواتير نقطة البيع — اليوم <span><a class="mini" href="#/report/daysales?rep=${encodeURIComponent([...reps][0] || db.invoices.find(i => i.rep).rep)}">📦 بالمواد</a> <a class="mini" href="#/invoices?t=sale&rep=${encodeURIComponent([...reps][0] || db.invoices.find(i => i.rep).rep)}">كلها ←</a></span></h3>
     <div class="kpis k3">${kpi('مبيعات (' + C + ')', fmt(r2(S)), 'p')}${kpi('انقبض (' + C + ')', fmt(r2(P)), 'g')}${kpi('زاد على الزباين', fmt(r2(A)), 'r')}</div>
     ${table(['الرقم', 'الزبون', 'الصافي', 'دفع', 'زاد عحسابه'], rows,
       list.length ? `<tr><td colspan="2">المجموع (${list.length} فاتورة)</td><td class="n">${fmt(r2(S))}</td><td class="n">${fmt(r2(P))}</td><td class="n">${fmt(r2(A))}</td></tr>` : '')}</div>`;
@@ -1116,6 +1116,7 @@ V.home = (id, q, view) => {
     <a href="#/vouchers?new=receipt"><i>📥</i>سند قبض</a>
     <a href="#/vouchers?new=payment"><i>📤</i>سند دفع</a>
     <a href="#/debts"><i>💳</i>الديون</a>
+    <a href="#/report/daysales"><i>📦</i>مبيعات اليوم بالمواد</a>
     <a href="#/entry/new"><i>📝</i>قيد يومية</a>
     <a href="#/reports"><i>📊</i>التقارير</a>
   </div>
@@ -1363,6 +1364,86 @@ function debtSetup(a) {
   });
   const c = $('#pClr'); if (c) c.onclick = () => { a.promise = ''; a.promiseNote = ''; save(); $('#dlg').close(); toast('انشال الموعد'); route(); };
 }
+// ➕ إضافة دين على زبون: «أعطيته مصاري» = سند دفع من الصندوق، «دين قديم» = قيد (الزبون مدين / رأس المال دائن)
+function addDebt(preAcc) {
+  const custs = customers().filter(a => !isWalkin(a.id));
+  if (!custs.length) { toast('ما في زباين — ضيف زبون أول', 1); return go('#/parties?t=c'); }
+  reserveNo('payment'); reserveNo('entry');
+  const f = modal('➕ إضافة دين على زبون', fields([
+    { k: 'acc', l: 'الزبون', t: 'select', opts: accOpts(custs, '— اختر الزبون —'), req: 1, full: 1 },
+    { k: 'kind', l: 'شو أصل الدين؟', t: 'select', opts: [['cash', '💵 أعطيته مصاري هلق (بتطلع من الصندوق)'], ['old', '📜 دين قديم / رصيد سابق (ما بيتأثر الصندوق)']], full: 1 },
+    { k: 'amount', l: `المبلغ (${cur()})`, t: 'number', req: 1 },
+    { k: 'date', l: 'التاريخ', t: 'date', req: 1 },
+    { k: 'cashAcc', l: 'من الصندوق', t: 'select', opts: accOpts(cashAccounts()) },
+    { k: 'note', l: 'البيان', ph: 'مثلاً: سلفة', full: 1 },
+  ], { acc: preAcc || '', kind: 'cash', date: today(), cashAcc: cashAccounts()[0]?.id }) + '<p class="muted" id="dEq" style="font-size:13px;margin:4px 0 0"></p>', {
+    saveText: '➕ أضف الدين',
+    onSave: d => {
+      const a = acc(d.acc), amount = r2(num(d.amount));
+      if (!a || !custs.includes(a)) { toast('اختر الزبون', 1); return false; }
+      if (amount <= 0) { toast('أدخل مبلغاً صحيحاً', 1); return false; }
+      const note = (d.note || '').trim();
+      if (d.kind === 'old') {
+        db.entries.push({ id: uid(), ...newNo('entry'), date: d.date, desc: `دين سابق على ${a.name}${note ? ' — ' + note : ''}`,
+          lines: [{ acc: a.id, dr: amount, cr: 0, note }, { acc: 'capital', dr: 0, cr: amount, note }] });
+      } else {
+        if (!d.cashAcc) { toast('اختر الصندوق', 1); return false; }
+        db.vouchers.push({ id: uid(), type: 'payment', ...newNo('payment'), created: Date.now(), date: d.date, amount, acc: a.id, cashAcc: d.cashAcc, note: note || 'دين (سلفة)', cur: 'base', rate: '' });
+      }
+      save(); toast(`✅ انضاف ${fmt(amount)} ${cur()} على حساب ${a.name}`); route();
+    },
+  });
+  const sel = $('[name=acc]', f); enhancePartySelect(sel);
+  const upd = () => {
+    const old = $('[name=kind]', f).value === 'old', a = acc(sel.value), amt = num($('[name=amount]', f).value);
+    $('[name=cashAcc]', f).closest('.fld').style.display = old ? 'none' : '';
+    $('#dEq', f).textContent = a ? `رصيده هلق: ${fmt(partyBal(a))} ← بعد الإضافة: ${fmt(r2(partyBal(a) + amt))} ${cur()}` : '';
+  };
+  f.oninput = f.onchange = upd; upd();
+}
+// ✅ تصفية الحساب: قبض كامل الرصيد بكبسة — وإذا دفع أقل، الباقي بينسجّل «حسم ممنوح» (مصروف) والحساب بيتسكّر عالصفر
+function discAllowedAcc() {
+  let a = acc('discAllowed');
+  if (!a) { db.accounts.push(a = { id: 'discAllowed', code: nextCode(acc('expenses')), name: 'حسم ممنوح للزبائن', type: 'expense', parent: 'expenses', group: false }); _acc = null; }
+  return a;
+}
+function settleDebt(id) {
+  const a = acc(id), B = a ? r2(partyBal(a)) : 0;
+  if (!a || B <= 0) return toast('ما عليه شي — الحساب مسدّد', 1);
+  reserveNo('receipt'); reserveNo('entry');
+  const f = modal('✅ تصفية حساب ' + a.name, `<div class="settle-bal">عليه: <b>${fmt(B)} ${esc(cur())}</b>${oldOn() ? ` <small class="muted">(بالقديم ${oldAmt(B)})</small>` : ''}</div>` + fields([
+    { k: 'paid', l: `قديش دفع؟ (${cur()})`, t: 'number' },
+    { k: 'cashAcc', l: 'إلى الصندوق', t: 'select', opts: accOpts(cashAccounts()) },
+    { k: 'date', l: 'التاريخ', t: 'date', req: 1 },
+    { k: 'note', l: 'ملاحظة', full: 1 },
+  ], { paid: B, cashAcc: cashAccounts()[0]?.id, date: today() }) + '<p id="stInfo" class="settle-info"></p>', {
+    saveText: '✅ صفّي الحساب',
+    onSave: d => {
+      const paid = r2(num(d.paid)), rest = r2(B - paid), note = (d.note || '').trim();
+      if (paid < 0) { toast('المبلغ لازم يكون موجب', 1); return false; }
+      if (paid > B) { toast(`المبلغ أكبر من يلي عليه (${fmt(B)}) — للزيادة اعمل سند قبض عادي`, 1); return false; }
+      if (paid > 0 && !d.cashAcc) { toast('اختر الصندوق', 1); return false; }
+      if (rest > 0 && !confirm(`رح تسامح ${a.name} بـ ${fmt(rest)} ${cur()} (بتنسجّل حسم ممنوح). متأكد؟`)) return false;
+      if (paid > 0) db.vouchers.push({ id: uid(), type: 'receipt', ...newNo('receipt'), created: Date.now(), date: d.date, amount: paid, acc: a.id, cashAcc: d.cashAcc, note: 'تصفية حساب' + (note ? ' — ' + note : ''), cur: 'base', rate: '' });
+      if (rest > 0) {
+        const da = discAllowedAcc();
+        db.entries.push({ id: uid(), ...newNo('entry'), date: d.date, desc: `حسم ممنوح — تصفية حساب ${a.name}${note ? ' — ' + note : ''}`,
+          lines: [{ acc: da.id, dr: rest, cr: 0, note }, { acc: a.id, dr: 0, cr: rest, note }] });
+      }
+      a.promise = ''; a.promiseNote = '';
+      save(); toast(`✅ تسكّر حساب ${a.name}${rest > 0 ? ` (مسامح بـ ${fmt(rest)})` : ''}`); route();
+    },
+  });
+  const upd = () => {
+    const paid = r2(num($('[name=paid]', f).value)), rest = r2(B - paid), info = $('#stInfo', f);
+    $('[name=cashAcc]', f).closest('.fld').style.display = paid > 0 ? '' : 'none';
+    info.className = 'settle-info ' + (paid > B ? 'bad' : rest > 0 ? 'warn' : 'ok');
+    info.textContent = paid > B ? `⚠️ أكبر من يلي عليه بـ ${fmt(r2(paid - B))}`
+      : rest > 0 ? `الباقي ${fmt(rest)} ${cur()} ← بتسامحه فيه (بينسجّل حسم ممنوح)، والحساب بيصير صفر`
+        : '✔️ دفع كل يلي عليه ← الحساب بيصير صفر';
+  };
+  f.oninput = f.onchange = upd; upd();
+}
 V.debts = (id, q, view) => {
   const all = debtors();
   const f = ['30', '60', '90', 'due', 'limit'].includes(q.f) ? q.f : 'all';
@@ -1397,13 +1478,15 @@ V.debts = (id, q, view) => {
       ${a.promiseNote ? `<p class="muted debt-note">📝 ${esc(a.promiseNote)}</p>` : ''}
       <div class="debt-acts">
         <button class="mini dpay" data-act="pay" data-id="${a.id}">💵 قبض دفعة</button>
+        <button class="mini dset" data-act="settle" data-id="${a.id}">✅ تصفية</button>
         <button class="mini wa" data-act="wa" data-id="${a.id}">🟢 تذكير</button>
         <button class="mini" data-act="setup" data-id="${a.id}">📅 موعد / سقف</button>
+        <button class="mini" data-act="add" data-id="${a.id}">➕ دين</button>
         <a class="mini" href="#/report/statement?acc=${a.id}">📄 كشف</a>
       </div></div>`;
   }).join('');
   const due = cnt(promiseDue);
-  view.innerHTML = head('💳 الديون', `<a class="btn" href="#/report/custprofit">📈 أرباح الزباين</a><a class="btn" href="#/parties?t=c">👥 كل العملاء</a>`) + `
+  view.innerHTML = head('💳 الديون', `<button class="btn pri" data-act="add">➕ إضافة دين</button><a class="btn" href="#/report/custprofit">📈 أرباح الزباين</a><a class="btn" href="#/parties?t=c">👥 كل العملاء</a>`) + `
     <div class="kpis k2">
       ${kpi('إجمالي الديون لنا', `${fmt(total)} <small>${C}</small>`, 'p')}
       ${kpi('عدد المديونين', all.length, 'g')}
@@ -1423,6 +1506,8 @@ V.debts = (id, q, view) => {
     pay: id => voucherForm(null, 'receipt', id, location.hash),
     wa: id => { const d = all.find(x => x.a.id === id); if (d) waSend(d.a, waDebtText(d)); },
     setup: id => { const a = acc(id); if (a) debtSetup(a); },
+    add: id => addDebt(id),
+    settle: id => settleDebt(id),
   });
 };
 
@@ -2748,6 +2833,7 @@ const REPORTS = {
   stock: { t: 'جرد المستودع', d: 'الكميات الحالية وقيمتها بالكلفة وبسعر المبيع' },
   itemcard: { t: 'بطاقة مادة', d: 'كل حركات مادة معيّنة دخولاً وخروجاً' },
   itemprofit: { t: 'أرباح المواد', d: 'المبيعات والكلفة والربح لكل مادة خلال فترة' },
+  daysales: { t: 'مبيعات المواد باليوم', d: 'قديش انباع من كل مادة بيوم معيّن — للكل أو لمندوب لحاله' },
   custprofit: { t: 'أرباح الزباين', d: 'مين الأكثر ربحاً ومين الأكثر سحب بضاعة — ومين بيسحب كتير بربح قليل' },
   parties: { t: 'أرصدة العملاء والموردين', d: 'من له ومن عليه بتاريخ معيّن' },
 };
@@ -2878,6 +2964,36 @@ V.report = (type, q, view) => {
     }).join('');
     body = table(['المادة', 'الكمية المباعة', 'المبيعات', 'الكلفة', 'الربح', 'نسبة الربح'], rows,
       `<tr><td colspan="2">الإجمالي</td><td class="n">${fmt(T.val)}</td><td class="n">${fmt(T.cost)}</td><td class="n">${fmt(T.val - T.cost)}</td><td></td></tr>`);
+  }
+
+  if (type === 'daysales') {
+    const day = okDate(q.day) ? q.day : today();
+    const reps = [...new Set(db.invoices.map(i => i.rep).filter(Boolean))].sort();
+    const rf = q.rep === '-' || reps.includes(q.rep) ? q.rep : '';
+    filters = [{ k: 'day', l: 'اليوم', t: 'date' }, ...(reps.length ? [{ k: 'rep', l: 'مين باع', t: 'select', opts: [['', 'الكل'], ['-', 'من موبايلي'], ...reps.map(r => [r, '🧑‍💼 ' + r])] }] : [])];
+    vals.day = day; vals.rep = rf;
+    const ivs = new Map(db.invoices.filter(i => i.date === day && (i.type === 'sale' || i.type === 'saleReturn') && (!rf || (rf === '-' ? !i.rep : i.rep === rf))).map(i => [i.id, i]));
+    const agg = {};
+    for (const m of engine().moves) {
+      if (!ivs.has(m.ref) || (m.kind !== 'sale' && m.kind !== 'saleReturn')) continue;
+      const a = agg[m.item] || (agg[m.item] = { sold: 0, ret: 0, val: 0, cost: 0 }), sg = m.kind === 'sale' ? 1 : -1;
+      if (sg > 0) a.sold += m.out; else a.ret += m.in;
+      a.val += sg * m.val; a.cost += sg * m.cost;
+    }
+    const list = Object.entries(agg).map(([id, a]) => ({ it: db.items.find(i => i.id === id) || { name: '؟' }, ...a, qty: r2(a.sold - a.ret), val: r2(a.val), profit: r2(a.val - a.cost) }))
+      .sort((x, y) => y.qty - x.qty || y.val - x.val);
+    const T = list.reduce((t, x) => ({ qty: t.qty + x.qty, val: t.val + x.val, profit: t.profit + x.profit }), { qty: 0, val: 0, profit: 0 });
+    const nInv = [...ivs.values()].filter(i => i.type === 'sale').length;
+    const shift = n => { const d = new Date(day); d.setDate(d.getDate() + n); return isoLocal(d); };
+    const link = d => `#/report/daysales?day=${d}${rf ? '&rep=' + encodeURIComponent(rf) : ''}`;
+    const dayName = new Date(day + 'T12:00').toLocaleDateString('ar', { weekday: 'long' });
+    const C = esc(cur());
+    body = `<div class="day-nav"><a class="btn" href="${link(shift(-1))}">→ اليوم السابق</a><b>${esc(dayName)} ${esc(day)}${day === today() ? ' (اليوم)' : ''}</b>${day < today() ? `<a class="btn" href="${link(shift(1))}">اليوم التالي ←</a>` : '<span></span>'}</div>` +
+      (!list.length ? '<p class="muted" style="text-align:center;padding:20px">ما انباع شي بهاليوم.</p>' : `
+      <div class="kpis k2">${kpi('المبيعات (' + C + ')', fmt(r2(T.val)), 'p')}${kpi('عدد القطع', fmt(r2(T.qty)), 'g')}${kpi('الربح (' + C + ')', `<span class="${T.profit < 0 ? 'neg' : 'pos'}">${fmt(r2(T.profit))}</span>`, 'a')}${kpi('عدد الفواتير', nInv)}</div>
+      ${table(['المادة', 'الكمية', 'المبلغ', 'الربح'], list.map(x => `<tr><td><b>${esc(x.it.name)}</b>${x.it.unit ? ` <small class="muted">${esc(x.it.unit)}</small>` : ''}</td>
+        <td class="n"><b>${fmt(x.qty)}</b>${x.ret ? `<small class="muted ds-ret">مرتجع ${fmt(x.ret)}</small>` : ''}</td><td class="n">${fmt(x.val)}</td><td class="n ${x.profit < 0 ? 'neg' : 'pos'}">${fmt(x.profit)}</td></tr>`).join(''),
+        `<tr><td>المجموع (${list.length} مادة)</td><td class="n">${fmt(r2(T.qty))}</td><td class="n">${fmt(r2(T.val))}</td><td class="n">${fmt(r2(T.profit))}</td></tr>`, 'ds-tbl')}`);
   }
 
   if (type === 'custprofit') {
