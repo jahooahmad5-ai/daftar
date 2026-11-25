@@ -469,3 +469,8 @@ td.rest{white-space:nowrap}
   .list-inv .m-date{display:block}
   .inv-mini td,.inv-mini th{padding-inline:6px}
 }
+/* ---------- تصفية الحساب ---------- */
+.mini.dset{background:#e6f6ee;color:#11704a;border-color:#9fd8bb}
+.settle-bal{font-size:17px;margin-bottom:12px;padding:10px 12px;background:var(--pri-soft);border-radius:10px}
+.settle-info{font-size:14px;margin:10px 0 0;padding:8px 10px;border-radius:8px}
+.settle-info.ok{background:#e6f6ee;color:#11704a}.settle-info.warn{background:#fff4dc;color:#8a5a00}.settle-info.bad{background:#fde8e8;color:#a32626}

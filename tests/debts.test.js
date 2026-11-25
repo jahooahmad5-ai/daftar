@@ -142,6 +142,47 @@ module.exports = [
     },
   },
   {
+    name: '✅ تصفية الحساب: دفع كامل = سند قبض بالرصيد، ودفع أقل = الباقي حسم ممنوح والحساب صفر',
+    fn: async base => {
+      const p = await page(base, { cloud: OWNER });
+      await setup(p);
+      await p.go('#/debts');
+      // سمير عليه 1000 ودفعهن كاملين
+      await p.click('[data-act=settle][data-id=c2]'); await p.waitForTimeout(200);
+      assert.strictEqual(await p.inputValue('#dlg [name=paid]'), '1000', 'المبلغ لازم يكون كامل الرصيد لحاله');
+      assert.match(await p.text('#stInfo'), /دفع كل يلي عليه/);
+      await p.click('#dlg footer .btn.pri'); await p.waitForTimeout(400);
+      let r = await p.evaluate(() => ({ bal: partyBal(acc('c2')), v: db.vouchers.filter(v => v.acc === 'c2').map(v => [v.type, v.amount]), disc: !!acc('discAllowed') }));
+      assert.strictEqual(r.bal, 0); assert.deepStrictEqual(r.v, [['receipt', 1000]]); assert.strictEqual(r.disc, false, 'ما في حسم ← ما لازم ينعمل حساب');
+      // أحمد عليه 4000 دفع 3700 وسامحناه بـ 300
+      await p.click('[data-act=settle][data-id=c1]'); await p.waitForTimeout(200);
+      await p.fill('#dlg [name=paid]', '3700');
+      assert.match(await p.text('#stInfo'), /الباقي 300/);
+      await p.click('#dlg footer .btn.pri'); await p.waitForTimeout(400);
+      r = await p.evaluate(() => ({ bal: partyBal(acc('c1')), disc: partyBal(acc('discAllowed')), type: acc('discAllowed').type, recv: db.vouchers.filter(v => v.acc === 'c1' && (v.note || '').startsWith('تصفية')).map(v => v.amount) }));
+      assert.deepStrictEqual(r, { bal: 0, disc: 300, type: 'expense', recv: [3700] });
+      const t = await p.text();
+      assert.doesNotMatch(t, /أحمد/); assert.doesNotMatch(t, /سمير/);
+      assert.match(t, /ما في ديون/);
+      assert.deepStrictEqual(p.errors, []);
+    },
+  },
+  {
+    name: 'تصفية الحساب: مبلغ أكبر من يلي عليه ممنوع، وإذا لغى تأكيد المسامحة ما بينحفظ شي',
+    fn: async base => {
+      const p = await page(base, { cloud: OWNER, dialog: 'dismiss' });
+      await setup(p);
+      await p.go('#/debts');
+      const n0 = await p.evaluate(() => db.vouchers.length + db.entries.length);
+      await p.click('[data-act=settle][data-id=c1]'); await p.waitForTimeout(200);
+      await p.fill('#dlg [name=paid]', '5000'); await p.click('#dlg footer .btn.pri'); await p.waitForTimeout(300);
+      assert.match(await p.text('#toast'), /أكبر من يلي عليه/);
+      await p.fill('#dlg [name=paid]', '1000'); await p.click('#dlg footer .btn.pri'); await p.waitForTimeout(300);
+      assert.strictEqual(await p.evaluate(() => db.vouchers.length + db.entries.length), n0, 'لغى التأكيد ← ولا شي انحفظ');
+      assert.strictEqual(await p.evaluate(() => partyBal(acc('c1'))), 4000);
+    },
+  },
+  {
     name: 'المندوب ما بيقدر يفتح صفحة الديون',
     fn: async base => {
       const p = await page(base, { cloud: REP, ls: { daftar_rep_name: 'محمد' } });

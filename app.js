@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '6.82';
+const APP_VERSION = '6.83';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -1400,6 +1400,49 @@ function addDebt(preAcc) {
   };
   f.oninput = f.onchange = upd; upd();
 }
+// ✅ تصفية الحساب: قبض كامل الرصيد بكبسة — وإذا دفع أقل، الباقي بينسجّل «حسم ممنوح» (مصروف) والحساب بيتسكّر عالصفر
+function discAllowedAcc() {
+  let a = acc('discAllowed');
+  if (!a) { db.accounts.push(a = { id: 'discAllowed', code: nextCode(acc('expenses')), name: 'حسم ممنوح للزبائن', type: 'expense', parent: 'expenses', group: false }); _acc = null; }
+  return a;
+}
+function settleDebt(id) {
+  const a = acc(id), B = a ? r2(partyBal(a)) : 0;
+  if (!a || B <= 0) return toast('ما عليه شي — الحساب مسدّد', 1);
+  reserveNo('receipt'); reserveNo('entry');
+  const f = modal('✅ تصفية حساب ' + a.name, `<div class="settle-bal">عليه: <b>${fmt(B)} ${esc(cur())}</b>${oldOn() ? ` <small class="muted">(بالقديم ${oldAmt(B)})</small>` : ''}</div>` + fields([
+    { k: 'paid', l: `قديش دفع؟ (${cur()})`, t: 'number' },
+    { k: 'cashAcc', l: 'إلى الصندوق', t: 'select', opts: accOpts(cashAccounts()) },
+    { k: 'date', l: 'التاريخ', t: 'date', req: 1 },
+    { k: 'note', l: 'ملاحظة', full: 1 },
+  ], { paid: B, cashAcc: cashAccounts()[0]?.id, date: today() }) + '<p id="stInfo" class="settle-info"></p>', {
+    saveText: '✅ صفّي الحساب',
+    onSave: d => {
+      const paid = r2(num(d.paid)), rest = r2(B - paid), note = (d.note || '').trim();
+      if (paid < 0) { toast('المبلغ لازم يكون موجب', 1); return false; }
+      if (paid > B) { toast(`المبلغ أكبر من يلي عليه (${fmt(B)}) — للزيادة اعمل سند قبض عادي`, 1); return false; }
+      if (paid > 0 && !d.cashAcc) { toast('اختر الصندوق', 1); return false; }
+      if (rest > 0 && !confirm(`رح تسامح ${a.name} بـ ${fmt(rest)} ${cur()} (بتنسجّل حسم ممنوح). متأكد؟`)) return false;
+      if (paid > 0) db.vouchers.push({ id: uid(), type: 'receipt', ...newNo('receipt'), created: Date.now(), date: d.date, amount: paid, acc: a.id, cashAcc: d.cashAcc, note: 'تصفية حساب' + (note ? ' — ' + note : ''), cur: 'base', rate: '' });
+      if (rest > 0) {
+        const da = discAllowedAcc();
+        db.entries.push({ id: uid(), ...newNo('entry'), date: d.date, desc: `حسم ممنوح — تصفية حساب ${a.name}${note ? ' — ' + note : ''}`,
+          lines: [{ acc: da.id, dr: rest, cr: 0, note }, { acc: a.id, dr: 0, cr: rest, note }] });
+      }
+      a.promise = ''; a.promiseNote = '';
+      save(); toast(`✅ تسكّر حساب ${a.name}${rest > 0 ? ` (مسامح بـ ${fmt(rest)})` : ''}`); route();
+    },
+  });
+  const upd = () => {
+    const paid = r2(num($('[name=paid]', f).value)), rest = r2(B - paid), info = $('#stInfo', f);
+    $('[name=cashAcc]', f).closest('.fld').style.display = paid > 0 ? '' : 'none';
+    info.className = 'settle-info ' + (paid > B ? 'bad' : rest > 0 ? 'warn' : 'ok');
+    info.textContent = paid > B ? `⚠️ أكبر من يلي عليه بـ ${fmt(r2(paid - B))}`
+      : rest > 0 ? `الباقي ${fmt(rest)} ${cur()} ← بتسامحه فيه (بينسجّل حسم ممنوح)، والحساب بيصير صفر`
+        : '✔️ دفع كل يلي عليه ← الحساب بيصير صفر';
+  };
+  f.oninput = f.onchange = upd; upd();
+}
 V.debts = (id, q, view) => {
   const all = debtors();
   const f = ['30', '60', '90', 'due', 'limit'].includes(q.f) ? q.f : 'all';
@@ -1434,6 +1477,7 @@ V.debts = (id, q, view) => {
       ${a.promiseNote ? `<p class="muted debt-note">📝 ${esc(a.promiseNote)}</p>` : ''}
       <div class="debt-acts">
         <button class="mini dpay" data-act="pay" data-id="${a.id}">💵 قبض دفعة</button>
+        <button class="mini dset" data-act="settle" data-id="${a.id}">✅ تصفية</button>
         <button class="mini wa" data-act="wa" data-id="${a.id}">🟢 تذكير</button>
         <button class="mini" data-act="setup" data-id="${a.id}">📅 موعد / سقف</button>
         <button class="mini" data-act="add" data-id="${a.id}">➕ دين</button>
@@ -1462,6 +1506,7 @@ V.debts = (id, q, view) => {
     wa: id => { const d = all.find(x => x.a.id === id); if (d) waSend(d.a, waDebtText(d)); },
     setup: id => { const a = acc(id); if (a) debtSetup(a); },
     add: id => addDebt(id),
+    settle: id => settleDebt(id),
   });
 };
 
