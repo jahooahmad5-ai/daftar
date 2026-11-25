@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '6.80';
+const APP_VERSION = '6.81';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -184,6 +184,8 @@ const suppliers = () => postable().filter(a => isUnder(a.id, 'suppliers'));
 // «زبون عام»: زبون ثابت للبيع المباشر — دايماً نقدي وما بيصير عليه حساب (ما بيكون آجل أبداً)
 const WALKIN_NAME = 'زبون عام';
 const MAX_UP = 0.10; // أعلى زيادة مسموحة على سعر المبيع ببطاقة المادة
+const MAX_DOWN = 0.10; // أكبر نزلة مسموحة تحت سعر المبيع ببطاقة المادة (وما منبيع تحت سعر الشراء أبداً)
+const minSell = it => r2(num(it.sellPrice) * (1 - MAX_DOWN));
 const AUTO_BUY = 0.80; // إذا نسيت سعر الشراء: سعر الشراء = سعر المبيع ناقص 20٪
 // تكميل أسعار البطاقة الناقصة: سعر المبيع من سعر فاتورة الزبون، وسعر الشراء من سعر المبيع
 // الفرق بين سعر الشراء وسعر المبيع ما بيزيد عن 20٪ من سعر المبيع (بالاتجاهين)
@@ -1960,8 +1962,8 @@ V.invoice = (id, q, view) => {
     const b = lfMap.get(itemId);
     return b ? r2(b.p) : 0;
   };
-  // آخر سعر للزبون بينفع بس إذا مش أقل من سعر البطاقة (إذا السعر غلي، ما منضل نبيعه بالسعر القديم)
-  const custPrice = it => { const lp = lastFor(val('party'), it.id); return lp && lp >= num(it.sellPrice) - 0.001 ? lp : 0; };
+  // آخر سعر للزبون بينفع بس إذا ضمن المسموح (مش أقل من سعر البطاقة ناقص 10٪) — إذا السعر غلي كتير ما منضل عالقديم
+  const custPrice = it => { const lp = lastFor(val('party'), it.id); return lp && lp >= minSell(it) - 0.001 ? lp : 0; };
   const basePrice = it => (sideSale ? (custPrice(it) || num(it.sellPrice)) : (num(it.buyPrice) || r2(st[it.id]?.avg || 0)));
   // إضافة مادة: إذا كانت موجودة بالفاتورة تزيد الكمية
   // lastBase: كم كان عدد المادة قبل آخر إضافة — حتى «عدد 2» بعد تكرار الصنف تنضاف على القديم وما تمسحه
@@ -2333,8 +2335,8 @@ V.invoice = (id, q, view) => {
         return toast(`يجب تعديل سعر مبيع المادة أولاً: ${it.name} — سعرها بالبطاقة ${fmt(num(it.sellPrice))}، وأعلى سعر مسموح ${fmt(r2(num(it.sellPrice) * (1 + MAX_UP)))}`, 1);
       }
     }
-    // الحد الأدنى للسعر (بعد حسم الفاتورة): المندوب ما بيبيع تحت سعر المبيع بالبطاقة أبداً،
-    // والمدير إذا باع تحت سعر المبيع أو تحت الكلفة بيطلعله تأكيد
+    // الحد الأدنى للسعر (بعد حسم الفاتورة): سعر المبيع بالبطاقة ناقص 10٪، وما بيكون تحت سعر الشراء —
+    // المندوب ممنوع ينزل تحته، والمدير بيطلعله تأكيد
     if (inv.type === 'sale') {
       const gross = inv.lines.reduce((t, l) => t + (l.item ? num(l.qty) * num(l.price) : 0), 0);
       const f = gross > 0 ? (gross - num(val('discount')) + num(val('addition'))) / gross : 1;
@@ -2342,14 +2344,15 @@ V.invoice = (id, q, view) => {
       inv.lines.forEach((l, i) => {
         const it = l.item && num(l.qty) > 0 && db.items.find(x => x.id === l.item); if (!it) return;
         const eff = r2(toBase(num(l.price)) * f), sp = num(it.sellPrice), cost = num(it.buyPrice) || r2(st[it.id]?.avg || 0);
-        if (cost > 0 && eff < cost - 0.001) lows.push({ i, it, eff, min: cost, why: 'سعر الشراء' });
-        else if (sp > 0 && eff < sp - 0.001) lows.push({ i, it, eff, min: sp, why: 'سعر المبيع' });
+        // الحد = الأعلى بين (سعر المبيع ناقص 10٪) وسعر الشراء
+        const ms = sp > 0 ? minSell(it) : 0, min = Math.max(ms, cost);
+        if (min > 0 && eff < min - 0.001) lows.push({ i, it, eff, min, why: cost >= ms ? 'سعر الشراء' : `سعر المبيع ناقص ${MAX_DOWN * 100}٪` });
       });
       if (lows.length) {
         const b = lows[0], card = $(`.ln-card[data-i="${b.i}"]`, view);
         if (card) { card.scrollIntoView({ block: 'center' }); card.classList.add('ln-bad'); setTimeout(() => card.classList.remove('ln-bad'), 4000); }
         const msg = lows.map(x => `• ${x.it.name}: ${fmt(x.eff)} — أقل من ${x.why} (${fmt(x.min)})`).join('\n');
-        if (isSeller()) return toast(`🚫 ما بينفع تبيع أقل من سعر المبيع: ${b.it.name} — بعتها بـ ${fmt(b.eff)} وسعرها ${fmt(num(b.it.sellPrice) || b.min)}${f < 1 ? ' (مع الحسم)' : ''}`, 1);
+        if (isSeller()) return toast(`🚫 ما بينفع تبيع أقل من ${fmt(b.min)}: ${b.it.name} — بعتها بـ ${fmt(b.eff)}${f < 1 ? ' (مع الحسم)' : ''}، وسعرها بالبطاقة ${fmt(num(b.it.sellPrice))} (أكبر نزلة ${MAX_DOWN * 100}٪${b.why === 'سعر الشراء' ? '، وما بينفع تحت سعر الشراء' : ''})`, 1);
         if (!confirm(`⚠️ في مواد عم تنباع بأقل من سعرها:\n${msg}\n\nبدك تحفظ هيك؟`)) return;
       }
     }
