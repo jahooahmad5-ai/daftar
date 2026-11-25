@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '6.74';
+const APP_VERSION = '6.75';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -609,8 +609,15 @@ async function posDevsCard(el) {
 let keepScrollY = null;
 // أول صفحة بعد ما فتح البرنامج (أو رجع حمّل لحالو بنص الشغل)
 let booted = false;
+// الفاتورة المفتوحة: ما منطلع منها إلا إذا انحفظت أو انحذفت
+let leaveGuard = null, curHash = location.hash;
+window.addEventListener('beforeunload', e => { if (leaveGuard && leaveGuard.dirty()) { e.preventDefault(); e.returnValue = ''; } });
 function go(h) { if (location.hash === h) route(); else location.hash = h; }
 function route() {
+  if (leaveGuard && location.hash !== curHash && leaveGuard.dirty()) {
+    const target = location.hash; history.pushState(null, '', curHash); leaveGuard.ask(target); return;
+  }
+  leaveGuard = null; curHash = location.hash;
   const h = location.hash.replace(/^#\/?/, '');
   const [path, qs] = h.split('?');
   const [name, id] = path.split('/');
@@ -2151,7 +2158,7 @@ V.invoice = (id, q, view) => {
   // «✏️ تعديل»: كل خانات الفاتورة (الزبون، الدفع، التاريخ، الحسم، الدفعة، الملاحظات) مخبّاية تحت زر واحد
   const openMore = (on = true) => { const m = $('#invMore', view), b = $('[data-act=more]', view); if (!m || !b) return; m.hidden = !on; b.classList.toggle('on', on); };
   let savedAt = 0;
-  const doSave = (andNew, print) => {
+  const doSave = (andNew, print, target) => {
     if (Date.now() - savedAt < 2000) return; // منع الحفظ المكرر بكبستين ورا بعض
     const lines = inv.lines.filter(l => l.item && num(l.qty) > 0).map(l => ({ item: l.item, qty: num(l.qty), price: num(l.price), cp: num(l.cp) }));
     if (!lines.length) return toast('أضف مادة واحدة على الأقل بكمية صحيحة', 1);
@@ -2223,7 +2230,9 @@ V.invoice = (id, q, view) => {
     lines.forEach(l => { const it = db.items.find(x => x.id === l.item); if (it && num(l.cp)) { const b = r2(num(l.cp) * docRate(out)); if (b !== num(it.consumerPrice)) it.consumerPrice = b; } });
     save(); navigator.vibrate?.([60, 40, 60]); toast(`✅ انحفظت الفاتورة رقم ${out.no} — ${lines.length} مادة`);
     // حفظ وطباعة ← منرجع عالرئيسية | حفظ / حفظ التعديلات ← منضل بنفس الفاتورة وبنفس المكان
-    if (print) go('#/');
+    leaveGuard = null;
+    if (target) go(target);
+    else if (print) go('#/');
     else if (andNew) go('#/invoice/new?type=' + out.type);
     else { keepScrollY = window.scrollY; go('#/invoice/' + out.id + '?saved=1'); }
     if (print && window.Receipt) Receipt.printDirect(out);
@@ -2258,17 +2267,39 @@ V.invoice = (id, q, view) => {
       });
     },
     newParty: () => newParty(($('.party-wrap .sx-in', view) || {}).value || ''),
-    discard: () => { dropDraft(); route(); },
+    discard: () => { dropDraft(); leaveGuard = null; route(); },
     more: () => { const m = $('#invMore', view); openMore(m.hidden); if (!m.hidden) m.scrollIntoView({ block: 'start', behavior: 'smooth' }); },
-    clearAll: () => { if (inv.lines.length && !confirm('تفريغ الفاتورة ومسح كل المواد اللي فيها؟')) return; dropDraft(); inv.lines = []; route(); },
+    clearAll: () => { if (inv.lines.length && !confirm('تفريغ الفاتورة ومسح كل المواد اللي فيها؟')) return; dropDraft(); inv.lines = []; leaveGuard = null; route(); },
     save: () => doSave(false),
     saveNew: () => doSave(true),
     savePrint: () => doSave(false, true),
     print: () => printDoc(invoiceHtml(orig)),
     wa: () => (isSeller() ? repWaAsk('invoices', orig) : waSendDoc('invoices', orig)),
     receipt: () => window.Receipt && Receipt.open(orig),
-    del: () => { if (isSeller()) return toast('🔒 الحذف مسكّر بوضع البيّاع', 1); if (!confirm('حذف الفاتورة نهائياً؟ سيتم عكس أثرها على الحسابات والمستودع.')) return; db.invoices = db.invoices.filter(x => x.id !== orig.id); db.vouchers = db.vouchers.filter(v => v.inv !== orig.id); save(); toast('تم الحذف'); go('#/invoices'); },
+    del: () => { if (isSeller()) return toast('🔒 الحذف مسكّر بوضع البيّاع', 1); if (!confirm('حذف الفاتورة نهائياً؟ سيتم عكس أثرها على الحسابات والمستودع.')) return; db.invoices = db.invoices.filter(x => x.id !== orig.id); db.vouchers = db.vouchers.filter(v => v.inv !== orig.id); save(); toast('تم الحذف'); leaveGuard = null; go('#/invoices'); },
   });
+  // ما في طلعة من الفاتورة إلا بالحفظ أو الحذف (أو التراجع عن التعديلات على فاتورة محفوظة)
+  leaveGuard = {
+    dirty: () => {
+      if (!document.body.contains(view) || !$('[name=date]', view)) return false;
+      if (!orig) return inv.lines.some(l => l.item);
+      const f = { date: val('date'), pay: val('pay'), party: val('party'), discount: val('discount'), addition: val('addition'), note: val('note'), payment: val('payment') };
+      return sigOf(inv.lines, f) !== baseSig;
+    },
+    ask: target => {
+      modal('⚠️ الفاتورة لسا ما انحفظت', `<p style="margin:0;font-size:16px">${orig ? 'في تغييرات على هالفاتورة ما انحفظت.' : 'ما بتقدر تطلع من الفاتورة قبل ما تحفظها أو تحذفها.'}</p>`, {
+        extra: `<button type="button" class="btn pri" id="lvSave">💾 ${orig ? 'حفظ التعديلات' : 'حفظ'}</button>
+          <button type="button" class="btn red" id="lvDel">${orig ? '↩️ تراجع عن التعديلات' : '🗑 حذف الفاتورة'}</button>`,
+      });
+      const d = $('#dlg');
+      $('[data-close]:not(.x)', d).textContent = 'رجوع للفاتورة';
+      $('#lvSave', d).onclick = () => { d.close(); doSave(false, false, target); };
+      $('#lvDel', d).onclick = () => {
+        if (!orig && !confirm('حذف الفاتورة وكل المواد اللي فيها؟')) return;
+        d.close(); dropDraft(); leaveGuard = null; go(target);
+      };
+    },
+  };
   if (draftPay) payNow = draftPay;
   $('[name=payment]', view).value = payNow || '';
   toggles(); draw();

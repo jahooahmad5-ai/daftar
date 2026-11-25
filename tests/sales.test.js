@@ -247,4 +247,35 @@ module.exports = [
       assert.deepStrictEqual(p.errors, []);
     },
   },
+  {
+    name: 'ما في طلعة من الفاتورة إلا بالحفظ أو الحذف',
+    fn: async base => {
+      const p = await page(base, { cloud: OWNER });
+      await p.evaluate(() => { db.items.push({ id: 'it1', name: 'بسكوت', sellPrice: 950, openQty: 50 }); ensureWalkin(); save(); });
+      await p.go('#/invoice/new?type=sale');
+      await p.click('.pp-item.wk'); await p.waitForTimeout(150);
+      await p.fill('#scanIn', 'بسكوت'); await p.keyboard.press('Enter'); await p.waitForTimeout(300);
+      // محاولة الطلعة ← بيضل عالفاتورة وبتطلع نافذة
+      await p.go('#/items');
+      assert.match(await p.evaluate(() => location.hash), /invoice\/new/);
+      assert.match(await p.text('#dlg'), /لسا ما انحفظت/);
+      await p.click('#dlg footer [data-close]'); // رجوع للفاتورة
+      assert.strictEqual(await p.locator('.ln-card').count(), 1);
+      // حفظ من النافذة ← بينحفظ وبيروح للصفحة المطلوبة
+      const n0 = await p.evaluate(() => db.invoices.length);
+      await p.go('#/items'); await p.click('#lvSave'); await p.waitForTimeout(400);
+      assert.strictEqual(await p.evaluate(() => db.invoices.length), n0 + 1);
+      assert.strictEqual(await p.evaluate(() => location.hash), '#/items');
+      // فاتورة تانية ← حذف ← بتطلع بلا حفظ
+      await p.go('#/invoice/new?type=sale'); await p.click('.pp-item.wk'); await p.waitForTimeout(150);
+      await p.fill('#scanIn', 'بسكوت'); await p.keyboard.press('Enter'); await p.waitForTimeout(300);
+      await p.go('#/'); await p.click('#lvDel'); await p.waitForTimeout(300);
+      assert.strictEqual(await p.evaluate(() => db.invoices.length), n0 + 1);
+      assert.match(await p.evaluate(() => location.hash), /^#\/?$/);
+      // فاتورة فاضية ← بتطلع عادي
+      await p.go('#/invoice/new?type=sale'); await p.closeDlg(); await p.go('#/items');
+      assert.strictEqual(await p.evaluate(() => location.hash), '#/items');
+      assert.deepStrictEqual(p.errors, []);
+    },
+  },
 ];
