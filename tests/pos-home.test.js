@@ -35,6 +35,29 @@ module.exports = [
     },
   },
   {
+    name: 'عمود «زاد عالحساب» بصفحة الفواتير وبآخر الفواتير بالرئيسية (بلا ما تفتح الفاتورة)',
+    fn: async base => {
+      const p = await page(base, { cloud: OWNER });
+      await p.evaluate(() => {
+        db.items.push({ id: 'it', name: 'سكر', sellPrice: 1000, buyPrice: 900, openQty: 100 });
+        db.accounts.push({ id: 'c1', code: '112001', name: 'كريم', type: 'asset', parent: 'customers', group: false });
+        const inv = (id, o) => db.invoices.push({ id, type: 'sale', no: id, date: today(), pay: 'credit', cashAcc: '', party: 'c1', cur: 'base', rate: '', lines: [{ item: 'it', qty: 3, price: 1000 }], discount: 0, created: 1, ...o });
+        inv('A1'); inv('A2'); inv('A3', { pay: 'cash', cashAcc: 'cash' });
+        db.vouchers.push({ id: 'v', type: 'receipt', no: 1, date: today(), acc: 'c1', cashAcc: 'cash', amount: 1200, cur: 'base', rate: '', inv: 'A2', created: 2 });
+        save(); route();
+      });
+      await p.waitForTimeout(300);
+      const row = async (sel, no) => (await p.locator(`${sel} tr:has(td:text-is("${no}"))`).innerText()).replace(/\s+/g, ' ');
+      assert.match(await row('.cols2', 'A1'), /\+3,000/);
+      assert.match(await row('.cols2', 'A2'), /\+1,800/);
+      assert.match(await row('.cols2', 'A3'), /—/);
+      await p.go('#/invoices?t=sale');
+      assert.match(await row('#view', 'A2'), /3,000 ل\.س \+1,800/);
+      assert.match(await p.text("tfoot"), /9,000 4,800/);
+      assert.deepStrictEqual(p.errors, []);
+    },
+  },
+  {
     name: 'بلا مندوبين ما بيطلع جدول نقطة البيع',
     fn: async base => {
       const p = await page(base, { cloud: OWNER });

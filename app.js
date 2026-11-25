@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '6.78';
+const APP_VERSION = '6.81';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -184,6 +184,8 @@ const suppliers = () => postable().filter(a => isUnder(a.id, 'suppliers'));
 // «زبون عام»: زبون ثابت للبيع المباشر — دايماً نقدي وما بيصير عليه حساب (ما بيكون آجل أبداً)
 const WALKIN_NAME = 'زبون عام';
 const MAX_UP = 0.10; // أعلى زيادة مسموحة على سعر المبيع ببطاقة المادة
+const MAX_DOWN = 0.10; // أكبر نزلة مسموحة تحت سعر المبيع ببطاقة المادة (وما منبيع تحت سعر الشراء أبداً)
+const minSell = it => r2(num(it.sellPrice) * (1 - MAX_DOWN));
 const AUTO_BUY = 0.80; // إذا نسيت سعر الشراء: سعر الشراء = سعر المبيع ناقص 20٪
 // تكميل أسعار البطاقة الناقصة: سعر المبيع من سعر فاتورة الزبون، وسعر الشراء من سعر المبيع
 // الفرق بين سعر الشراء وسعر المبيع ما بيزيد عن 20٪ من سعر المبيع (بالاتجاهين)
@@ -1071,6 +1073,9 @@ function sellerHome(view) {
   if (window.Cloud) Cloud.pill();
 }
 
+// قديش زاد على الحساب من فاتورة: الآجل ناقص الدفعة يلي معها (بالعملة الأساسية) — النقدي ما بيزيد شي
+const invRest = i => (i.pay === 'cash' ? 0 : r2(invTotals(i).net * docRate(i) - paidBase(i)));
+const restCell = x => `<td class="n rest ${x > 0 ? 'neg' : ''}">${x ? `<span dir="ltr">${x > 0 ? '+' : ''}${fmt(x)}</span>` : '<span class="muted">—</span>'}</td>`;
 // فواتير نقطة البيع (المندوبين) لليوم بجدول لحالها: قديش انباع، قديش انقبض، وقديش زاد على حسابات الزباين
 function posTodayCard() {
   if (!db.invoices.some(i => i.rep)) return '';
@@ -1079,10 +1084,10 @@ function posTodayCard() {
   const reps = new Set(list.map(i => i.rep));
   let S = 0, P = 0, A = 0;
   const rows = list.map(i => {
-    const net = r2(invTotals(i).net * docRate(i)), paid = i.pay === 'cash' ? net : r2(paidBase(i)), added = r2(net - paid);
+    const net = r2(invTotals(i).net * docRate(i)), added = invRest(i), paid = r2(net - added);
     S += net; P += paid; A += added;
     return `<tr data-act="open" data-id="${esc(i.id)}"><td class="n">${esc(i.no)}</td><td>${esc(accName(i.party) || WALKIN_NAME)}${reps.size > 1 ? `<br><small class="badge rep">${esc(i.rep)}</small>` : ''}</td>
-      <td class="n">${fmt(net)}</td><td class="n">${fmt(paid)}</td><td class="n ${added > 0 ? 'neg' : ''}">${added ? `<span dir="ltr">${added > 0 ? '+' : ''}${fmt(added)}</span>` : '—'}</td></tr>`;
+      <td class="n">${fmt(net)}</td><td class="n">${fmt(paid)}</td>${restCell(added)}</tr>`;
   }).join('');
   const C = esc(cur());
   return `<div class="card pos-today"><h3>🧑‍💼 فواتير نقطة البيع — اليوم <a class="mini" href="#/invoices?t=sale&rep=${encodeURIComponent([...reps][0] || db.invoices.find(i => i.rep).rep)}">كلها ←</a></h3>
@@ -1119,8 +1124,8 @@ V.home = (id, q, view) => {
   ${(() => { const bx = postable().filter(a => a.repBox); return bx.length ? `<div class="card"><h3>💰 صناديق المندوبين</h3>${table(['الصندوق', 'الرصيد', ''], bx.map(a => `<tr><td>${esc(a.name)}</td><td class="n">${fmt(bal(a.id))} ${esc(cur())}</td><td><button class="btn pri" data-act="takeBox" data-id="${a.id}">📥 استلام</button></td></tr>`).join(''))}</div>` : ''; })()}
   ${posTodayCard()}
   <div class="cols2">
-    <div class="card"><h3>آخر الفواتير${db.invoices.some(i => i.rep) ? ' (من موبايلك)' : ''}</h3>${table(['الرقم', 'النوع', 'التاريخ', 'الطرف', 'الصافي'],
-      recent.map(i => `<tr data-act="open" data-id="${esc(i.id)}"><td>${esc(i.no)}</td><td><span class="badge ${typeCls(i.type)}">${INV_TYPES[i.type]}</span></td><td class="n">${esc(i.date)}</td><td>${esc(accName(i.party) || 'نقدي')}</td><td class="n">${fmt(invTotals(i).net)} <small class="muted">${esc(docSym(i))}</small></td></tr>`).join(''))}</div>
+    <div class="card"><h3>آخر الفواتير${db.invoices.some(i => i.rep) ? ' (من موبايلك)' : ''}</h3>${table(['الرقم', 'النوع', 'التاريخ', 'الطرف', 'الصافي', 'زاد عالحساب'],
+      recent.map(i => `<tr data-act="open" data-id="${esc(i.id)}"><td>${esc(i.no)}</td><td><span class="badge ${typeCls(i.type)}">${INV_TYPES[i.type]}</span></td><td class="n">${esc(i.date)}</td><td>${esc(accName(i.party) || 'نقدي')}</td><td class="n">${fmt(invTotals(i).net)} <small class="muted">${esc(docSym(i))}</small></td>${restCell(invRest(i))}</tr>`).join(''), '', 'inv-mini home-inv')}</div>
     <div class="card"><h3>مواد وصلت للحد الأدنى</h3>${table(['المادة', 'الكمية', 'الحد الأدنى'],
       low.map(i => `<tr><td>${esc(i.name)}</td><td class="n"><span class="badge low">${fmt(st[i.id]?.qty || 0)}</span></td><td class="n">${fmt(i.minQty)}</td></tr>`).join(''))}
       ${!db.items.length ? `<p class="muted">لا توجد بيانات بعد. ابدأ بإضافة <a href="#/items">المواد</a> و<a href="#/parties">العملاء</a>، أو جرّب <a href="#/settings">البيانات التجريبية</a>.</p>` : ''}</div>
@@ -1694,11 +1699,11 @@ V.invoices = (id, q, view) => {
   const reps = [...new Set(db.invoices.map(i => i.rep).filter(Boolean))];
   const rf = isSeller() ? myRep() : (q.rep || '');
   const list = db.invoices.filter(i => (t === 'all' || i.type === t) && (isSeller() ? i.rep === rf : !rf ? true : rf === '-' ? !i.rep : i.rep === rf)).sort((a, b) => b.date.localeCompare(a.date) || (b.created || 0) - (a.created || 0));
-  let tot = 0;
+  let tot = 0, totR = 0;
   const rows = list.map(i => {
-    const n = invTotals(i).net; tot += n * docRate(i);
-    return `<tr data-act="open" data-id="${esc(i.id)}" data-name="${esc(i.no + ' ' + accName(i.party))}"><td class="n">${esc(i.no)}</td><td><span class="badge ${typeCls(i.type)}">${INV_TYPES[i.type] || ''}</span></td><td class="n">${esc(i.date)}</td>
-      <td>${esc(accName(i.party) || '—')}${waBadge(i)}${i.rep && !isSeller() ? `<br><small class="badge rep">مندوب: ${esc(i.rep)}</small>` : ''}</td><td>${i.pay === 'cash' ? 'نقدي' : 'آجل'}</td><td class="n">${fmt(n)} <small class="muted">${esc(docSym(i))}</small></td></tr>`;
+    const n = invTotals(i).net, rs = invRest(i); tot += n * docRate(i); totR += rs;
+    return `<tr data-act="open" data-id="${esc(i.id)}" data-name="${esc(i.no + ' ' + accName(i.party))}"><td class="n">${esc(i.no)}<small class="m-date">${esc(i.date.slice(5))}</small></td><td><span class="badge ${typeCls(i.type)}">${INV_TYPES[i.type] || ''}</span></td><td class="n">${esc(i.date)}</td>
+      <td>${esc(accName(i.party) || '—')}${waBadge(i)}${i.rep && !isSeller() ? `<br><small class="badge rep">مندوب: ${esc(i.rep)}</small>` : ''}</td><td>${i.pay === 'cash' ? 'نقدي' : 'آجل'}</td><td class="n">${fmt(n)} <small class="muted">${esc(docSym(i))}</small></td>${restCell(rs)}</tr>`;
   }).join('');
   const tab = (k, l) => `<a href="#/invoices?t=${k}${rf ? '&rep=' + encodeURIComponent(rf) : ''}" class="${t === k ? 'on' : ''}">${l}</a>`;
   const rtab = (k, l) => `<a href="#/invoices?t=${t}${k ? '&rep=' + encodeURIComponent(k) : ''}" class="${rf === k ? 'on' : ''}">${l}</a>`;
@@ -1706,7 +1711,7 @@ V.invoices = (id, q, view) => {
   view.innerHTML = head(isSeller() ? `فواتيري — مندوب: ${esc(myRep())}` : 'الفواتير', Object.entries(INV_TYPES).map(([k, l]) => `<a class="btn ${k === 'sale' ? 'pri' : ''}" href="#/invoice/new?type=${k}">+ ${l}</a>`).join('')) + `
     ${repTabs}<div class="tabs">${tab('all', 'الكل')}${Object.entries(INV_TYPES).map(([k, l]) => tab(k, l)).join('')}</div>
     <div class="card"><input class="search" id="q" placeholder="🔎 بحث برقم الفاتورة أو الاسم" style="margin-bottom:10px">
-    ${table(['الرقم', 'النوع', 'التاريخ', 'الطرف', 'الدفع', 'الصافي'], rows, t !== 'all' ? `<tr><td colspan="5">المجموع (بـ ${esc(cur())})</td><td class="n">${fmt(tot)}</td></tr>` : '')}</div>`;
+    ${table(['الرقم', 'النوع', 'التاريخ', 'الطرف', 'الدفع', 'الصافي', 'زاد عالحساب'], rows, t !== 'all' ? `<tr><td></td><td></td><td></td><td>المجموع (بـ ${esc(cur())})</td><td></td><td class="n">${fmt(tot)}</td><td class="n">${fmt(r2(totR))}</td></tr>` : '', 'inv-mini list-inv')}</div>`;
   $('#q', view).oninput = e => { const s = e.target.value.trim(); $$('tbody tr[data-name]', view).forEach(tr => (tr.style.display = tr.dataset.name.includes(s) ? '' : 'none')); };
   onAct(view, { open: id => go('#/invoice/' + id) });
 };
@@ -1957,7 +1962,9 @@ V.invoice = (id, q, view) => {
     const b = lfMap.get(itemId);
     return b ? r2(b.p) : 0;
   };
-  const basePrice = it => (sideSale ? (lastFor(val('party'), it.id) || num(it.sellPrice)) : (num(it.buyPrice) || r2(st[it.id]?.avg || 0)));
+  // آخر سعر للزبون بينفع بس إذا ضمن المسموح (مش أقل من سعر البطاقة ناقص 10٪) — إذا السعر غلي كتير ما منضل عالقديم
+  const custPrice = it => { const lp = lastFor(val('party'), it.id); return lp && lp >= minSell(it) - 0.001 ? lp : 0; };
+  const basePrice = it => (sideSale ? (custPrice(it) || num(it.sellPrice)) : (num(it.buyPrice) || r2(st[it.id]?.avg || 0)));
   // إضافة مادة: إذا كانت موجودة بالفاتورة تزيد الكمية
   // lastBase: كم كان عدد المادة قبل آخر إضافة — حتى «عدد 2» بعد تكرار الصنف تنضاف على القديم وما تمسحه
   let lastId = null, lastBase = 0;
@@ -2087,7 +2094,7 @@ V.invoice = (id, q, view) => {
       const s = stockOf(it), low = s <= 0 || (num(it.minQty) > 0 && s <= num(it.minQty));
       return `<button type="button" class="sg" data-i="${i}">
         <b>${esc(it.name)}</b>
-        <span class="sg-meta"><span>💰 ${fmt(toDoc(basePrice(it)))}${oldOn() ? ` <small class="muted">(${oldAmt(basePrice(it))} قديم)</small>` : ''}${sideSale && lastFor(val('party'), it.id) ? ' <small class="muted">· آخر سعر إله</small>' : ''}</span><span class="${s <= 0 ? 'bad' : ''}">📦 ${fmt(s)} ${esc(it.unit || '')}</span></span>
+        <span class="sg-meta"><span>💰 ${fmt(toDoc(basePrice(it)))}${oldOn() ? ` <small class="muted">(${oldAmt(basePrice(it))} قديم)</small>` : ''}${sideSale && custPrice(it) ? ' <small class="muted">· آخر سعر إله</small>' : ''}</span><span class="${s <= 0 ? 'bad' : ''}">📦 ${fmt(s)} ${esc(it.unit || '')}</span></span>
         ${low ? `<small class="bad">${s <= 0 ? 'نفدت المادة' : 'قاربت المادة على النفاد'}</small>` : ''}
       </button>`;
     }).join('') + newBtn() : smartHtml() + newBtn();
@@ -2328,6 +2335,27 @@ V.invoice = (id, q, view) => {
         return toast(`يجب تعديل سعر مبيع المادة أولاً: ${it.name} — سعرها بالبطاقة ${fmt(num(it.sellPrice))}، وأعلى سعر مسموح ${fmt(r2(num(it.sellPrice) * (1 + MAX_UP)))}`, 1);
       }
     }
+    // الحد الأدنى للسعر (بعد حسم الفاتورة): سعر المبيع بالبطاقة ناقص 10٪، وما بيكون تحت سعر الشراء —
+    // المندوب ممنوع ينزل تحته، والمدير بيطلعله تأكيد
+    if (inv.type === 'sale') {
+      const gross = inv.lines.reduce((t, l) => t + (l.item ? num(l.qty) * num(l.price) : 0), 0);
+      const f = gross > 0 ? (gross - num(val('discount')) + num(val('addition'))) / gross : 1;
+      const lows = [];
+      inv.lines.forEach((l, i) => {
+        const it = l.item && num(l.qty) > 0 && db.items.find(x => x.id === l.item); if (!it) return;
+        const eff = r2(toBase(num(l.price)) * f), sp = num(it.sellPrice), cost = num(it.buyPrice) || r2(st[it.id]?.avg || 0);
+        // الحد = الأعلى بين (سعر المبيع ناقص 10٪) وسعر الشراء
+        const ms = sp > 0 ? minSell(it) : 0, min = Math.max(ms, cost);
+        if (min > 0 && eff < min - 0.001) lows.push({ i, it, eff, min, why: cost >= ms ? 'سعر الشراء' : `سعر المبيع ناقص ${MAX_DOWN * 100}٪` });
+      });
+      if (lows.length) {
+        const b = lows[0], card = $(`.ln-card[data-i="${b.i}"]`, view);
+        if (card) { card.scrollIntoView({ block: 'center' }); card.classList.add('ln-bad'); setTimeout(() => card.classList.remove('ln-bad'), 4000); }
+        const msg = lows.map(x => `• ${x.it.name}: ${fmt(x.eff)} — أقل من ${x.why} (${fmt(x.min)})`).join('\n');
+        if (isSeller()) return toast(`🚫 ما بينفع تبيع أقل من ${fmt(b.min)}: ${b.it.name} — بعتها بـ ${fmt(b.eff)}${f < 1 ? ' (مع الحسم)' : ''}، وسعرها بالبطاقة ${fmt(num(b.it.sellPrice))} (أكبر نزلة ${MAX_DOWN * 100}٪${b.why === 'سعر الشراء' ? '، وما بينفع تحت سعر الشراء' : ''})`, 1);
+        if (!confirm(`⚠️ في مواد عم تنباع بأقل من سعرها:\n${msg}\n\nبدك تحفظ هيك؟`)) return;
+      }
+    }
     // مواد بلا سعر مبيع ببطاقتها: بياخد سعرها من فاتورة الزبون (وسعر الشراء = المبيع − 20٪ إذا ناقص)
     if (inv.type === 'sale') {
       const badI = inv.lines.findIndex(l => {
@@ -2396,6 +2424,7 @@ V.invoice = (id, q, view) => {
     rmLine: i => { inv.lines.splice(+i, 1); draw(); },
     // ✏️ تعديل بطاقة المادة من جوّا الفاتورة — بلا ما نطلع منها ولا تضيع المواد
     editItem: i => {
+      if (isSeller()) return toast('🔒 تعديل بطاقة المادة (والأسعار) مسكّر بوضع البيّاع — خلّي المدير يعدّلها', 1);
       const l = inv.lines[+i], it = l && db.items.find(x => x.id === l.item); if (!it) return;
       const old = { sellPrice: num(it.sellPrice), buyPrice: num(it.buyPrice), consumerPrice: num(it.consumerPrice) };
       itemForm(it, null, () => {
