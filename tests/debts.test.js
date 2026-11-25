@@ -110,6 +110,38 @@ module.exports = [
     },
   },
   {
+    name: '➕ إضافة دين: «أعطيته مصاري» = سند دفع من الصندوق، «دين قديم» = قيد على رأس المال',
+    fn: async base => {
+      const p = await page(base, { cloud: OWNER });
+      await setup(p);
+      await p.go('#/debts');
+      // أعطيته مصاري — لزبون مسدّد (خالد) من الزر فوق
+      await p.click('.ph [data-act=add]'); await p.waitForTimeout(200);
+      await p.selectOption('#dlg [name=acc]', 'c3');
+      await p.fill('#dlg [name=amount]', '5000'); await p.fill('#dlg [name=note]', 'سلفة');
+      assert.match(await p.text('#dEq'), /رصيده هلق: 0 ← بعد الإضافة: 5,000/);
+      const cash0 = await p.evaluate(() => partyBal(acc('cash')));
+      await p.click('#dlg footer .btn.pri'); await p.waitForTimeout(400);
+      let r = await p.evaluate(() => ({ bal: partyBal(acc('c3')), cash: partyBal(acc('cash')), v: db.vouchers.filter(v => v.acc === 'c3' && v.type === 'payment').map(v => [v.amount, v.note]) }));
+      assert.strictEqual(r.bal, 5000);
+      assert.strictEqual(r.cash, cash0 - 5000, 'المصاري طلعت من الصندوق');
+      assert.deepStrictEqual(r.v, [[5000, 'سلفة']]);
+      assert.match(await p.text(), /خالد/, 'خالد صار عليه دين ← بيطلع بالديون');
+      // دين قديم — من زر «➕ دين» على بطاقة سمير
+      await p.click('[data-act=add][data-id=c2]'); await p.waitForTimeout(200);
+      assert.strictEqual(await p.evaluate(() => document.querySelector('#dlg [name=acc]').value), 'c2');
+      await p.selectOption('#dlg [name=kind]', 'old');
+      assert.strictEqual(await p.isVisible('#dlg [name=cashAcc]'), false, 'الدين القديم ما إله صندوق');
+      await p.fill('#dlg [name=amount]', '2500');
+      await p.click('#dlg footer .btn.pri'); await p.waitForTimeout(400);
+      r = await p.evaluate(() => ({ bal: partyBal(acc('c2')), cash: partyBal(acc('cash')), e: db.entries.filter(e => e.lines.some(l => l.acc === 'c2')).map(e => e.lines.map(l => [l.acc, l.dr, l.cr])) }));
+      assert.strictEqual(r.bal, 3500);
+      assert.strictEqual(r.cash, cash0 - 5000, 'الدين القديم ما بيلمس الصندوق');
+      assert.deepStrictEqual(r.e, [[['c2', 2500, 0], ['capital', 0, 2500]]]);
+      assert.deepStrictEqual(p.errors, []);
+    },
+  },
+  {
     name: 'المندوب ما بيقدر يفتح صفحة الديون',
     fn: async base => {
       const p = await page(base, { cloud: REP, ls: { daftar_rep_name: 'محمد' } });

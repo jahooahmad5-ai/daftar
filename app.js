@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '6.81';
+const APP_VERSION = '6.82';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -1363,6 +1363,43 @@ function debtSetup(a) {
   });
   const c = $('#pClr'); if (c) c.onclick = () => { a.promise = ''; a.promiseNote = ''; save(); $('#dlg').close(); toast('انشال الموعد'); route(); };
 }
+// ➕ إضافة دين على زبون: «أعطيته مصاري» = سند دفع من الصندوق، «دين قديم» = قيد (الزبون مدين / رأس المال دائن)
+function addDebt(preAcc) {
+  const custs = customers().filter(a => !isWalkin(a.id));
+  if (!custs.length) { toast('ما في زباين — ضيف زبون أول', 1); return go('#/parties?t=c'); }
+  reserveNo('payment'); reserveNo('entry');
+  const f = modal('➕ إضافة دين على زبون', fields([
+    { k: 'acc', l: 'الزبون', t: 'select', opts: accOpts(custs, '— اختر الزبون —'), req: 1, full: 1 },
+    { k: 'kind', l: 'شو أصل الدين؟', t: 'select', opts: [['cash', '💵 أعطيته مصاري هلق (بتطلع من الصندوق)'], ['old', '📜 دين قديم / رصيد سابق (ما بيتأثر الصندوق)']], full: 1 },
+    { k: 'amount', l: `المبلغ (${cur()})`, t: 'number', req: 1 },
+    { k: 'date', l: 'التاريخ', t: 'date', req: 1 },
+    { k: 'cashAcc', l: 'من الصندوق', t: 'select', opts: accOpts(cashAccounts()) },
+    { k: 'note', l: 'البيان', ph: 'مثلاً: سلفة', full: 1 },
+  ], { acc: preAcc || '', kind: 'cash', date: today(), cashAcc: cashAccounts()[0]?.id }) + '<p class="muted" id="dEq" style="font-size:13px;margin:4px 0 0"></p>', {
+    saveText: '➕ أضف الدين',
+    onSave: d => {
+      const a = acc(d.acc), amount = r2(num(d.amount));
+      if (!a || !custs.includes(a)) { toast('اختر الزبون', 1); return false; }
+      if (amount <= 0) { toast('أدخل مبلغاً صحيحاً', 1); return false; }
+      const note = (d.note || '').trim();
+      if (d.kind === 'old') {
+        db.entries.push({ id: uid(), ...newNo('entry'), date: d.date, desc: `دين سابق على ${a.name}${note ? ' — ' + note : ''}`,
+          lines: [{ acc: a.id, dr: amount, cr: 0, note }, { acc: 'capital', dr: 0, cr: amount, note }] });
+      } else {
+        if (!d.cashAcc) { toast('اختر الصندوق', 1); return false; }
+        db.vouchers.push({ id: uid(), type: 'payment', ...newNo('payment'), created: Date.now(), date: d.date, amount, acc: a.id, cashAcc: d.cashAcc, note: note || 'دين (سلفة)', cur: 'base', rate: '' });
+      }
+      save(); toast(`✅ انضاف ${fmt(amount)} ${cur()} على حساب ${a.name}`); route();
+    },
+  });
+  const sel = $('[name=acc]', f); enhancePartySelect(sel);
+  const upd = () => {
+    const old = $('[name=kind]', f).value === 'old', a = acc(sel.value), amt = num($('[name=amount]', f).value);
+    $('[name=cashAcc]', f).closest('.fld').style.display = old ? 'none' : '';
+    $('#dEq', f).textContent = a ? `رصيده هلق: ${fmt(partyBal(a))} ← بعد الإضافة: ${fmt(r2(partyBal(a) + amt))} ${cur()}` : '';
+  };
+  f.oninput = f.onchange = upd; upd();
+}
 V.debts = (id, q, view) => {
   const all = debtors();
   const f = ['30', '60', '90', 'due', 'limit'].includes(q.f) ? q.f : 'all';
@@ -1399,11 +1436,12 @@ V.debts = (id, q, view) => {
         <button class="mini dpay" data-act="pay" data-id="${a.id}">💵 قبض دفعة</button>
         <button class="mini wa" data-act="wa" data-id="${a.id}">🟢 تذكير</button>
         <button class="mini" data-act="setup" data-id="${a.id}">📅 موعد / سقف</button>
+        <button class="mini" data-act="add" data-id="${a.id}">➕ دين</button>
         <a class="mini" href="#/report/statement?acc=${a.id}">📄 كشف</a>
       </div></div>`;
   }).join('');
   const due = cnt(promiseDue);
-  view.innerHTML = head('💳 الديون', `<a class="btn" href="#/report/custprofit">📈 أرباح الزباين</a><a class="btn" href="#/parties?t=c">👥 كل العملاء</a>`) + `
+  view.innerHTML = head('💳 الديون', `<button class="btn pri" data-act="add">➕ إضافة دين</button><a class="btn" href="#/report/custprofit">📈 أرباح الزباين</a><a class="btn" href="#/parties?t=c">👥 كل العملاء</a>`) + `
     <div class="kpis k2">
       ${kpi('إجمالي الديون لنا', `${fmt(total)} <small>${C}</small>`, 'p')}
       ${kpi('عدد المديونين', all.length, 'g')}
@@ -1423,6 +1461,7 @@ V.debts = (id, q, view) => {
     pay: id => voucherForm(null, 'receipt', id, location.hash),
     wa: id => { const d = all.find(x => x.a.id === id); if (d) waSend(d.a, waDebtText(d)); },
     setup: id => { const a = acc(id); if (a) debtSetup(a); },
+    add: id => addDebt(id),
   });
 };
 
