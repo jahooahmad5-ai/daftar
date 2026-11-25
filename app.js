@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '6.75';
+const APP_VERSION = '6.78';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -1071,6 +1071,25 @@ function sellerHome(view) {
   if (window.Cloud) Cloud.pill();
 }
 
+// فواتير نقطة البيع (المندوبين) لليوم بجدول لحالها: قديش انباع، قديش انقبض، وقديش زاد على حسابات الزباين
+function posTodayCard() {
+  if (!db.invoices.some(i => i.rep)) return '';
+  const t = today();
+  const list = db.invoices.filter(i => i.rep && i.date === t).sort((a, b) => (b.created || 0) - (a.created || 0));
+  const reps = new Set(list.map(i => i.rep));
+  let S = 0, P = 0, A = 0;
+  const rows = list.map(i => {
+    const net = r2(invTotals(i).net * docRate(i)), paid = i.pay === 'cash' ? net : r2(paidBase(i)), added = r2(net - paid);
+    S += net; P += paid; A += added;
+    return `<tr data-act="open" data-id="${esc(i.id)}"><td class="n">${esc(i.no)}</td><td>${esc(accName(i.party) || WALKIN_NAME)}${reps.size > 1 ? `<br><small class="badge rep">${esc(i.rep)}</small>` : ''}</td>
+      <td class="n">${fmt(net)}</td><td class="n">${fmt(paid)}</td><td class="n ${added > 0 ? 'neg' : ''}">${added ? `<span dir="ltr">${added > 0 ? '+' : ''}${fmt(added)}</span>` : '—'}</td></tr>`;
+  }).join('');
+  const C = esc(cur());
+  return `<div class="card pos-today"><h3>🧑‍💼 فواتير نقطة البيع — اليوم <a class="mini" href="#/invoices?t=sale&rep=${encodeURIComponent([...reps][0] || db.invoices.find(i => i.rep).rep)}">كلها ←</a></h3>
+    <div class="kpis k3">${kpi('مبيعات (' + C + ')', fmt(r2(S)), 'p')}${kpi('انقبض (' + C + ')', fmt(r2(P)), 'g')}${kpi('زاد على الزباين', fmt(r2(A)), 'r')}</div>
+    ${table(['الرقم', 'الزبون', 'الصافي', 'دفع', 'زاد عحسابه'], rows,
+      list.length ? `<tr><td colspan="2">المجموع (${list.length} فاتورة)</td><td class="n">${fmt(r2(S))}</td><td class="n">${fmt(r2(P))}</td><td class="n">${fmt(r2(A))}</td></tr>` : '')}</div>`;
+}
 V.home = (id, q, view) => {
   if (isSeller()) return sellerHome(view);
   ensureAllRepBoxes();
@@ -1083,7 +1102,7 @@ V.home = (id, q, view) => {
   const profit = natural(acc('revenue'), YR.revenue) - natural(acc('expenses'), YR.expenses);
   const st = engine().stock;
   const low = db.items.filter(i => num(i.minQty) > 0 && (st[i.id]?.qty || 0) <= num(i.minQty));
-  const recent = [...db.invoices].sort((a, b) => b.date.localeCompare(a.date) || (b.created || 0) - (a.created || 0)).slice(0, 8);
+  const recent = db.invoices.filter(i => !i.rep).sort((a, b) => b.date.localeCompare(a.date) || (b.created || 0) - (a.created || 0)).slice(0, 8);
 
   view.innerHTML = head('الرئيسية', `<button class="btn pri sync-btn" id="homeSync" data-act="sync">🔄 مزامنة</button>${(() => { const lb = lastBackup(), old = Date.now() - lb > 864e5; return `<button class="btn sync-btn ${old ? 'warn pri' : 'ok'}" data-act="backup">💾 نسخة احتياطية${lb ? (old ? ' — صرلها أكتر من يوم' : ' — اليوم ✓') : ' — ما في ولا نسخة'}</button>`; })()}<span class="muted">${today()}</span>`) + `
   <div class="quick">
@@ -1091,13 +1110,16 @@ V.home = (id, q, view) => {
     <a href="#/invoice/new?type=purchase"><i>🛒</i>فاتورة شراء</a>
     <a href="#/vouchers?new=receipt"><i>📥</i>سند قبض</a>
     <a href="#/vouchers?new=payment"><i>📤</i>سند دفع</a>
+    <a href="#/debts"><i>💳</i>الديون</a>
     <a href="#/entry/new"><i>📝</i>قيد يومية</a>
     <a href="#/reports"><i>📊</i>التقارير</a>
   </div>
   ${(() => { const n = outboxDocs().length; return n ? `<a class="card ob-home" href="#/outbox">📤 <b>${n} رسالة من المندوب</b> بانتظار تنبعت للزباين من موبايلك ← <u>افتح</u></a>` : ''; })()}
+  ${(() => { const n = debtors().filter(promiseDue).length; return n ? `<a class="card ob-home" href="#/debts?f=due">📅 <b>${n} زبون</b> موعد دفعتهم اليوم أو فات ← <u>الديون</u></a>` : ''; })()}
   ${(() => { const bx = postable().filter(a => a.repBox); return bx.length ? `<div class="card"><h3>💰 صناديق المندوبين</h3>${table(['الصندوق', 'الرصيد', ''], bx.map(a => `<tr><td>${esc(a.name)}</td><td class="n">${fmt(bal(a.id))} ${esc(cur())}</td><td><button class="btn pri" data-act="takeBox" data-id="${a.id}">📥 استلام</button></td></tr>`).join(''))}</div>` : ''; })()}
+  ${posTodayCard()}
   <div class="cols2">
-    <div class="card"><h3>آخر الفواتير</h3>${table(['الرقم', 'النوع', 'التاريخ', 'الطرف', 'الصافي'],
+    <div class="card"><h3>آخر الفواتير${db.invoices.some(i => i.rep) ? ' (من موبايلك)' : ''}</h3>${table(['الرقم', 'النوع', 'التاريخ', 'الطرف', 'الصافي'],
       recent.map(i => `<tr data-act="open" data-id="${esc(i.id)}"><td>${esc(i.no)}</td><td><span class="badge ${typeCls(i.type)}">${INV_TYPES[i.type]}</span></td><td class="n">${esc(i.date)}</td><td>${esc(accName(i.party) || 'نقدي')}</td><td class="n">${fmt(invTotals(i).net)} <small class="muted">${esc(docSym(i))}</small></td></tr>`).join(''))}</div>
     <div class="card"><h3>مواد وصلت للحد الأدنى</h3>${table(['المادة', 'الكمية', 'الحد الأدنى'],
       low.map(i => `<tr><td>${esc(i.name)}</td><td class="n"><span class="badge low">${fmt(st[i.id]?.qty || 0)}</span></td><td class="n">${fmt(i.minQty)}</td></tr>`).join(''))}
@@ -1106,7 +1128,7 @@ V.home = (id, q, view) => {
   <h3 class="dash-title">📊 لوحة التحكم</h3>
   <div class="kpis">
     ${kpi('النقدية (صندوق + بنك)', fmt(bal('cashGroup')) + ' ' + cur(), 'p')}
-    ${kpi('ذمم العملاء (لنا)', fmt(bal('customers')), 'g')}
+    ${kpi('ذمم العملاء (لنا)', `<a href="#/debts" class="kpi-link">${fmt(bal('customers'))} ←</a>`, 'g')}
     ${kpi('ذمم الموردين (علينا)', fmt(bal('suppliers')), 'r')}
     ${kpi('قيمة المخزون', fmt(bal('inventory')), 'a')}
     ${kpi('مبيعات هذا الشهر', fmt(monthSales), 'g')}
@@ -1264,7 +1286,7 @@ V.parties = (id, q, view) => {
       <a class="mini" href="#/vouchers?new=${k === 'c' ? 'receipt' : 'payment'}&acc=${a.id}">${k === 'c' ? 'قبض' : 'دفع'}</a>
       <button class="mini" data-act="edit" data-id="${a.id}">تعديل</button><button class="mini red" data-act="del" data-id="${a.id}">حذف</button></td></tr>`;
   }).join('');
-  view.innerHTML = head('العملاء والموردون', `<button class="btn" data-act="import">📥 استيراد Excel</button><button class="btn pri" data-act="add">+ ${k === 'c' ? 'عميل' : 'مورد'} جديد</button>`) + `
+  view.innerHTML = head('العملاء والموردون', `${k === 'c' ? '<a class="btn" href="#/report/custprofit">📈 أرباح الزباين</a>' : ''}<button class="btn" data-act="import">📥 استيراد Excel</button><button class="btn pri" data-act="add">+ ${k === 'c' ? 'عميل' : 'مورد'} جديد</button>`) + `
     <div class="tabs"><a href="#/parties?t=c" class="${k === 'c' ? 'on' : ''}">العملاء (${customers().length})</a><a href="#/parties?t=s" class="${k === 's' ? 'on' : ''}">الموردون (${suppliers().length})</a></div>
     <div class="card"><input class="search" id="q" placeholder="🔎 بحث بالاسم أو الهاتف" style="margin-bottom:10px">
     ${table(['الرمز', 'الاسم', 'الهاتف', k === 'c' ? 'الرصيد (لنا عليه)' : 'الرصيد (له علينا)', ''], rows,
@@ -1280,6 +1302,122 @@ V.parties = (id, q, view) => {
       if (!confirm('تأكيد الحذف؟')) return;
       db.accounts = db.accounts.filter(x => x.id !== id); save(); route();
     },
+  });
+};
+
+/* ------------------------- الديون (ديون الزباين علينا) ------------------------- */
+// كل الأرقام جاية من نفس القيود: الفاتورة الآجلة بتزيد الدين، وسند القبض والمرتجع بينقّصوه.
+// عمر الدين: الدفعات بتسدّ أقدم دين أول (FIFO)، فيلي بيضل هو الأحدث، وأقدم قطعة باقية منه هي «عمر الدين».
+const DAY_MS = 864e5;
+const daysSince = d => (d ? Math.max(0, Math.round((new Date(today()) - new Date(d)) / DAY_MS)) : null);
+const AGE_BUCKETS = [[0, 30, '٠–٣٠ يوم'], [31, 60, '٣١–٦٠ يوم'], [61, 90, '٦١–٩٠ يوم'], [91, Infinity, 'أكتر من ٩٠']];
+function debtInfo(a, E) {
+  const dr = [];
+  let paid = 0, lastPay = '';
+  for (const e of (E || engine()).entries) for (const l of e.lines) {
+    if (l.acc !== a.id) continue;
+    if (l.dr) dr.push({ date: e.date, amt: l.dr });
+    if (l.cr) { paid += l.cr; if (e.src === 'voucher' && e.date > lastPay) lastPay = e.date; }
+  }
+  const bal = r2(dr.reduce((s, x) => s + x.amt, 0) - paid);
+  const ages = [0, 0, 0, 0];
+  let oldest = '';
+  if (bal > 0) {
+    let left = paid;
+    for (const x of dr) {
+      const used = Math.min(left, x.amt), rest = r2(x.amt - used); left -= used;
+      if (rest <= 0) continue;
+      if (!oldest) oldest = x.date;
+      const d = daysSince(x.date); ages[AGE_BUCKETS.findIndex(([lo, hi]) => d >= lo && d <= hi)] += rest;
+    }
+  }
+  return { a, bal, oldest, age: daysSince(oldest), lastPay, ages: ages.map(r2), limit: num(a.limit), promise: a.promise || '' };
+}
+const debtors = () => { const E = engine(); return customers().map(a => debtInfo(a, E)).filter(d => d.bal > 0); };
+const promiseDue = d => !!d.promise && d.promise <= today();
+const overLimit = d => d.limit > 0 && d.bal > d.limit;
+function waDebtText(d) {
+  let s = `${waHead()}\nمرحباً ${d.a.name} 👋\nتذكير لطيف برصيد حسابكم بتاريخ ${today()}:\n${balWords(d.a, d.bal)}\n`;
+  if (d.oldest) s += `أقدم مبلغ مستحق من تاريخ ${d.oldest}\n`;
+  if (d.promise) s += `موعد السداد المتفق عليه: ${d.promise}\n`;
+  return s + 'نرجو التكرّم بالسداد، وشكراً لتعاملكم معنا 🌹';
+}
+function debtSetup(a) {
+  modal('📅 موعد السداد وسقف الدين — ' + a.name, fields([
+    { k: 'promise', l: 'وعد يدفع بتاريخ', t: 'date' },
+    { k: 'limit', l: `سقف الدين (${cur()}) — فاضي يعني بلا سقف`, t: 'number' },
+    { k: 'promiseNote', l: 'ملاحظة (شو اتفقتو)', full: 1 },
+  ], { promise: a.promise || '', limit: a.limit || '', promiseNote: a.promiseNote || '' }), {
+    extra: a.promise ? '<button type="button" class="btn" id="pClr">✔️ شيل الموعد</button>' : '',
+    onSave: d => {
+      const lim = r2(num(d.limit));
+      if (lim < 0) { toast('السقف لازم يكون رقم موجب', 1); return false; }
+      a.promise = d.promise || ''; a.promiseNote = (d.promiseNote || '').trim(); a.limit = lim || '';
+      save(); toast('تم الحفظ'); route();
+    },
+  });
+  const c = $('#pClr'); if (c) c.onclick = () => { a.promise = ''; a.promiseNote = ''; save(); $('#dlg').close(); toast('انشال الموعد'); route(); };
+}
+V.debts = (id, q, view) => {
+  const all = debtors();
+  const f = ['30', '60', '90', 'due', 'limit'].includes(q.f) ? q.f : 'all';
+  const sort = ['old', 'name', 'pay'].includes(q.s) ? q.s : 'amt';
+  const pass = d => f === 'all' || (f === 'due' ? promiseDue(d) : f === 'limit' ? overLimit(d) : d.age > +f);
+  const list = all.filter(pass).sort((x, y) =>
+    sort === 'old' ? (y.age || 0) - (x.age || 0)
+      : sort === 'name' ? x.a.name.localeCompare(y.a.name, 'ar')
+        : sort === 'pay' ? (x.lastPay || '').localeCompare(y.lastPay || '') || y.bal - x.bal
+          : y.bal - x.bal);
+  const sum = fn => r2(all.reduce((s, d) => s + fn(d), 0));
+  const total = sum(d => d.bal), ages = AGE_BUCKETS.map((_, i) => sum(d => d.ages[i]));
+  const cnt = fn => all.filter(fn).length;
+  const custIds = new Set(customers().map(a => a.id)), mo = today().slice(0, 7);
+  const got = r2(db.vouchers.filter(v => v.type === 'receipt' && v.date.startsWith(mo) && custIds.has(v.acc)).reduce((s, v) => s + num(v.amount) * docRate(v), 0));
+  const C = esc(cur());
+  const tab = (k, l, n) => `<a href="#/debts?f=${k}&s=${sort}" class="${f === k ? 'on' : ''}">${l} (${n})</a>`;
+  const ago = n => (n === 0 ? 'اليوم' : n === 1 ? 'مبارح' : `قبل ${n} يوم`);
+  const cards = list.map(d => {
+    const a = d.a, pct = d.limit ? Math.min(100, Math.round(d.bal / d.limit * 100)) : 0;
+    const cls = d.age > 90 ? 'r' : d.age > 30 ? 'a' : 'g';
+    return `<div class="debt ${cls}" data-name="${esc(normAr(a.name + ' ' + (a.phone || '') + ' ' + (a.code || '')))}">
+      <div class="debt-top"><div><b>${esc(a.name)}</b>${a.phone ? ` <small class="muted" dir="ltr">${esc(a.phone)}</small>` : ''}</div>
+        <div class="debt-amt">${fmt(d.bal)} <small>${C}</small>${oldOn() ? `<small class="muted">بالقديم ${oldAmt(d.bal)}</small>` : ''}</div></div>
+      <div class="debt-tags">
+        <span class="tag ${cls}">⏳ عمر الدين: ${d.age ? d.age + ' يوم' : 'من اليوم'}</span>
+        <span class="tag">${d.lastPay ? '💵 آخر دفعة ' + ago(daysSince(d.lastPay)) : '💵 ما دفع ولا مرة'}</span>
+        ${d.promise ? `<span class="tag ${promiseDue(d) ? 'r' : 'p'}">📅 وعد يدفع ${d.promise === today() ? 'اليوم' : esc(d.promise) + (promiseDue(d) ? ' — فات الموعد' : '')}</span>` : ''}
+        ${overLimit(d) ? `<span class="tag r">🚫 تجاوز السقف (${fmt(d.limit)})</span>` : ''}
+      </div>
+      ${d.limit ? `<div class="debt-bar" title="${pct}٪ من السقف"><i style="width:${pct}%" class="${overLimit(d) ? 'r' : pct >= 80 ? 'a' : 'g'}"></i></div>` : ''}
+      ${a.promiseNote ? `<p class="muted debt-note">📝 ${esc(a.promiseNote)}</p>` : ''}
+      <div class="debt-acts">
+        <button class="mini dpay" data-act="pay" data-id="${a.id}">💵 قبض دفعة</button>
+        <button class="mini wa" data-act="wa" data-id="${a.id}">🟢 تذكير</button>
+        <button class="mini" data-act="setup" data-id="${a.id}">📅 موعد / سقف</button>
+        <a class="mini" href="#/report/statement?acc=${a.id}">📄 كشف</a>
+      </div></div>`;
+  }).join('');
+  const due = cnt(promiseDue);
+  view.innerHTML = head('💳 الديون', `<a class="btn" href="#/report/custprofit">📈 أرباح الزباين</a><a class="btn" href="#/parties?t=c">👥 كل العملاء</a>`) + `
+    <div class="kpis k2">
+      ${kpi('إجمالي الديون لنا', `${fmt(total)} <small>${C}</small>`, 'p')}
+      ${kpi('عدد المديونين', all.length, 'g')}
+      ${kpi('متأخر أكتر من ٣٠ يوم', `${fmt(r2(ages[1] + ages[2] + ages[3]))} <small>${C}</small>`, 'r')}
+      ${kpi('مقبوض من الزباين هالشهر', `${fmt(got)} <small>${C}</small>`, 'g')}
+    </div>
+    ${total ? `<div class="card"><h3>أعمار الديون</h3><div class="age-bar">${ages.map((v, i) => (v ? `<i class="b${i}" style="flex:${v}"></i>` : '')).join('')}</div>
+      <div class="age-leg">${ages.map((v, i) => `<span><i class="b${i}"></i>${AGE_BUCKETS[i][2]}: <b>${fmt(v)}</b> <small class="muted">${Math.round(v / total * 100)}٪</small></span>`).join('')}</div></div>` : ''}
+    ${due && f !== 'due' ? `<a class="card ob-home" href="#/debts?f=due">📅 <b>${due} زبون</b> موعد دفعتهم اليوم أو فات ← <u>شوفهن</u></a>` : ''}
+    <div class="tabs">${tab('all', 'الكل', all.length)}${tab('30', 'أكتر من ٣٠ يوم', cnt(d => d.age > 30))}${tab('60', 'أكتر من ٦٠', cnt(d => d.age > 60))}${tab('90', 'أكتر من ٩٠', cnt(d => d.age > 90))}${tab('due', '📅 مواعيد', due)}${tab('limit', '🚫 تجاوز السقف', cnt(overLimit))}</div>
+    <div class="debt-tools"><input class="search" id="q" placeholder="🔎 بحث بالاسم أو الهاتف">
+      <select id="srt">${optsHtml([['amt', 'الأكبر مبلغاً'], ['old', 'الأقدم ديناً'], ['pay', 'الأطول بلا دفعة'], ['name', 'بالاسم']], sort)}</select></div>
+    <div class="debts">${cards || `<div class="card empty">${all.length ? 'ما في زباين بهالتصنيف' : '🎉 ما في ديون — كل الزباين مسدّدين'}</div>`}</div>`;
+  $('#q', view).oninput = e => { const s = normAr(e.target.value); $$('.debt', view).forEach(c => (c.style.display = c.dataset.name.includes(s) ? '' : 'none')); };
+  $('#srt', view).onchange = e => go(`#/debts?f=${f}&s=${e.target.value}`);
+  onAct(view, {
+    pay: id => voucherForm(null, 'receipt', id, location.hash),
+    wa: id => { const d = all.find(x => x.a.id === id); if (d) waSend(d.a, waDebtText(d)); },
+    setup: id => { const a = acc(id); if (a) debtSetup(a); },
   });
 };
 
@@ -1685,6 +1823,7 @@ V.invoice = (id, q, view) => {
     </div>
   </div>
   </div>
+  <p id="limWarn" class="limit-warn" hidden></p>
   <div class="inv-bar">
     <div class="inv-bar-sum"><small id="barInfo"></small><small id="prnPill" class="prn-pill"></small><b id="barNet">0</b><small id="barOld" class="old-bar"></small></div>
     ${orig ? '' : '<button class="btn" data-act="saveNew">＋ حفظ وجديد</button>'}
@@ -1714,7 +1853,8 @@ V.invoice = (id, q, view) => {
     const pv = num(val('payment')), tr = $('#tRest', view);
     if (tr) tr.textContent = pv ? `الباقي على الحساب: ${fmt(n - pv)} ${sym}${oldOn() ? ` — الدفعة بالقديم: ${oldAmt(toBase(pv))}` : ''}` : '';
     // رصيد الزبون الحالي وبعد الفاتورة (بالجديد والقديم)
-    const tb = $('#tBal', view), pa = acc(val('party'));
+    const tb = $('#tBal', view), pa = acc(val('party')), lw = $('#limWarn', view);
+    let lim = '';
     if (tb) {
       if (!pa || isWalkin(pa.id) || isSeller()) tb.innerHTML = '';
       else {
@@ -1729,8 +1869,10 @@ V.invoice = (id, q, view) => {
         tb.innerHTML = `<table class="acc-sum">${oldOn() ? '<tr><th></th><th>جديد</th><th>قديم</th></tr>' : ''}` +
           [['مجموع الفاتورة', nb], ['الحساب القديم', cb], ['كامل الحساب', kamel], ['الدفعة', paidS], ['رصيد الحساب الحالي', after]]
             .map(([l, v], i) => `<tr class="${i === 4 ? 'last' : i === 2 ? 'mid' : ''}"><td>${l}</td><td class="n">${fmt(v)}</td>${oldOn() ? `<td class="n">${oldAmt(v)}</td>` : ''}</tr>`).join('') + '</table>';
+        lim = inv.type === 'sale' && num(pa.limit) > 0 && after > num(pa.limit) + 0.001 ? `🚫 ${esc(pa.name)} رح يتجاوز سقف الدين (${fmt(num(pa.limit))} ${esc(cur())}) بـ ${fmt(r2(after - num(pa.limit)))}` : '';
       }
     }
+    if (lw) { lw.innerHTML = lim; lw.hidden = !lim; }
     const cnt = inv.lines.reduce((s, l) => s + num(l.qty), 0);
     const fields = { date: val('date'), pay: val('pay'), cashAcc: val('cashAcc'), party: val('party'), cur: inv.cur, rate: val('rate'), discount: val('discount'), addition: val('addition'), addNote: val('addNote'), note: val('note') };
     const dirty = orig ? sigOf(inv.lines, { ...fields, payment: val('payment') }) !== baseSig : inv.lines.length > 0;
@@ -2337,7 +2479,7 @@ V.invoice = (id, q, view) => {
 };
 
 /* ------------------------- السندات ------------------------- */
-function voucherForm(v, type, preAcc) {
+function voucherForm(v, type, preAcc, back) {
   type = v ? v.type : type;
   const isR = type === 'receipt';
   const others = postable().filter(a => !isUnder(a.id, 'cashGroup') && a.id !== 'inventory' && (!isWalkin(a.id) || (v && v.acc === a.id)));
@@ -2363,7 +2505,7 @@ function voucherForm(v, type, preAcc) {
       const o = { date: d.date, amount, acc: d.acc, cashAcc: d.cashAcc, note: d.note, cur: d.cur, rate: d.cur === 'fx' ? R : '' };
       let nv = null;
       if (v) Object.assign(v, o); else db.vouchers.push(nv = { id: uid(), type, ...newNo(type), created: Date.now(), ...o });
-      save(); toast('تم حفظ السند'); go('#/vouchers?t=' + type);
+      save(); toast('تم حفظ السند'); go(back || '#/vouchers?t=' + type);
       if (nv) setTimeout(() => voucherPrintAsk(nv, true), 80);
     },
   });
@@ -2552,6 +2694,23 @@ V.entry = (id, q, view) => {
 };
 
 /* ------------------------- التقارير ------------------------- */
+// أرباح كل زبون بفترة: من حركات المستودع (المبيع ناقص المرتجع) — الكلفة بالمتوسط المرجّح وقت البيع
+function custProfit(from, to) {
+  const agg = {}, debts = sums();
+  for (const m of engine().moves) {
+    if ((m.kind !== 'sale' && m.kind !== 'saleReturn') || m.date < from || m.date > to) continue;
+    const a = acc(m.party), id = a && !isWalkin(a.id) ? a.id : '_cash';
+    const c = agg[id] || (agg[id] = { id, acc: id !== '_cash', name: id !== '_cash' ? a.name : 'زباين نقدي', val: 0, cost: 0, qty: 0, refs: new Set() });
+    const sg = m.kind === 'sale' ? 1 : -1;
+    c.val += sg * m.val; c.cost += sg * m.cost; c.qty += sg * (m.out || m.in);
+    if (m.kind === 'sale') c.refs.add(m.ref);
+  }
+  return Object.values(agg).map(c => {
+    const val = r2(c.val), cost = r2(c.cost), profit = r2(val - cost);
+    const d = debts[c.id];
+    return { id: c.id, acc: c.acc, name: c.name, val, cost, profit, qty: r2(c.qty), n: c.refs.size, margin: val > 0 ? profit / val : 0, debt: d ? d.dr - d.cr : 0 };
+  });
+}
 const REPORTS = {
   statement: { t: 'كشف حساب', d: 'حركة أي حساب أو عميل أو مورد مع الرصيد التراكمي' },
   trial: { t: 'ميزان المراجعة', d: 'مجاميع وأرصدة كل الحسابات خلال فترة' },
@@ -2560,6 +2719,7 @@ const REPORTS = {
   stock: { t: 'جرد المستودع', d: 'الكميات الحالية وقيمتها بالكلفة وبسعر المبيع' },
   itemcard: { t: 'بطاقة مادة', d: 'كل حركات مادة معيّنة دخولاً وخروجاً' },
   itemprofit: { t: 'أرباح المواد', d: 'المبيعات والكلفة والربح لكل مادة خلال فترة' },
+  custprofit: { t: 'أرباح الزباين', d: 'مين الأكثر ربحاً ومين الأكثر سحب بضاعة — ومين بيسحب كتير بربح قليل' },
   parties: { t: 'أرصدة العملاء والموردين', d: 'من له ومن عليه بتاريخ معيّن' },
 };
 V.reports = (id, q, view) => {
@@ -2689,6 +2849,52 @@ V.report = (type, q, view) => {
     }).join('');
     body = table(['المادة', 'الكمية المباعة', 'المبيعات', 'الكلفة', 'الربح', 'نسبة الربح'], rows,
       `<tr><td colspan="2">الإجمالي</td><td class="n">${fmt(T.val)}</td><td class="n">${fmt(T.cost)}</td><td class="n">${fmt(T.val - T.cost)}</td><td></td></tr>`);
+  }
+
+  if (type === 'custprofit') {
+    const SORTS = { profit: 'الأكثر ربحاً', val: 'الأكثر سحب بضاعة (بالمبلغ)', qty: 'الأكثر سحب بضاعة (بالكمية)', margin: 'أعلى نسبة ربح', low: 'أضعف نسبة ربح' };
+    const sort = SORTS[q.sort] ? q.sort : 'profit';
+    filters = [F.from, F.to, { k: 'sort', l: 'الترتيب', t: 'select', opts: Object.entries(SORTS) }];
+    vals.sort = sort;
+    const C = custProfit(from, to), T = C.reduce((t, c) => ({ val: t.val + c.val, cost: t.cost + c.cost, qty: t.qty + c.qty }), { val: 0, cost: 0, qty: 0 });
+    const tp = T.val - T.cost, avgM = T.val > 0 ? tp / T.val : 0;
+    const pc = (x, y) => (y ? Math.round(x / y * 100) : 0);
+    const P = m => `<span dir="ltr">${fmt(m * 100)}%</span>`;
+    const key = { profit: c => c.profit, val: c => c.val, qty: c => c.qty, margin: c => c.margin, low: c => -c.margin }[sort];
+    C.sort((a, b) => key(b) - key(a) || b.val - a.val);
+    // التقييم: نسبة ربح الزبون مقارنة بالمتوسط — «سحب كتير وربح قليل» = من أكبر الزباين سحباً ونسبة ربحه أقل من نص المتوسط
+    const byVal = [...C].sort((a, b) => b.val - a.val), bigN = Math.max(1, Math.ceil(C.length / 3));
+    const big = new Set(byVal.slice(0, bigN).filter(c => c.val > 0).map(c => c.id));
+    const rate = c => (c.profit < 0 ? ['r', '🔻 خسارة'] : avgM > 0 && c.margin < avgM * 0.5 ? (big.has(c.id) ? ['r', '⚠️ بيسحب كتير بربح قليل'] : ['a', 'ربح ضعيف']) : avgM > 0 && c.margin >= avgM * 1.3 ? ['g', '⭐ ربح ممتاز'] : ['', 'عادي']);
+    const warn = C.filter(c => rate(c)[1].startsWith('⚠️') || c.profit < 0);
+    const top = [...C].sort((a, b) => b.profit - a.profit)[0], topV = byVal[0];
+    const bar = (v, max, cls) => `<span class="cp-bar"><i class="${cls}" style="width:${max > 0 ? Math.max(0, Math.round(v / max * 100)) : 0}%"></i></span>`;
+    const maxV = byVal[0] ? byVal[0].val : 0, maxP = Math.max(0, ...C.map(c => c.profit));
+    const rows = C.map((c, i) => {
+      const [cls, lbl] = rate(c);
+      return `<tr ${c.acc ? `data-act="st" data-id="${esc(c.id)}"` : ''}><td class="n">${i + 1}</td><td><b>${esc(c.name)}</b></td>
+        <td class="n">${c.n}</td><td class="n">${fmt(c.qty)}</td>
+        <td class="n">${fmt(c.val)}${bar(c.val, maxV, 'v')}<small class="muted">${pc(c.val, T.val)}٪ من المبيعات</small></td>
+        <td class="n ${c.profit < 0 ? 'neg' : 'pos'}">${fmt(c.profit)}${bar(c.profit, maxP, 'p')}<small class="muted">${pc(c.profit, tp)}٪ من الربح</small></td>
+        <td class="n"><b>${c.val ? P(c.margin) : ''}</b></td>
+        <td>${lbl === 'عادي' ? '<span class="muted">عادي</span>' : `<span class="tag ${cls}">${lbl}</span>`}</td>
+        <td class="n">${c.acc && r2(c.debt) > 0 ? fmt(c.debt) : '—'}</td></tr>`;
+    }).join('');
+    body = !C.length ? '<p class="muted">ما في مبيعات بهالفترة.</p>' : `
+      <div class="kpis k2">
+        ${kpi('🏆 الأكثر ربحاً', `${esc(top.name)}<small class="muted cp-sub">ربح ${fmt(top.profit)} — نسبة ${P(top.margin)}</small>`, 'g')}
+        ${kpi('📦 الأكثر سحب بضاعة', `${esc(topV.name)}<small class="muted cp-sub">مبيعات ${fmt(topV.val)} — نسبة ربح ${P(topV.margin)}</small>`, 'p')}
+        ${kpi('متوسط نسبة الربح', `${P(avgM)}<small class="muted cp-sub">ربح ${fmt(tp)} من مبيعات ${fmt(T.val)}</small>`, 'a')}
+        ${kpi('⚠️ سحب كتير بربح قليل', `${warn.length} زبون<small class="muted cp-sub">${warn.slice(0, 3).map(c => esc(c.name)).join('، ') || 'ما في 👍'}</small>`, 'r')}
+      </div>
+      <p class="muted cp-help">الربح = سعر المبيع (بعد الحسم) ناقص كلفة البضاعة، والمرتجعات منقوصة. «ربح ضعيف» = نسبة ربحه أقل من نص المتوسط، و«ربح ممتاز» = أعلى من المتوسط بـ ٣٠٪. اكبس على أي زبون لتشوف كشف حسابه.</p>
+      ${table(['#', 'الزبون', 'فواتير', 'الكمية', 'المبيعات', 'الربح', 'نسبة الربح', 'التقييم', 'الدين عليه'], rows,
+      `<tr><td colspan="3">الإجمالي</td><td class="n">${fmt(T.qty)}</td><td class="n">${fmt(T.val)}</td><td class="n">${fmt(tp)}</td><td class="n">${P(avgM)}</td><td colspan="2"></td></tr>`, 'cp-tbl')}
+      <div class="cp-cards">${C.map((c, i) => { const [cls, lbl] = rate(c); return `<div class="cp-card ${cls}" ${c.acc ? `data-act="st" data-id="${esc(c.id)}"` : ''}>
+        <div class="cp-h"><b>${i + 1}. ${esc(c.name)}</b>${lbl === 'عادي' ? '' : `<span class="tag ${cls}">${lbl}</span>`}</div>
+        <div class="cp-row"><span>📦 سحب بضاعة: <b>${fmt(c.val)}</b> <small class="muted">(${fmt(c.qty)} قطعة، ${c.n} فاتورة)</small></span><small class="muted">${pc(c.val, T.val)}٪</small></div>${bar(c.val, maxV, 'v')}
+        <div class="cp-row"><span>💰 الربح: <b class="${c.profit < 0 ? 'neg' : 'pos'}">${fmt(c.profit)}</b> — نسبة <b>${P(c.margin)}</b></span><small class="muted">${pc(c.profit, tp)}٪</small></div>${bar(c.profit, maxP, 'p')}
+        ${c.acc && r2(c.debt) > 0 ? `<small class="muted">💳 الدين عليه: ${fmt(c.debt)}</small>` : ''}</div>`; }).join('')}</div>`;
   }
 
   if (type === 'parties') {

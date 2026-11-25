@@ -9,7 +9,7 @@
 <link rel="manifest" href="manifest.json">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon-192.png">
-<link rel="stylesheet" href="styles.css?v=6.75">
+<link rel="stylesheet" href="styles.css?v=6.78">
 </head>
 <body>
 <div class="app">
@@ -23,6 +23,7 @@
       <a href="#/invoices" data-r="invoices"><i>🧾</i>الفواتير</a>
       <a href="#/vouchers" data-r="vouchers"><i>💵</i>سندات القبض والدفع</a>
       <a href="#/parties" data-r="parties"><i>👥</i>العملاء والموردون</a>
+      <a href="#/debts" data-r="debts"><i>💳</i>الديون</a>
       <a href="#/items" data-r="items"><i>📦</i>المواد والمستودع</a>
       <a href="#/groups" data-r="groups"><i>📂</i>مجموعات المواد</a>
       <a href="#/accounts" data-r="accounts"><i>📒</i>دليل الحسابات</a>
@@ -49,8 +50,8 @@
 <div id="toast"></div>
 <div id="print"></div>
 <script src="config.js"></script>
-<script src="store.js?v=6.75"></script>
-<script>Store.start(['lib/qrcode.js', 'app.js?v=6.75', 'cloud.js?v=6.75', 'printer.js?v=6.75', 'import.js?v=6.75', 'order.js?v=6.75', 'voice.js?v=6.75', 'calc.js?v=6.75'], function () {
+<script src="store.js?v=6.78"></script>
+<script>Store.start(['lib/qrcode.js', 'app.js?v=6.78', 'cloud.js?v=6.78', 'printer.js?v=6.78', 'import.js?v=6.78', 'order.js?v=6.78', 'voice.js?v=6.78', 'calc.js?v=6.78'], function () {
   if (window.Voice && Voice.supported) { ['voiceBtn', 'voiceSide'].forEach(function (id) { var b = document.getElementById(id); b.hidden = false; b.onclick = function () { document.body.classList.remove('menu-open'); Voice.listen(); }; }); }
 });</script>
 </body>

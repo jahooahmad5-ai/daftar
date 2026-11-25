@@ -409,3 +409,54 @@ body.locked #calc{display:none}
 .party-wrap .new-party{align-self:flex-start;color:#0f766e;font-weight:800}
 .pp-new{width:100%;margin-bottom:8px;color:#0f766e;font-weight:800;background:#f0fbf9;border-color:#14b8a6}
 .pp-new.hot{background:#0f766e;color:#fff;font-size:17px;padding:12px}
+
+/* ---------- الديون ---------- */
+.kpi-link{color:inherit;text-decoration:none}
+.age-bar{display:flex;height:14px;border-radius:999px;overflow:hidden;background:var(--line);gap:2px}
+.age-leg{display:flex;flex-wrap:wrap;gap:6px 16px;margin-top:10px;font-size:13.5px}
+.age-leg span{display:flex;align-items:center;gap:6px}
+.age-leg i{display:inline-block;width:10px;height:10px;border-radius:3px}
+.b0{background:#22a06b}.b1{background:#f5b83d}.b2{background:#e8743b}.b3{background:#d64545}
+.debt-tools{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap}
+.debt-tools .search{flex:1;min-width:0;max-width:none}
+.debts{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:12px}
+@media (max-width:520px){.debts{grid-template-columns:1fr}}
+.debt{background:#fff;border:1px solid var(--line);border-inline-start:4px solid var(--green);border-radius:var(--r);padding:12px 14px;box-shadow:var(--sh)}
+.debt.a{border-inline-start-color:#f5b83d}.debt.r{border-inline-start-color:var(--red)}
+.debt-top{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}
+.debt-amt{font-size:20px;font-weight:700;font-variant-numeric:tabular-nums;text-align:left;white-space:nowrap}
+.debt-amt small{font-size:12px;font-weight:400}.debt-amt small.muted{display:block}
+.debt-tags{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}
+.tag{font-size:12.5px;padding:2px 8px;border-radius:999px;background:#f1f5f4;color:var(--ink)}
+.tag.g{background:#e6f6ee;color:#11704a}.tag.a{background:#fff4dc;color:#8a5a00}.tag.r{background:#fde8e8;color:#a32626}.tag.p{background:var(--pri-soft)}
+.debt-bar{height:6px;background:var(--line);border-radius:999px;overflow:hidden;margin-bottom:8px}
+.debt-bar i{display:block;height:100%}.debt-bar i.g{background:#22a06b}.debt-bar i.a{background:#f5b83d}.debt-bar i.r{background:var(--red)}
+.debt-note{font-size:13px;margin:0 0 8px}
+.debt-acts{display:flex;flex-wrap:wrap;gap:6px}
+.debt-acts .mini{padding:6px 10px;font-size:13px}
+.mini.dpay{background:var(--pri);color:#fff;border-color:var(--pri)}
+.limit-warn{margin:8px 0 0;padding:8px 10px;border-radius:8px;background:#fde8e8;color:#a32626;font-size:14px}
+@media (max-width:520px){.kpis.k2{grid-template-columns:1fr 1fr;gap:8px}.kpis.k2 .kpi{padding:10px 12px}.kpis.k2 .kpi b{font-size:17px}}
+/* ---------- أرباح الزباين ---------- */
+.cp-sub{display:block;font-size:12.5px;font-weight:400;margin-top:2px}
+.kpis .kpi b .cp-sub{font-size:12.5px}
+.cp-help{font-size:13px;margin:0 0 10px}
+.cp-bar{display:block;height:5px;background:var(--line);border-radius:999px;overflow:hidden;margin:4px 0 2px;min-width:70px}
+.cp-bar i{display:block;height:100%}.cp-bar i.v{background:#4c7bd9}.cp-bar i.p{background:#22a06b}
+.cp-tbl td small.muted{display:block;font-size:11.5px;white-space:nowrap}
+.cp-tbl tr[data-act]{cursor:pointer}
+.cp-cards{display:none}
+@media (max-width:700px){
+  #rep .cp-tbl{display:none}#rep .tbl:has(.cp-tbl){display:none}
+  .cp-cards{display:grid;gap:10px}
+  .cp-card{border:1px solid var(--line);border-inline-start:4px solid var(--line);border-radius:var(--r);padding:10px 12px;cursor:pointer}
+  .cp-card.g{border-inline-start-color:#22a06b}.cp-card.a{border-inline-start-color:#f5b83d}.cp-card.r{border-inline-start-color:var(--red)}
+  .cp-h{display:flex;justify-content:space-between;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:6px}
+  .cp-row{display:flex;justify-content:space-between;gap:8px;font-size:14px;margin-top:4px}
+}
+@media print{.cp-cards{display:none!important}}
+/* ---------- فواتير نقطة البيع بالرئيسية ---------- */
+.pos-today h3{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.kpis.k3{grid-template-columns:repeat(3,1fr);gap:8px}
+.kpis.k3 .kpi{padding:10px 12px}.kpis.k3 .kpi b{font-size:17px}
+@media (max-width:520px){.kpis.k3 .kpi b{font-size:15px}.kpis.k3 .kpi span{font-size:12px}}
