@@ -502,3 +502,46 @@ body.fz .ln-head{row-gap:4px}
 .ln-row .cp-s input{font-size:13px;padding-inline:2px;color:#55606b;border-style:dashed}
 .ln-row .cp-s span{font-size:10.5px;white-space:nowrap}
 
+/* صفحة السند */
+.vp-type{display:flex;align-items:center;gap:6px;background:#4b7fa6;border-radius:18px 18px 4px 4px;padding:6px 10px;margin-bottom:10px}
+.vp-r{flex:1;display:flex;align-items:center;justify-content:center;gap:8px;border:0;background:transparent;color:#fff;font:inherit;font-size:16px;font-weight:700;padding:6px 0;cursor:pointer}
+.vp-r small{font-weight:400;opacity:.85}
+.vp-r i{width:20px;height:20px;border-radius:50%;border:2.5px solid #fff;box-sizing:border-box}
+.vp-r.on i{background:radial-gradient(#fff 0 4px,transparent 5px)}
+.vp-ic{border:0;width:40px;height:40px;border-radius:12px;background:#5aa39c;color:#fff;font-size:20px;cursor:pointer;flex:none}
+.vp-ic.list{border-radius:50%;background:#4f8f89}
+.vp-acc{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+.vp-name{flex:1;min-width:0;border:2px solid #7f9bb5;border-radius:14px;background:#fff;font:inherit;font-size:22px;font-weight:800;padding:12px 8px;cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.vp-more{border:0;border-radius:10px;background:#7cc3bd;color:#fff;font:inherit;font-size:14px;padding:12px 10px;cursor:pointer;flex:none}
+.vp-meta{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px}
+.vp-meta label{display:flex;align-items:center;gap:8px;color:#2f6f9f;font-size:15px}
+.vp-meta input,.vp-meta b{flex:1;min-width:0;background:#eceff1;border:0;border-radius:4px;padding:9px 6px;text-align:center;font-weight:700;color:var(--ink);font-variant-numeric:tabular-nums}
+.vp-main{display:flex;gap:10px;align-items:stretch;margin-bottom:8px}
+.vp-fields{flex:1;min-width:0;display:flex;flex-direction:column;gap:8px}
+.vp-amt{display:flex;gap:6px;align-items:center}
+.vp-amt input{flex:1.4;min-width:0;border:2px solid #7f9bb5;border-radius:14px;padding:12px 6px;text-align:center;font-size:22px;font-weight:800;direction:ltr}
+.vp-amt select{flex:1;min-width:0;border:2px solid #7f9bb5;border-radius:14px;padding:12px 4px;text-align:center;font:inherit;font-size:15px;background:#fff}
+.vp-calc{flex:none;width:44px;height:44px;border:0;border-radius:50%;background:#4a90d9;font-size:20px;cursor:pointer}
+.vp-rate,.vp-note,.vp-box{border:2px solid #7f9bb5;border-radius:14px;padding:11px 10px;text-align:center;font:inherit;font-size:16px;background:#fff}
+.vp-note{font-size:17px}
+.vp-old{color:#8a5a00;text-align:center;font-weight:600}
+.vp-old:empty{display:none}
+.vp-save{flex:none;width:82px;border:0;border-radius:6px;background:#4f9a94;color:#fff;font:inherit;font-size:18px;font-weight:800;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;cursor:pointer}
+.vp-save i{font-style:normal;font-size:26px}
+.vp-acts{display:flex;justify-content:space-around;gap:6px;margin:4px 0 12px}
+.vp-acts button{border:0;background:transparent;font:inherit;font-size:14.5px;color:#33463f;cursor:pointer;padding:6px 2px}
+.vp-acts button.red{color:var(--red)}
+.vp-hist-h{background:#4b7fa6;color:#fff;text-align:center;font-weight:700;font-size:16px;padding:8px;border-radius:18px 18px 4px 4px}
+.vp-hist{margin-bottom:70px}
+.vp-mv{border-bottom:1.5px solid #4b7fa6;padding:10px 6px;cursor:pointer}
+.vp-mv-h{display:flex;justify-content:space-between;align-items:center;font-size:16px}
+.vp-mv-h span{display:flex;align-items:center;gap:6px;font-weight:600}
+.vp-mv-h i{font-style:normal;font-size:20px}
+.vp-mv-h i.up{color:#2e7d5b}
+.vp-mv-h i.down{color:#9b1c1c}
+.vp-mv-a{text-align:center;font-size:19px;font-weight:700;color:#2f6f9f;margin-top:6px;font-variant-numeric:tabular-nums;direction:ltr}
+.vp-mv-a small{color:#333;font-size:14px}
+.vp-mv-n{text-align:center;color:#666;margin-top:4px}
+.vp-bar{position:sticky;bottom:0;display:flex;align-items:center;gap:8px;background:#4b7fa6;color:#fff;border-radius:4px 4px 18px 18px;padding:6px;box-shadow:0 -4px 16px rgba(0,0,0,.15)}
+.vp-bar span{flex:1;text-align:center;font-weight:700;font-size:16px;font-variant-numeric:tabular-nums}
+.vp-bar button{border:0;border-radius:12px;background:#7cc3bd;color:#fff;font:inherit;font-size:14px;padding:12px 14px;cursor:pointer}

@@ -482,7 +482,7 @@ function printDoc(html) {
 
 /* ------------------------- الموجّه ------------------------- */
 const V = {};
-const NAV_MAP = { invoice: 'invoices', entry: 'journal', report: 'reports' };
+const NAV_MAP = { voucher: 'vouchers', invoice: 'invoices', entry: 'journal', report: 'reports' };
 /* ------------------------- وضع البيّاع (لهالموبايل بس) ------------------------- */
 // محفوظ عالجهاز (مش بالمزامنة) — هيك بيتفعّل على موبايل الشب بس
 // «وضع البيّاع» القديم (بالرمز السري) انشال: الموبايل يلي كان عليه بيصير موبايل نقطة بيع (بالباركود والتفعيل)
@@ -2673,6 +2673,135 @@ V.invoice = (id, q, view) => {
   };
   if (window.Voice) Voice.invReady();
   if (window.Receipt) { Receipt.pill(); const w = Receipt.warm(); if (w) w.then(() => Receipt.pill()); }
+};
+
+/* ------------------------- صفحة السند (قبض / دفع) ------------------------- */
+// حركات الحساب الأخيرة: + لصالحه (له)، − عليه
+function accMoves(a, n = 30) {
+  const sign = a.type === 'asset' || a.type === 'expense' ? 1 : -1, out = [];
+  for (const e of engine().entries) {
+    const d = e.lines.filter(l => l.acc === a.id).reduce((s, l) => s + (l.dr - l.cr) * sign, 0);
+    if (!d) continue;
+    let label = 'قيد', no = e.no, note = '';
+    if (e.src === 'invoice') { const i = db.invoices.find(x => x.id === e.ref); label = i ? INV_TYPES[i.type].replace('فاتورة ', '') : 'فاتورة'; no = i ? i.no : no; note = i && i.note || ''; }
+    else if (e.src === 'voucher') { const v = db.vouchers.find(x => x.id === e.ref); label = v && v.type === 'payment' ? 'سند دفع' : 'سند قبض'; no = v ? v.no : no; note = v && v.note || ''; }
+    else if (e.desc) note = e.desc;
+    out.push({ date: e.date, label, no, amt: r2(-d), note, src: e.src, ref: e.ref });
+  }
+  return out.slice(-n).reverse();
+}
+const balWord = (a, v) => (!v ? '' : (v > 0) === (a.type === 'asset' || a.type === 'expense') ? 'عليه' : 'له');
+V.voucher = (id, q, view) => {
+  const orig = id === 'new' ? null : db.vouchers.find(x => x.id === id);
+  if (id !== 'new' && !orig) return go('#/vouchers');
+  let type = orig ? orig.type : q.type === 'payment' ? 'payment' : 'receipt';
+  const others = postable().filter(a => !isUnder(a.id, 'cashGroup') && a.id !== 'inventory' && (!isWalkin(a.id) || (orig && orig.acc === a.id)));
+  let accId = orig ? orig.acc : q.acc || '';
+  const v = orig || { date: today(), amount: '', cur: 'base', rate: db.settings.rate || '', note: '', cashAcc: cashAccounts()[0]?.id || '' };
+  if (!orig) reserveNo(type);
+  const boxes = cashAccounts();
+  const draw = () => {
+    const a = acc(accId), no = orig ? orig.no : 'جديد';
+    const moves = a ? accMoves(a) : [];
+    const bal = a ? partyBal(a) : 0;
+    view.innerHTML = `
+    <div class="vp-type">
+      <button type="button" class="vp-r${type === 'payment' ? ' on' : ''}" data-act="type" data-id="payment"><i></i>سند دفع <small>(عليه)</small></button>
+      <button type="button" class="vp-r${type === 'receipt' ? ' on' : ''}" data-act="type" data-id="receipt"><i></i>سند قبض <small>(له)</small></button>
+      <button type="button" class="vp-ic" data-act="reset" aria-label="سند جديد">⟳</button>
+    </div>
+    <div class="vp-acc">
+      <button type="button" class="vp-ic list" data-act="stmt" aria-label="كشف حساب">📋</button>
+      <button type="button" class="vp-name" data-act="pick">${a ? esc(a.name) : '<span class="muted">اختار الحساب</span>'}</button>
+      <button type="button" class="vp-more" data-act="more">عمليات أخرى</button>
+    </div>
+    <div class="vp-meta"><label>التاريخ<input name="date" type="date" value="${esc(v.date)}"></label><label>الرقم<b>${esc(no)}</b></label></div>
+    <div class="vp-main">
+      <div class="vp-fields">
+        <div class="vp-amt">
+          <input name="amount" type="number" step="any" inputmode="decimal" placeholder="المبلغ" value="${esc(v.amount)}">
+          <button type="button" class="vp-calc" data-act="calc" aria-label="آلة حاسبة">🧮</button>
+          <select name="cur">${[['base', cur()], ['fx', FX().sym]].map(([k, l]) => `<option value="${k}"${v.cur === k ? ' selected' : ''}>${esc(l)}</option>`).join('')}</select>
+        </div>
+        <input name="rate" class="vp-rate" type="number" step="any" placeholder="سعر الصرف (${esc(cur())} لكل 1 ${esc(FX().sym)})" value="${esc(v.rate)}" ${v.cur === 'fx' ? '' : 'hidden'}>
+        <small class="vp-old" id="vpOld"></small>
+        <input name="note" class="vp-note" placeholder="ملاحظات" value="${esc(v.note || '')}">
+        ${boxes.length > 1 ? `<select name="cashAcc" class="vp-box">${boxes.map(b => `<option value="${b.id}"${v.cashAcc === b.id ? ' selected' : ''}>${type === 'receipt' ? 'إلى' : 'من'}: ${esc(b.name)}</option>`).join('')}</select>` : ''}
+      </div>
+      <button type="button" class="vp-save" data-act="save"><i>💾</i>حفظ</button>
+    </div>
+    <div class="vp-acts">
+      <button type="button" data-act="share">📤 مشاركة وطباعة</button>
+      <button type="button" data-act="another">🆕 إنشاء سند آخر</button>
+      ${orig ? '<button type="button" class="red" data-act="del">🗑 حذف</button>' : ''}
+    </div>
+    <div class="vp-hist-h">الحركات الأخيرة</div>
+    <div class="vp-hist">${!a ? '<p class="muted" style="text-align:center">اختار الحساب لتشوف حركاته</p>' : moves.length ? moves.map(m => `
+      <div class="vp-mv" data-act="openMv" data-id="${esc(m.src + ':' + m.ref)}">
+        <div class="vp-mv-h"><span><i class="${m.amt >= 0 ? 'up' : 'down'}">${m.amt >= 0 ? '▲' : '▼'}</i>${esc(m.label)} [${esc(m.no)}]</span><b>${esc(m.date)}</b></div>
+        <div class="vp-mv-a">${fmt(m.amt)} <small>${esc(cur())}</small></div>
+        ${m.note ? `<div class="vp-mv-n">${esc(m.note)}</div>` : ''}
+      </div>`).join('') : '<p class="muted" style="text-align:center">ما في حركات</p>'}</div>
+    ${a ? `<div class="vp-bar"><span>رصيده [ ${fmt(Math.abs(bal))} ${esc(cur())} ${balWord(a, bal)} ]</span>${isUnder(a.id, 'customers') ? '<button type="button" data-act="settle">تصفية الديون</button>' : ''}</div>` : ''}`;
+    const am = $('[name=amount]', view), cu = $('[name=cur]', view), rt = $('[name=rate]', view), old = $('#vpOld', view);
+    const upd = () => {
+      const x = num(am.value), fx = cu.value === 'fx', R = num(rt.value), base = fx ? x * R : x;
+      rt.hidden = !fx;
+      old.textContent = !x ? '' : fx && !R ? 'اكتب سعر الصرف' : `${fx ? `= ${fmt(r2(base))} ${cur()} — ` : ''}${oldOn() ? 'بالعملة القديمة: ' + oldAmt(base) : ''}`;
+    };
+    view.oninput = view.onchange = () => { v.date = $('[name=date]', view).value; v.amount = am.value; v.cur = cu.value; v.rate = rt.value; v.note = $('[name=note]', view).value; const bx = $('[name=cashAcc]', view); if (bx) v.cashAcc = bx.value; upd(); };
+    upd();
+  };
+  const pick = () => {
+    modal('👤 اختار الحساب', `<input class="search" id="ppQ" placeholder="🔎 ابحث بالاسم أو الهاتف" autocomplete="off" style="margin-bottom:8px">
+      <div id="ppList" class="pp-list">${others.map(a => `<button type="button" class="pp-item" data-id="${a.id}" data-name="${esc(normAr((a.name || '') + ' ' + (a.phone || '')))}"><b>${esc(a.name)}</b>${a.phone ? `<small>${esc(a.phone)}</small>` : ''}</button>`).join('')}</div>`);
+    const d = $('#dlg'), qq = $('#ppQ', d);
+    qq.oninput = () => { const t = normAr(qq.value.trim()); $$('.pp-item', d).forEach(b => (b.style.display = !t || b.dataset.name.includes(t) ? '' : 'none')); };
+    $('#ppList', d).onclick = e => { const b = e.target.closest('.pp-item'); if (!b) return; accId = b.dataset.id; d.close(); draw(); };
+    setTimeout(() => qq.focus(), 100);
+  };
+  const doSave = () => {
+    const amount = r2(num(v.amount)), R = num(v.rate);
+    if (!accId) { toast('اختار الحساب', 1); return pick(); }
+    if (amount <= 0) return toast('أدخل مبلغاً صحيحاً', 1);
+    if (v.cur === 'fx' && R <= 0) return toast('أدخل سعر الصرف', 1);
+    if (!v.cashAcc) return toast('ما في صندوق', 1);
+    const o = { date: v.date, amount, acc: accId, cashAcc: v.cashAcc, note: v.note || '', cur: v.cur, rate: v.cur === 'fx' ? R : '' };
+    let sv = orig;
+    if (orig) Object.assign(orig, o, { type });
+    else db.vouchers.push(sv = { id: uid(), type, ...newNo(type), created: Date.now(), ...o });
+    save(); toast(`✅ انحفظ ${type === 'receipt' ? 'سند القبض' : 'سند الدفع'} رقم ${sv.no}`);
+    go('#/voucher/' + sv.id);
+  };
+  onAct(view, {
+    type: t => { if (orig && orig.type !== t && !confirm('تغيير نوع السند؟')) return; type = t; if (!orig) reserveNo(t); draw(); },
+    reset: () => go('#/voucher/new?type=' + type + (accId ? '&acc=' + accId : '')),
+    pick, save: doSave,
+    stmt: () => (accId ? go('#/report/statement?acc=' + accId) : pick()),
+    more: () => {
+      const a = acc(accId); if (!a) return pick();
+      modal('⋯ عمليات أخرى — ' + a.name, `<div class="share-grid">
+        <button type="button" data-m="stmt">📄 كشف حساب</button>
+        <button type="button" data-m="wa">💬 رصيده عالواتساب</button>
+        ${isUnder(a.id, 'customers') ? '<button type="button" data-m="debt">💳 إضافة دين</button>' : ''}
+        <button type="button" data-m="pick">👤 حساب تاني</button></div>`);
+      const d = $('#dlg');
+      $$('[data-m]', d).forEach(b => (b.onclick = () => {
+        d.close(); const m = b.dataset.m;
+        if (m === 'stmt') go('#/report/statement?acc=' + a.id);
+        else if (m === 'wa') waSend(a, waBalanceText(a));
+        else if (m === 'debt') addDebt(a.id);
+        else pick();
+      }));
+    },
+    calc: () => { $('[name=amount]', view).focus(); const f = document.getElementById('calcFab'); if (f) { f.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true })); f.dispatchEvent(new PointerEvent('pointerup', { bubbles: true })); } },
+    share: () => (orig ? voucherPrintAsk(orig) : toast('احفظ السند أول', 1)),
+    another: () => go('#/voucher/new?type=' + type),
+    del: () => { if (!confirm('حذف السند؟')) return; db.vouchers = db.vouchers.filter(x => x.id !== orig.id); save(); toast('تم الحذف'); go('#/vouchers'); },
+    settle: () => settleDebt(accId),
+    openMv: k => { const [src, ref] = k.split(':'); if (src === 'invoice') go('#/invoice/' + ref); else if (src === 'voucher' && ref !== (orig && orig.id)) go('#/voucher/' + ref); },
+  });
+  draw();
 };
 
 /* ------------------------- السندات ------------------------- */
