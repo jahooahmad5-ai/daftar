@@ -38,7 +38,7 @@ module.exports = [
       await setupItem(p, true);
       await p.evaluate(x => localStorage.setItem('daftar_draft_sale', x), draft({ price: 1100, box: 'repbox_1' }));
       await p.asReload(); await p.go('#/invoice/new?type=sale'); await p.waitForTimeout(400); await p.closeDlg();
-      await p.click('.ln-card [data-act=lineMenu]'); await p.click('#dlg [data-m=editItem]'); await p.waitForTimeout(200);
+      await p.evaluate(() => document.querySelector('[data-act=editItem]').click()); await p.waitForTimeout(200);
       assert.strictEqual(await p.evaluate(() => document.getElementById('dlg').open), false);
       assert.match(await p.text('#toast'), /مسكّر بوضع البيّاع/);
     },

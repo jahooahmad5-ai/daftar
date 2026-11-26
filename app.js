@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '6.92';
+const APP_VERSION = '6.93';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -482,7 +482,7 @@ function printDoc(html) {
 
 /* ------------------------- الموجّه ------------------------- */
 const V = {};
-const NAV_MAP = { invoice: 'invoices', invprev: 'invoices', entry: 'journal', report: 'reports' };
+const NAV_MAP = { invoice: 'invoices', entry: 'journal', report: 'reports' };
 /* ------------------------- وضع البيّاع (لهالموبايل بس) ------------------------- */
 // محفوظ عالجهاز (مش بالمزامنة) — هيك بيتفعّل على موبايل الشب بس
 // «وضع البيّاع» القديم (بالرمز السري) انشال: الموبايل يلي كان عليه بيصير موبايل نقطة بيع (بالباركود والتفعيل)
@@ -528,7 +528,7 @@ function repBoxDialog() {
   });
 }
 const NO_BOX = '💰 صندوقك لسا ما وصل — اكبس 🔄 مزامنة. إذا ضل، خلّي المدير يفتح الإعدادات عنده';
-const SELLER_ROUTES = ['home', 'invoices', 'invoice', 'invprev', 'vouchers'];
+const SELLER_ROUTES = ['home', 'invoices', 'invoice', 'vouchers'];
 // موبايل انفتح من رابط/باركود نقطة البيع: بينقفل عليها من أول فتحة (حتى قبل تسجيل الدخول)
 const POS_DEV_KEY = 'daftar_pos_device';
 // قفل البرنامج: الدفتر الكامل بيفتح بس على موبايل مسجّل دخول بحساب المدير وفاتح الشركة — غير هيك شاشة دخول بس
@@ -626,14 +626,14 @@ function route() {
   const q = Object.fromEntries(new URLSearchParams(qs || ''));
   const view = $('#view');
   view.onclick = view.oninput = view.onchange = view.onsubmit = null;
-  view.classList.remove('typing', 'inv-new');
+  view.classList.remove('typing');
   { const tc = $('#topCnt'); if (tc) tc.hidden = true; }
   let key = V[name] ? name : 'home';
   // لسا السحابة ما تحمّلت: ما منفرجي شي لحتى نعرف إذا الموبايل مسموحله (ما في وميض للدفتر)
   if (!window.Cloud && window.DAFTAR_CLOUD && window.DAFTAR_CLOUD.url) { view.innerHTML = '<p class="muted" style="text-align:center;margin-top:40px">⏳</p>'; return; }
   if (isSeller()) {
     const bad = !SELLER_ROUTES.includes(key)
-      || ((key === 'invoice' || key === 'invprev') && (id === 'new' ? key === 'invprev' || (q.type || 'sale') !== 'sale' : (() => { const iv = db.invoices.find(x => x.id === id); return !iv || iv.type !== 'sale' || iv.rep !== myRep(); })()));
+      || (key === 'invoice' && (id === 'new' ? (q.type || 'sale') !== 'sale' : (() => { const iv = db.invoices.find(x => x.id === id); return !iv || iv.type !== 'sale' || iv.rep !== myRep(); })()));
     if (bad) { if (location.hash && location.hash !== '#/') { toast('🔒 هالصفحة مسكّرة بوضع البيّاع', 1); } history.replaceState(null, '', '#/'); key = 'home'; }
   } else if (needLogin() && key !== 'pos' && key !== 'sellersetup') {
     key = 'lock';
@@ -1885,7 +1885,6 @@ V.invoice = (id, q, view) => {
   const itemById = id => items.find(x => x.id === id);
   const stockOf = it => (st[it.id] ? st[it.id].qty : num(it.openQty));
 
-  view.classList.toggle('inv-new', !orig);
   view.innerHTML = head(INV_TYPES[inv.type] + (orig ? ` رقم ${esc(orig.no)}${repTagH(orig)}` : ' جديدة' + (isSeller() ? ` — مندوب: ${esc(myRep())}` : '')),
     `${orig ? `<button class="btn wa" data-act="wa">واتساب</button><button class="btn" data-act="receipt">🧾 إيصال</button><button class="btn" data-act="print">🖨 طباعة</button><button class="btn red" data-act="del">حذف</button><a class="btn" href="#/invoices">رجوع</a>` : ''}`) + `
   ${orig && q.saved ? `<div class="saved-ok">✅ الفاتورة رقم ${esc(orig.no)} محفوظة — ${orig.lines.length} مادة، ${fmt(orig.lines.reduce((s, l) => s + num(l.qty), 0))} قطعة</div>` : ''}
@@ -1893,26 +1892,19 @@ V.invoice = (id, q, view) => {
   <div id="dirtyNote" class="dirty-note" hidden>⚠️ في تغييرات على هالفاتورة <b>لسا ما انحفظت</b> — كبّس «💾 حفظ التعديلات» تحت</div>
   ${restored ? (orig ? '<div class="draft-note">↩️ رجّعتلك التعديلات اللي ما كانت محفوظة على هالفاتورة. <button class="btn" data-act="discard">تراجع عنها</button></div>'
     : '<div class="draft-note">↩️ رجّعتلك الفاتورة اللي ما كانت محفوظة. <button class="btn red" data-act="clearAll">🗑 بلّش من جديد</button></div>') : ''}
-  <div class="inv-top">
-    <button type="button" class="it-btn on" data-act="save"><i>💾</i>${orig ? 'حفظ التعديلات' : 'حفظ الفاتورة'}</button>
-    <button type="button" class="it-btn" data-act="share"><i>📤</i>طباعة ومشاركة</button>
-    <button type="button" class="it-btn" data-act="customPrint"><i>🖨</i>طباعة مخصصة</button>
-  </div>
-  <div id="lastAdd" class="last-add" hidden></div>
   <div class="search-wrap">
     <div class="scan-row">
       ${canScan() ? '<button class="sq-btn" data-act="cam" title="مسح بالكاميرا">▮▯▮</button>' : ''}
-      <input id="scanIn" type="search" enterkeyhint="search" autocomplete="off" placeholder="ادخل اسم المادة لاضافتها للفاتورة">
+      <input id="scanIn" type="search" enterkeyhint="search" autocomplete="off" placeholder="ادخل اسم المادة أو الباركود لإضافتها للفاتورة">
       ${canVoice() ? '<button class="sq-btn round" data-act="mic" title="بحث صوتي">🎤</button>' : ''}
-      ${window.OrderPaste ? '<button class="sq-btn pic" data-act="paste" title="لصق طلبية">📋</button>' : ''}
     </div>
     <div id="sugg" class="sugg" hidden></div>
-    <div class="ln-cols"><span>الكمية</span><span>الإفرادي</span><span>الإجمالي</span><span>المستهلك</span></div>
   </div>
+  <div id="lastAdd" class="last-add" hidden></div>
   <div id="ln" class="ln-list"></div>
+  ${sideSale && inv.type === 'sale' ? `<button type="button" class="btn more-btn" data-act="more">✏️ تعديل <small id="moreSum"></small></button>` : ''}
   <div id="invMore" ${sideSale && inv.type === 'sale' ? 'hidden' : ''}>
   <div class="card">
-    <div class="more-sum">✏️ <small id="moreSum"></small></div>
     <div class="grid4">
       ${field({ k: 'date', l: 'التاريخ', t: 'date', req: 1 }, inv.date)}
       ${field({ k: 'pay', l: 'طريقة الدفع', t: 'select', opts: [['cash', 'نقدي'], ['credit', 'آجل (على الحساب)']] }, inv.pay)}
@@ -1929,6 +1921,7 @@ V.invoice = (id, q, view) => {
       ${field({ k: 'note', l: 'ملاحظات', t: 'textarea' }, inv.note)}
       <div class="tot-box">
         <div><span>الإجمالي</span><b id="tGross" class="n">0</b></div>
+        <div><span>➖ حسم</span><input name="discount" type="number" step="any" inputmode="decimal" placeholder="0" value="${esc(inv.discount || '')}"></div>
         <div><span>➕ إضافة</span><input name="addition" type="number" step="any" inputmode="decimal" placeholder="0" value="${esc(inv.addition || '')}"></div>
         <input name="addNote" placeholder="سبب الإضافة/الحسم (أجور نقل…) — اختياري" value="${esc(inv.addNote || '')}" style="width:100%;font-size:13px">
         <div class="net"><span>الصافي</span><b id="tNet" class="n">0</b></div>
@@ -1944,18 +1937,10 @@ V.invoice = (id, q, view) => {
   </div>
   <p id="limWarn" class="limit-warn" hidden></p>
   <div class="inv-bar">
-    <div class="bar-strip">المجموع [ <b id="barGross">0</b> ] <span id="barInfo"></span><small id="prnPill" class="prn-pill"></small></div>
-    <div class="bar-mid">
-      <label class="bar-box disc"><span>الخصم</span><input name="discount" type="number" step="any" inputmode="decimal" placeholder="0" value="${esc(inv.discount || '')}"></label>
-      <button type="button" class="bar-ic" data-act="find" aria-label="بحث عن مادة">🔍</button>
-      <button type="button" class="bar-ic calc" data-act="calc" aria-label="آلة حاسبة">🧮</button>
-      <div class="bar-box net"><span>الصافي</span><div class="bn"><b id="barNet">0</b><small id="barOld" class="old-bar"></small></div></div>
-    </div>
-    <div class="bar-low">
-      <button type="button" data-act="savePrint">📶 طباعة بلوتوث</button>
-      <button type="button" data-act="${orig ? 'newInv' : 'saveNew'}">＋ فاتورة جديدة</button>
-      ${sideSale && inv.type === 'sale' ? '<button type="button" data-act="more">المزيد ⬇</button>' : ''}
-    </div>
+    <div class="inv-bar-sum"><small id="barInfo"></small><small id="prnPill" class="prn-pill"></small><b id="barNet">0</b><small id="barOld" class="old-bar"></small></div>
+    ${orig ? '' : '<button class="btn" data-act="saveNew">＋ حفظ وجديد</button>'}
+    <button class="btn pri" data-act="save">${orig ? '💾 حفظ التعديلات' : '💾 حفظ'}</button>
+    <button class="btn prt" data-act="savePrint">🖨 حفظ وطباعة</button>
   </div>`;
 
   const val = n => $(`[name="${n}"]`, view).value;
@@ -2018,29 +2003,31 @@ V.invoice = (id, q, view) => {
     $('#cntPcs', view).textContent = fmt(cnt);
     const tc = $('#topCnt'); if (tc) { tc.hidden = false; tc.textContent = fmt(cnt) + ' قطعة'; }
     $('#barNet', view).textContent = fmt(n) + ' ' + sym;
-    $('#barGross', view).textContent = fmt(g);
-    $('#barInfo', view).textContent = `${INV_TYPES[inv.type].replace('فاتورة ', '')} ${val('pay') === 'credit' ? 'آجل' : 'نقدي'}${accName(val('party')) ? ' - ' + accName(val('party')) : ''}`;
+    $('#barInfo', view).textContent = `${fmt(cnt)} قطعة${val('pay') === 'credit' ? ' — آجل' : ' — نقدي'}`;
     { const ms = $('#moreSum', view); if (ms) ms.textContent = [accName(val('party')) || 'بلا زبون', val('pay') === 'credit' ? 'آجل' : 'نقدي', val('date'), num(val('discount')) ? 'حسم ' + fmt(num(val('discount'))) : '', num(val('payment')) ? 'دفعة ' + fmt(num(val('payment'))) : ''].filter(Boolean).join(' · '); }
   };
   const toBase = x => (inv.cur === 'fx' ? num(x) * rate() : num(x));
-  const lineOld = l => (oldOn() && num(l.price) ? `قديم: ${oldAmt(toBase(l.price))} · ${oldAmt(toBase(num(l.qty) * num(l.price)))}` : '');
+  const lineOld = l => (oldOn() && num(l.price) ? `بالقديم: الإفرادي ${oldAmt(toBase(l.price))} — الإجمالي ${oldAmt(toBase(num(l.qty) * num(l.price)))}${num(l.cp) ? ` — المستهلك ${oldAmt(toBase(l.cp))}` : ''}` : '');
   const lineHtml = (l, i) => {
     const it = itemById(l.item) || { name: '(مادة محذوفة)' };
     const s = it.id ? stockOf(it) : 0, low = it.id && (s <= 0 || (num(it.minQty) > 0 && s <= num(it.minQty)));
-    return `<div class="ln-card${low ? ' low' : ''}" data-i="${i}">
+    return `<div class="ln-card" data-i="${i}">
       <div class="ln-head">
         <button class="qb" data-act="inc" data-id="${i}" aria-label="زيادة">＋</button>
         <button class="qb minus" data-act="dec" data-id="${i}" aria-label="إنقاص">−</button>
-        <div class="ln-name"><b><span class="ln-no">${i + 1}</span>${esc(it.name)}</b><small class="old-eq" data-old>${lineOld(l)}</small></div>
-        <button class="qb dots" data-act="lineMenu" data-id="${i}" aria-label="خيارات المادة">•••</button>
+        <span class="ln-no">${i + 1}</span><b class="ln-name">${esc(it.name)}</b>
+        ${it.id ? `<button class="qb edit" data-act="editItem" data-id="${i}" aria-label="تعديل المادة" title="تعديل المادة">✏️</button>` : ''}
+        <button class="qb del" data-act="rmLine" data-id="${i}" aria-label="حذف">✕</button>
       </div>
       <div class="ln-row">
-        <input data-f="qty" type="number" step="any" inputmode="decimal" value="${esc(l.qty)}" aria-label="الكمية">
-        <input data-f="price" type="number" step="any" inputmode="decimal" value="${esc(l.price)}" aria-label="الإفرادي">
-        <b class="tot" data-tot>${fmt(num(l.qty) * num(l.price))}</b>
-        <input data-f="cp" class="cp" type="number" step="any" inputmode="decimal" placeholder="—" value="${esc(l.cp ?? '')}" aria-label="سعر المستهلك">
+        <label><span>الكمية</span><input data-f="qty" type="number" step="any" inputmode="decimal" value="${esc(l.qty)}"></label>
+        <label class="unit"><span>الوحدة</span><b>${esc(it.unit || '—')}</b></label>
+        <label><span>الإفرادي</span><input data-f="price" type="number" step="any" inputmode="decimal" value="${esc(l.price)}"></label>
+        <label><span>المستهلك</span><input data-f="cp" type="number" step="any" inputmode="decimal" value="${esc(l.cp ?? '')}"></label>
+        <label class="tot"><span>الإجمالي</span><b data-tot>${fmt(num(l.qty) * num(l.price))}</b></label>
       </div>
-      ${low ? `<small class="bad">المتوفر: ${fmt(s)} ${esc(it.unit || '')}${s <= 0 ? ' — نفدت المادة' : ' — قاربت المادة على النفاد'}</small>` : ''}
+      <small class="old-eq" data-old>${lineOld(l)}</small>
+      ${it.id ? `<small class="${low ? 'bad' : 'muted'}">المتوفر: ${fmt(s)} ${esc(it.unit || '')}${low ? (s <= 0 ? ' — نفدت المادة' : ' — قاربت المادة على النفاد') : ''}</small>` : ''}
     </div>`;
   };
   const draw = hl => {
@@ -2289,19 +2276,13 @@ V.invoice = (id, q, view) => {
     const fix = () => { if (!card.isConnected) return; const d = card.getBoundingClientRect().top - top0; if (Math.abs(d) > 2) window.scrollBy(0, d); };
     requestAnimationFrame(fix); [120, 300, 600, 900].forEach(t => setTimeout(fix, t));
   };
-  view.addEventListener('pointerdown', e => { const c = e.target.closest('.ln-card'); if (c && e.target.closest('.qb:not(.edit):not(.dots), input')) lineActAt = Date.now(); }, true);
-  // أزرار + و − بالمادة: ما منخلّي الكبسة تنقل التركيز — الكيبورد بيضل مفتوح متل ما هو،
+  view.addEventListener('pointerdown', e => { const c = e.target.closest('.ln-card'); if (c && e.target.closest('.qb:not(.edit), input')) lineActAt = Date.now(); }, true);
+  // أزرار + و − بالمادة: ما منخلّي الكبسة تنقل التركيز (الكيبورد بيتسكّر بهدوء)،
   // وإذا الموبايل نطّ بالصفحة لفوق خلال ثانيتين منرجّعها لنفس المكان
   view.addEventListener('pointerdown', e => {
-    const b = e.target.closest('.ln-card .qb:not(.edit):not(.dots)'); if (!b) return;
+    const b = e.target.closest('.ln-card .qb:not(.edit)'); if (!b) return;
     e.preventDefault();
-    const ae = document.activeElement;
-    if (ae && ae !== document.body && ae.matches('input, textarea')) {
-      // إذا المتصفح نقل التركيز للزر رغم هيك، منرجّعه للخانة بلا ما تتحرك الصفحة
-      const back = () => { if (ae.isConnected && document.activeElement !== ae) ae.focus({ preventScroll: true }); };
-      b.addEventListener('focus', back, { once: true });
-      setTimeout(() => { b.removeEventListener('focus', back); back(); }, 0);
-    }
+    const ae = document.activeElement; if (ae && ae !== document.body && ae.matches('input, textarea, select')) ae.blur();
     const y0 = window.scrollY; if (y0 < 250) return;
     const until = Date.now() + 2000;
     const guard = () => {
@@ -2433,7 +2414,7 @@ V.invoice = (id, q, view) => {
   // «✏️ تعديل»: كل خانات الفاتورة (الزبون، الدفع، التاريخ، الحسم، الدفعة، الملاحظات) مخبّاية تحت زر واحد
   const openMore = (on = true) => { const m = $('#invMore', view), b = $('[data-act=more]', view); if (!m || !b) return; m.hidden = !on; b.classList.toggle('on', on); };
   let savedAt = 0;
-  const doSave = (andNew, print, target, then) => {
+  const doSave = (andNew, print, target) => {
     if (Date.now() - savedAt < 2000) return; // منع الحفظ المكرر بكبستين ورا بعض
     const lines = inv.lines.filter(l => l.item && num(l.qty) > 0).map(l => ({ item: l.item, qty: num(l.qty), price: num(l.price), cp: num(l.cp) }));
     if (!lines.length) return toast('أضف مادة واحدة على الأقل بكمية صحيحة', 1);
@@ -2527,10 +2508,10 @@ V.invoice = (id, q, view) => {
     save(); navigator.vibrate?.([60, 40, 60]); toast(`✅ انحفظت الفاتورة رقم ${out.no} — ${lines.length} مادة`);
     // حفظ وطباعة ← منرجع عالرئيسية | حفظ / حفظ التعديلات ← منضل بنفس الفاتورة وبنفس المكان
     leaveGuard = null;
-    if (target) go(target === '#/invprev/' ? target + out.id : target);
+    if (target) go(target);
     else if (print) go('#/');
     else if (andNew) go('#/invoice/new?type=' + out.type);
-    else { keepScrollY = window.scrollY; go('#/invoice/' + out.id + '?saved=1' + (then ? '&then=' + then : '')); }
+    else { keepScrollY = window.scrollY; go('#/invoice/' + out.id + '?saved=1'); }
     if (print && window.Receipt) Receipt.printDirect(out);
   };
   const step = (i, d) => {
@@ -2541,37 +2522,13 @@ V.invoice = (id, q, view) => {
     anchorCard(card);
     $('[data-f=qty]', card).value = nq; $('[data-tot]', card).textContent = fmt(nq * num(l.price)); $('[data-old]', card).textContent = lineOld(l); totals();
   };
-  const isDirty = () => !!(leaveGuard && leaveGuard.dirty());
-  // ••• خيارات المادة: المتوفر، تعديل بطاقة المادة، حذف من الفاتورة
-  const lineMenu = i => {
-    const l = inv.lines[i], it = l && itemById(l.item); if (!l) return;
-    const s = it ? stockOf(it) : 0;
-    modal('••• ' + (it ? it.name : '(مادة محذوفة)'), `
-      ${it ? `<p class="muted" style="margin:0 0 10px">المتوفر: <b class="${s <= 0 ? 'bad' : ''}">${fmt(s)} ${esc(it.unit || '')}</b></p>` : ''}
-      <div class="lm-acts">
-        ${it ? '<button type="button" class="btn" data-m="editItem">✏️ تعديل بطاقة المادة</button>' : ''}
-        <button type="button" class="btn red" data-m="rmLine">🗑 حذف من الفاتورة</button>
-      </div>`);
-    const d = $('#dlg');
-    d.querySelectorAll('[data-m]').forEach(b => (b.onclick = () => {
-      d.close();
-      if (b.dataset.m === 'rmLine') { inv.lines.splice(i, 1); draw(); }
-      else acts.editItem(i);
-    }));
-  };
-  const acts = {
+  onAct(view, {
     cam: () => scanBarcode(addByCode),
     paste: () => window.OrderPaste && OrderPaste.open({ sideSale, onDone: r => fromPaste({ ...r, pay: r.pay ? toDoc(r.pay) : 0 }) }),
     mic: () => (window.Voice ? Voice.listen() : voice()),
     inc: i => step(i, 1),
     dec: i => step(i, -1),
     rmLine: i => { inv.lines.splice(+i, 1); draw(); },
-    lineMenu: i => lineMenu(+i),
-    find: () => { scanIn.focus(); toTop(); },
-    calc: () => window.Calc && Calc.toggle(),
-    share: () => (orig && !isDirty() ? go('#/invprev/' + orig.id) : doSave(false, false, '#/invprev/')),
-    customPrint: () => (orig && !isDirty() ? printDoc(invoiceHtml(orig)) : doSave(false, false, undefined, 'print')),
-    newInv: () => go('#/invoice/new?type=' + inv.type),
     // ✏️ تعديل بطاقة المادة من جوّا الفاتورة — بلا ما نطلع منها ولا تضيع المواد
     editItem: i => {
       if (isSeller()) return toast('🔒 تعديل بطاقة المادة (والأسعار) مسكّر بوضع البيّاع — خلّي المدير يعدّلها', 1);
@@ -2593,13 +2550,12 @@ V.invoice = (id, q, view) => {
     clearAll: () => { if (inv.lines.length && !confirm('تفريغ الفاتورة ومسح كل المواد اللي فيها؟')) return; dropDraft(); inv.lines = []; leaveGuard = null; route(); },
     save: () => doSave(false),
     saveNew: () => doSave(true),
-    savePrint: () => (orig && !isDirty() && window.Receipt ? Receipt.printDirect(orig) : doSave(false, true)),
+    savePrint: () => doSave(false, true),
     print: () => printDoc(invoiceHtml(orig)),
     wa: () => (isSeller() ? repWaAsk('invoices', orig) : waSendDoc('invoices', orig)),
     receipt: () => window.Receipt && Receipt.open(orig),
     del: () => { if (isSeller()) return toast('🔒 الحذف مسكّر بوضع البيّاع', 1); if (!confirm('حذف الفاتورة نهائياً؟ سيتم عكس أثرها على الحسابات والمستودع.')) return; db.invoices = db.invoices.filter(x => x.id !== orig.id); db.vouchers = db.vouchers.filter(v => v.inv !== orig.id); save(); toast('تم الحذف'); leaveGuard = null; go('#/invoices'); },
-  };
-  onAct(view, acts);
+  });
   // ما في طلعة من الفاتورة إلا بالحفظ أو الحذف (أو التراجع عن التعديلات على فاتورة محفوظة)
   leaveGuard = {
     dirty: () => {
@@ -2626,11 +2582,6 @@ V.invoice = (id, q, view) => {
   $('[name=payment]', view).value = payNow || '';
   toggles(); draw();
   if (sideSale && !orig && needParty()) setTimeout(() => pickParty(), 60);
-  // بعد «حفظ» من زر «طباعة ومشاركة» أو «طباعة مخصصة»: منكمّل الشغلة على الفاتورة المحفوظة
-  if (orig && q.then) {
-    history.replaceState(null, '', location.hash.replace(/&then=\w+/, '')); curHash = location.hash;
-    setTimeout(() => (q.then === 'print' ? printDoc(invoiceHtml(orig)) : 0), 80);
-  }
   scanIn.addEventListener('focus', () => { if (needParty()) { scanIn.blur(); pickParty(); } });
   // للأوامر الصوتية
   window.InvHook = {
@@ -2661,105 +2612,6 @@ V.invoice = (id, q, view) => {
   };
   if (window.Voice) Voice.invReady();
   if (window.Receipt) { Receipt.pill(); const w = Receipt.warm(); if (w) w.then(() => Receipt.pill()); }
-};
-
-/* ------------------------- معاينة الفاتورة (طباعة ومشاركة) ------------------------- */
-const safeLogo = () => { const l = String(db.settings.logo || ''); return /^data:image\/(png|jpe?g|webp);base64,[A-Za-z0-9+/=]+$/.test(l) ? l : ''; };
-function invPreviewHtml(inv) {
-  const s = db.settings, t = invTotals(inv), sym = docSym(inv), a = acc(inv.party), sideSale = ['sale', 'saleReturn'].includes(inv.type);
-  const hasCp = s.receiptCp !== '0', tm = inv.created ? new Date(inv.created) : null, logo = safeLogo();
-  const kind = { sale: 'مبيع', purchase: 'شراء', saleReturn: 'مرتجع مبيع', purchaseReturn: 'مرتجع شراء' }[inv.type] || '';
-  const paid = inv.pay === 'cash' ? t.net : r2(paidBase(inv) / (docRate(inv) || 1));
-  const B = isSeller() || !a || isWalkin(a.id) || !window.Receipt ? null : Receipt.balances(inv);
-  const dir = v => (v > 0 ? (a && a.type === 'asset' ? ' عليه' : ' له') : v < 0 ? (a && a.type === 'asset' ? ' له' : ' عليه') : '');
-  const bal = v => `${fmt(Math.abs(v))}${dir(v)}`;
-  const kv = (l, v) => `<div class="ip-k">${l}</div><div class="ip-v">${v}</div>`;
-  const rows = inv.lines.map((l, i) => {
-    const it = db.items.find(x => x.id === l.item) || {}, cp = num(l.cp) || num(it.consumerPrice);
-    return `<tr><td>${i + 1}</td><td>${esc(it.name || '')}</td><td>${fmt(l.qty)}</td><td>${esc(it.unit || '')}</td><td>${fmt(l.price)}</td><td>${fmt(num(l.qty) * num(l.price))}</td>${hasCp ? `<td>${cp ? fmt(cp) : ''}</td>` : ''}</tr>`;
-  }).join('');
-  const now = new Date();
-  return `<div class="ip-doc">
-    <div class="ip-top">
-      <div class="ip-grid">${kv('التاريخ', esc(inv.date))}${tm ? kv('التوقيت', tm.toTimeString().slice(0, 8)) : ''}${kv('رقم الفاتورة', esc(inv.no))}${kv('العملة', esc(docCurName(inv)))}${inv.rep ? kv('المندوب', esc(inv.rep)) : ''}</div>
-      <div class="ip-logo">${logo ? `<img src="${logo}" alt="">` : ''}</div>
-      <div class="ip-co"><b>${esc(s.company)}</b>${s.receiptHeader ? `<div>${esc(s.receiptHeader)}</div>` : ''}${s.address ? `<div>${esc(s.address)}</div>` : ''}${s.phone ? `<div>${esc(s.phone)}</div>` : ''}</div>
-    </div>
-    <div class="ip-kind">${kind} - ${inv.pay === 'cash' ? 'نقدي' : 'آجل'}</div>
-    <div class="ip-party">
-      ${kv(sideSale ? 'اسم الحساب' : 'المورد', esc(a ? a.name : 'زبون عام'))}
-      ${kv('العنوان', esc(a && a.address || ''))}${kv('رقم الموبايل', esc(a && a.phone || ''))}
-    </div>
-    <table class="ip-tbl"><thead><tr><th>م</th><th>اسم المادة</th><th>العدد</th><th>الوحدة</th><th>الإفرادي</th><th>الإجمالي</th>${hasCp ? '<th>سعر المستهلك</th>' : ''}</tr></thead><tbody>${rows}</tbody></table>
-    <div class="ip-sum">
-      <div class="ip-grid">
-        ${kv('مجموع الفاتورة', `${fmt(t.gross)} ${esc(sym)}`)}
-        ${kv('دفعة نقدية', `${fmt(paid)} ${esc(sym)}`)}
-        ${kv('الخصم/الإضافة', `${fmt(t.add - t.disc)} ${esc(sym)}${inv.addNote ? ` (${esc(inv.addNote)})` : ''}`)}
-        ${kv('<b>صافي الفاتورة</b>', `<b>${fmt(t.net)} ${esc(sym)}</b>`)}
-        ${inv.cur === 'fx' ? kv(`المعادل بـ ${esc(cur())}`, fmt(t.net * num(inv.rate))) : ''}
-        ${oldOn() ? kv('الصافي بالقديم', oldAmt(t.net * docRate(inv))) : ''}
-      </div>
-      <div class="ip-grid">
-        ${kv('مجموع الكميات', fmt(inv.lines.reduce((x, l) => x + num(l.qty), 0)))}
-        ${B ? kv('رصيده قبل الفاتورة', bal(B.before)) + kv('رصيده بعد الفاتورة', bal(B.after)) + kv('<b>رصيد الحساب الحالي</b>', `<b>${bal(B.now)}</b>`) : ''}
-      </div>
-    </div>
-    <div class="ip-words">${esc(moneyWords(t.net, inv))}</div>
-    ${inv.note ? `<div class="ip-note">ملاحظات: ${esc(inv.note)}</div>` : ''}
-    <div class="ip-foot">
-      ${s.phone ? `<div>عند وجود أي استفسار يرجى التواصل مع هذا الرقم: ${esc(s.phone)}</div>` : ''}
-      ${s.receiptFooter ? `<div>${esc(s.receiptFooter)}</div>` : ''}
-      <div class="ip-pdate">تاريخ الطباعة ${today()} ${now.toTimeString().slice(0, 8)}</div>
-    </div>
-  </div>`;
-}
-V.invprev = (id, q, view) => {
-  const inv = db.invoices.find(x => x.id === id);
-  if (!inv) return go('#/invoices');
-  view.innerHTML = head(`${INV_TYPES[inv.type]} رقم ${esc(inv.no)}${repTagH(inv)}`, `<a class="btn" href="#/invoice/${esc(inv.id)}">↩️ رجوع للفاتورة</a>`) + `
-    <div class="ip-acts">
-      <button type="button" data-act="wifi"><i>🖨</i>WIFI</button>
-      <button type="button" data-act="share"><i>📤</i>مشاركة</button>
-      <button type="button" data-act="pdf"><i>📄</i>فتح PDF</button>
-      <button type="button" data-act="xls"><i>📊</i>تصدير</button>
-    </div>
-    <div class="ip-paper">${invPreviewHtml(inv)}</div>
-    <div class="ip-acts low">
-      <button type="button" data-act="bt"><i>📶</i>بلوتوث</button>
-      <button type="button" data-act="unpair"><i>✂️</i>إلغاء الاقتران</button>
-      ${isSeller() ? '' : '<button type="button" data-act="settings"><i>⚙️</i>إعدادات</button>'}
-    </div>`;
-  onAct(view, {
-    wifi: () => { $('#print').innerHTML = `<div class="pdoc">${invPreviewHtml(inv)}</div>`; window.print(); },
-    share: () => (isSeller() ? repWaAsk('invoices', inv) : waSendDoc('invoices', inv)),
-    pdf: async () => {
-      if (!window.Receipt) return;
-      try {
-        const b = await Receipt.pdf(inv), u = URL.createObjectURL(b);
-        const w = window.open(u, '_blank');
-        if (!w) { const el = document.createElement('a'); el.href = u; el.download = `فاتورة-${inv.no}.pdf`; el.click(); }
-        setTimeout(() => URL.revokeObjectURL(u), 60000);
-      } catch (e) { toast('ما زبط الـ PDF: ' + (e && e.message || e), 1); }
-    },
-    xls: async () => {
-      try {
-        await loadXlsx();
-        const t = invTotals(inv);
-        const rows = inv.lines.map((l, i) => { const it = db.items.find(x => x.id === l.item) || {}; return { 'م': i + 1, 'اسم المادة': it.name || '', 'العدد': num(l.qty), 'الوحدة': it.unit || '', 'الإفرادي': num(l.price), 'الإجمالي': r2(num(l.qty) * num(l.price)), 'سعر المستهلك': num(l.cp) || num(it.consumerPrice) || '' }; });
-        rows.push({}, { 'اسم المادة': 'مجموع الفاتورة', 'الإجمالي': t.gross }, { 'اسم المادة': 'الحسم', 'الإجمالي': t.disc }, { 'اسم المادة': 'الإضافة', 'الإجمالي': t.add }, { 'اسم المادة': 'صافي الفاتورة', 'الإجمالي': t.net });
-        const wb = XLSX.utils.book_new(); wb.Workbook = { Views: [{ RTL: true }] };
-        const ws = XLSX.utils.json_to_sheet(rows); ws['!views'] = [{ RTL: true }];
-        XLSX.utils.book_append_sheet(wb, ws, 'فاتورة ' + inv.no);
-        const f = new File([XLSX.write(wb, { type: 'array', bookType: 'xlsx' })], `invoice-${String(inv.no).replace(/[^\w-]/g, '')}.xlsx`, { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-        const u = URL.createObjectURL(f), el = document.createElement('a'); el.href = u; el.download = f.name; document.body.appendChild(el); el.click(); el.remove(); setTimeout(() => URL.revokeObjectURL(u), 3000);
-        toast('📊 نزل ملف Excel');
-      } catch (e) { toast('ما زبط التصدير: ' + (e && e.message || e), 1); }
-    },
-    bt: () => window.Receipt && Receipt.printDirect(inv),
-    unpair: () => { if (!window.Receipt || !confirm('إلغاء الاقتران مع الطابعة؟ المرة الجاية بتختارها من جديد.')) return; Receipt.forget(); toast('✂️ انلغى الاقتران مع الطابعة'); },
-    settings: () => go('#/settings'),
-  });
 };
 
 /* ------------------------- السندات ------------------------- */
