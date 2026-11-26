@@ -64,7 +64,7 @@ module.exports = [
       await setup(p);
       await p.evaluate(() => waSetDirect('c1', '963933123456'));
       await p.go('#/vouchers'); await p.click('tr[data-id="vr1"]'); await p.waitForTimeout(200);
-      await p.click('#vWa'); await p.waitForTimeout(200);
+      await p.click('[data-act=share]'); await p.click('#vWa'); await p.waitForTimeout(200);
       const t = (await opened(p))[0];
       assert.match(t, /^https:\/\/wa\.me\/963933123456\?text=/);
       assert.match(t, /سند قبض رقم 9/); assert.match(t, /استلمنا من السيد: أحمد/); assert.match(t, /المبلغ: 1,500/); assert.match(t, /بالقديم: 150,000/); assert.match(t, /رصيد حسابكم/);
@@ -178,7 +178,7 @@ module.exports = [
       assert.deepStrictEqual(o, ['https://wa.me/963933123456'], 'محادثة الزبون دغري (بلا نص — الصورة فيها كل شي)');
       // بعد ٣ مرات شرح: السند بينسخ وبتنفتح المحادثة دغري بلا ولا شاشة
       await p.evaluate(() => localStorage.setItem('daftar_paste_help', '3'));
-      await p.go('#/vouchers'); await p.click('tr[data-id="vr1"]'); await p.waitForTimeout(150); await p.click('#vWa');
+      await p.go('#/vouchers'); await p.click('tr[data-id="vr1"]'); await p.waitForTimeout(150); await p.click('[data-act=share]'); await p.click('#vWa');
       await p.waitForFunction(() => (window.__opened || []).length === 2, null, { timeout: 10000 });
       o = await opened(p); c = await p.evaluate(() => window.__clip);
       assert.strictEqual(o[1], 'https://wa.me/963933123456'); assert.strictEqual(c.length, 2); assert.strictEqual(c[1].w, 1152);
@@ -262,7 +262,7 @@ module.exports = [
       assert.match(sh[0].text, /فاتورة مبيع رقم 4 — 2,000/);
       assert.strictEqual(await p.evaluate(() => (window.__opened || []).length), 0, 'بوضع الصورة ما بينفتح رابط نص');
       // السند
-      await p.go('#/vouchers'); await p.click('tr[data-id="vr1"]'); await p.waitForTimeout(150); await p.click('#vWa');
+      await p.go('#/vouchers'); await p.click('tr[data-id="vr1"]'); await p.waitForTimeout(150); await p.click('[data-act=share]'); await p.click('#vWa');
       await p.waitForFunction(() => (window.__shared || []).length === 2, null, { timeout: 10000 });
       sh = await p.evaluate(() => window.__shared);
       assert.strictEqual(sh[1].name, 'receipt-9.png'); assert.strictEqual(sh[1].w, 1152); assert.match(sh[1].text, /سند قبض رقم 9 — 1,500/);
@@ -328,7 +328,7 @@ module.exports = [
       assert.strictEqual(sh.w, 1152, 'الصورة جوّا الـ PDF لازم تكون بالدقة العالية');
       assert.strictEqual(Math.round(+sh.box), 227, 'الصفحة لازم تكون بعرض 80مم');
       assert.match(sh.text, /فاتورة مبيع رقم 4/);
-      await p.go('#/vouchers'); await p.click('tr[data-id="vr1"]'); await p.waitForTimeout(150); await p.click('#vWa');
+      await p.go('#/vouchers'); await p.click('tr[data-id="vr1"]'); await p.waitForTimeout(150); await p.click('[data-act=share]'); await p.click('#vWa');
       await p.waitForFunction(() => (window.__shared || []).length === 2, null, { timeout: 10000 });
       sh = (await p.evaluate(() => window.__shared))[1];
       assert.strictEqual(sh.name, 'receipt-9.pdf'); assert.strictEqual(sh.head, '%PDF-1.4');

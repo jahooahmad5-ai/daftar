@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '6.98';
+const APP_VERSION = '7.00';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -482,7 +482,7 @@ function printDoc(html) {
 
 /* ------------------------- الموجّه ------------------------- */
 const V = {};
-const NAV_MAP = { invoice: 'invoices', entry: 'journal', report: 'reports' };
+const NAV_MAP = { voucher: 'vouchers', invoice: 'invoices', entry: 'journal', report: 'reports' };
 /* ------------------------- وضع البيّاع (لهالموبايل بس) ------------------------- */
 // محفوظ عالجهاز (مش بالمزامنة) — هيك بيتفعّل على موبايل الشب بس
 // «وضع البيّاع» القديم (بالرمز السري) انشال: الموبايل يلي كان عليه بيصير موبايل نقطة بيع (بالباركود والتفعيل)
@@ -1135,6 +1135,7 @@ V.home = (id, q, view) => {
   <div class="quick">
     <a href="#/invoice/new?type=sale"><i>🧾</i>فاتورة مبيع</a>
     <a href="#/invoice/new?type=purchase"><i>🛒</i>فاتورة شراء</a>
+    <a href="#/voucher/new?type=receipt&mode=cust" class="hot"><i>💵</i>دفعة من زبون</a>
     <a href="#/vouchers?new=receipt"><i>📥</i>سند قبض</a>
     <a href="#/vouchers?new=payment"><i>📤</i>سند دفع</a>
     <a href="#/debts"><i>💳</i>الديون</a>
@@ -2675,6 +2676,138 @@ V.invoice = (id, q, view) => {
   if (window.Receipt) { Receipt.pill(); const w = Receipt.warm(); if (w) w.then(() => Receipt.pill()); }
 };
 
+/* ------------------------- صفحة السند (قبض / دفع) ------------------------- */
+// حركات الحساب الأخيرة: + لصالحه (له)، − عليه
+function accMoves(a, n = 30) {
+  const sign = a.type === 'asset' || a.type === 'expense' ? 1 : -1, out = [];
+  for (const e of engine().entries) {
+    const d = e.lines.filter(l => l.acc === a.id).reduce((s, l) => s + (l.dr - l.cr) * sign, 0);
+    if (!d) continue;
+    let label = 'قيد', no = e.no, note = '';
+    if (e.src === 'invoice') { const i = db.invoices.find(x => x.id === e.ref); label = i ? INV_TYPES[i.type].replace('فاتورة ', '') : 'فاتورة'; no = i ? i.no : no; note = i && i.note || ''; }
+    else if (e.src === 'voucher') { const v = db.vouchers.find(x => x.id === e.ref); label = v && v.type === 'payment' ? 'سند دفع' : 'سند قبض'; no = v ? v.no : no; note = v && v.note || ''; }
+    else if (e.desc) note = e.desc;
+    out.push({ date: e.date, label, no, amt: r2(-d), note, src: e.src, ref: e.ref });
+  }
+  return out.slice(-n).reverse();
+}
+const balWord = (a, v) => (!v ? '' : (v > 0) === (a.type === 'asset' || a.type === 'expense') ? 'عليه' : 'له');
+V.voucher = (id, q, view) => {
+  const orig = id === 'new' ? null : db.vouchers.find(x => x.id === id);
+  if (id !== 'new' && !orig) return go('#/vouchers');
+  let type = orig ? orig.type : q.type === 'payment' ? 'payment' : 'receipt';
+  // «💵 دفعة من زبون»: نفس الصفحة بس للزباين وقبض بس
+  const custMode = q.mode === 'cust' && type === 'receipt', mq = custMode ? '&mode=cust' : '';
+  const others = custMode ? customers().filter(a => !isWalkin(a.id) || (orig && orig.acc === a.id))
+    : postable().filter(a => !isUnder(a.id, 'cashGroup') && a.id !== 'inventory' && (!isWalkin(a.id) || (orig && orig.acc === a.id)));
+  let accId = orig ? orig.acc : q.acc || '';
+  const v = orig || { date: today(), amount: '', cur: 'base', rate: db.settings.rate || '', note: '', cashAcc: cashAccounts()[0]?.id || '' };
+  if (!orig) reserveNo(type);
+  const boxes = cashAccounts();
+  const draw = () => {
+    const a = acc(accId), no = orig ? orig.no : 'جديد';
+    const moves = a ? accMoves(a) : [];
+    const bal = a ? partyBal(a) : 0;
+    const isR = type === 'receipt';
+    view.innerHTML = `
+    <div class="vp ${isR ? 'is-r' : 'is-p'}">
+    ${custMode ? '<h1 class="vp-title">💵 دفعة من زبون</h1>' : `<div class="vp-seg">
+      <button type="button" class="${isR ? 'on' : ''}" data-act="type" data-id="receipt">📥 سند قبض</button>
+      <button type="button" class="${!isR ? 'on' : ''}" data-act="type" data-id="payment">📤 سند دفع</button>
+    </div>`}
+    <div class="vp-card">
+      <div class="vp-top"><span class="vp-no">${orig ? `رقم <b>${esc(no)}</b>` : `<b>${custMode ? 'دفعة جديدة' : 'سند جديد'}</b>`}</span><input name="date" type="date" value="${esc(v.date)}" aria-label="التاريخ"></div>
+      <small class="vp-lbl">${custMode ? 'الزبون' : isR ? 'استلمنا من' : 'دفعنا إلى'}</small>
+      <div class="vp-acc">
+        <button type="button" class="vp-name" data-act="pick">${a ? `<i>${esc((a.name || '؟').trim().charAt(0))}</i><span>${esc(a.name)}</span>` : `<i>👤</i><span class="muted">${custMode ? 'اختار الزبون…' : 'اختار الحساب…'}</span>`}</button>
+        <button type="button" class="vp-ic" data-act="more" aria-label="عمليات أخرى">⋯</button>
+      </div>
+      <small class="vp-lbl">المبلغ</small>
+      <div class="vp-amt">
+        <input name="amount" type="number" step="any" inputmode="decimal" placeholder="0" value="${esc(v.amount)}">
+        <select name="cur" aria-label="العملة">${[['base', cur()], ['fx', FX().sym]].map(([k, l]) => `<option value="${k}"${v.cur === k ? ' selected' : ''}>${esc(l)}</option>`).join('')}</select>
+        <button type="button" class="vp-ic calc" data-act="calc" aria-label="آلة حاسبة">🧮</button>
+      </div>
+      <input name="rate" class="vp-in" type="number" step="any" inputmode="decimal" placeholder="سعر الصرف (${esc(cur())} لكل 1 ${esc(FX().sym)})" value="${esc(v.rate)}" ${v.cur === 'fx' ? '' : 'hidden'}>
+      <small class="vp-old" id="vpOld"></small>
+      <input name="note" class="vp-in" placeholder="📝 ملاحظات (اختياري)" value="${esc(v.note || '')}">
+      ${boxes.length > 1 ? `<select name="cashAcc" class="vp-in">${boxes.map(bx => `<option value="${bx.id}"${v.cashAcc === bx.id ? ' selected' : ''}>💰 ${isR ? 'إلى' : 'من'}: ${esc(bx.name)}</option>`).join('')}</select>` : ''}
+      <button type="button" class="vp-save" data-act="save">💾 ${orig ? 'حفظ التعديلات' : custMode ? 'حفظ الدفعة' : 'حفظ السند'}</button>
+      <div class="vp-acts">
+        ${orig ? `<button type="button" data-act="share">📤 مشاركة وطباعة</button><button type="button" data-act="another">🆕 ${custMode ? 'دفعة جديدة' : 'سند جديد'}</button>` : ''}
+        ${orig ? '<button type="button" class="red" data-act="del">🗑 حذف</button>' : ''}
+      </div>
+    </div>
+    ${a ? `<div class="vp-hist-h"><span>الحركات الأخيرة</span><a href="#/report/statement?acc=${esc(a.id)}">كشف الحساب ←</a></div>
+    <div class="vp-hist">${moves.length ? moves.map(m => `
+      <button type="button" class="vp-mv" data-act="openMv" data-id="${esc(m.src + ':' + m.ref)}">
+        <i class="${m.amt >= 0 ? 'up' : 'down'}">${m.amt >= 0 ? '↑' : '↓'}</i>
+        <span class="vp-mv-t"><b>${esc(m.label)} <small>#${esc(m.no)}</small></b><small>${esc(m.date)}${m.note ? ' · ' + esc(m.note) : ''}</small></span>
+        <span class="vp-mv-a ${m.amt >= 0 ? 'up' : 'down'}">${m.amt > 0 ? '+' : ''}${fmt(m.amt)}</span>
+      </button>`).join('') : '<p class="muted" style="text-align:center">ما في حركات</p>'}</div>
+    <div class="vp-bar"><span><small>رصيده</small><b>${fmt(Math.abs(bal))} ${esc(cur())}</b>${bal ? `<em class="${balWord(a, bal) === 'عليه' ? 'down' : 'up'}">${balWord(a, bal)}</em>` : ''}</span>${isUnder(a.id, 'customers') && balWord(a, bal) === 'عليه' ? '<button type="button" data-act="settle">✅ تصفية الحساب</button>' : ''}</div>` : ''}
+    </div>`;
+    const am = $('[name=amount]', view), cu = $('[name=cur]', view), rt = $('[name=rate]', view), old = $('#vpOld', view);
+    const upd = () => {
+      const x = num(am.value), fx = cu.value === 'fx', R = num(rt.value), base = fx ? x * R : x;
+      rt.hidden = !fx;
+      old.textContent = !x ? '' : fx && !R ? 'اكتب سعر الصرف' : `${fx ? `= ${fmt(r2(base))} ${cur()} — ` : ''}${oldOn() ? 'بالعملة القديمة: ' + oldAmt(base) : ''}`;
+    };
+    view.oninput = view.onchange = () => { v.date = $('[name=date]', view).value; v.amount = am.value; v.cur = cu.value; v.rate = rt.value; v.note = $('[name=note]', view).value; const bx = $('[name=cashAcc]', view); if (bx) v.cashAcc = bx.value; upd(); };
+    upd();
+  };
+  const pick = () => {
+    modal('👤 اختار الحساب', `<input class="search" id="ppQ" placeholder="🔎 ابحث بالاسم أو الهاتف" autocomplete="off" style="margin-bottom:8px">
+      <div id="ppList" class="pp-list">${others.map(a => `<button type="button" class="pp-item" data-id="${a.id}" data-name="${esc(normAr((a.name || '') + ' ' + (a.phone || '')))}"><b>${esc(a.name)}</b>${a.phone ? `<small>${esc(a.phone)}</small>` : ''}</button>`).join('')}</div>`);
+    const d = $('#dlg'), qq = $('#ppQ', d);
+    qq.oninput = () => { const t = normAr(qq.value.trim()); $$('.pp-item', d).forEach(b => (b.style.display = !t || b.dataset.name.includes(t) ? '' : 'none')); };
+    $('#ppList', d).onclick = e => { const b = e.target.closest('.pp-item'); if (!b) return; accId = b.dataset.id; d.close(); draw(); };
+    setTimeout(() => qq.focus(), 100);
+  };
+  const doSave = () => {
+    const amount = r2(num(v.amount)), R = num(v.rate);
+    if (!accId) { toast('اختار الحساب', 1); return pick(); }
+    if (amount <= 0) return toast('أدخل مبلغاً صحيحاً', 1);
+    if (v.cur === 'fx' && R <= 0) return toast('أدخل سعر الصرف', 1);
+    if (!v.cashAcc) return toast('ما في صندوق', 1);
+    const o = { date: v.date, amount, acc: accId, cashAcc: v.cashAcc, note: v.note || '', cur: v.cur, rate: v.cur === 'fx' ? R : '' };
+    let sv = orig;
+    if (orig) Object.assign(orig, o, { type });
+    else db.vouchers.push(sv = { id: uid(), type, ...newNo(type), created: Date.now(), ...o });
+    save(); toast(`✅ انحفظ ${type === 'receipt' ? 'سند القبض' : 'سند الدفع'} رقم ${sv.no}`);
+    go('#/voucher/' + sv.id + (custMode ? '?mode=cust' : ''));
+  };
+  onAct(view, {
+    type: t => { if (orig && orig.type !== t && !confirm('تغيير نوع السند؟')) return; type = t; if (!orig) reserveNo(t); draw(); },
+    reset: () => go('#/voucher/new?type=' + type + mq + (accId ? '&acc=' + accId : '')),
+    pick, save: doSave,
+    stmt: () => (accId ? go('#/report/statement?acc=' + accId) : pick()),
+    more: () => {
+      const a = acc(accId); if (!a) return pick();
+      modal('⋯ عمليات أخرى — ' + a.name, `<div class="share-grid">
+        <button type="button" data-m="stmt">📄 كشف حساب</button>
+        <button type="button" data-m="wa">💬 رصيده عالواتساب</button>
+        ${isUnder(a.id, 'customers') ? '<button type="button" data-m="debt">💳 إضافة دين</button>' : ''}
+        <button type="button" data-m="pick">👤 حساب تاني</button></div>`);
+      const d = $('#dlg');
+      $$('[data-m]', d).forEach(b => (b.onclick = () => {
+        d.close(); const m = b.dataset.m;
+        if (m === 'stmt') go('#/report/statement?acc=' + a.id);
+        else if (m === 'wa') waSend(a, waBalanceText(a));
+        else if (m === 'debt') addDebt(a.id);
+        else pick();
+      }));
+    },
+    calc: () => { $('[name=amount]', view).focus(); if (window.Calc) Calc.toggle(); },
+    share: () => (orig ? voucherPrintAsk(orig) : toast('احفظ السند أول', 1)),
+    another: () => go('#/voucher/new?type=' + type + mq),
+    del: () => { if (!confirm('حذف السند؟')) return; db.vouchers = db.vouchers.filter(x => x.id !== orig.id); save(); toast('تم الحذف'); go('#/vouchers'); },
+    settle: () => settleDebt(accId),
+    openMv: k => { const [src, ref] = k.split(':'); if (src === 'invoice') go('#/invoice/' + ref); else if (src === 'voucher' && ref !== (orig && orig.id)) go('#/voucher/' + ref); },
+  });
+  draw();
+};
+
 /* ------------------------- السندات ------------------------- */
 function voucherForm(v, type, preAcc, back) {
   type = v ? v.type : type;
@@ -2805,10 +2938,10 @@ V.vouchers = (id, q, view) => {
     `<div class="tabs">${tab('all', 'الكل')}${tab('receipt', 'سندات القبض')}${tab('payment', 'سندات الدفع')}</div>
     <div class="card">${table(['الرقم', 'النوع', 'التاريخ', 'الحساب', 'البيان', 'المبلغ'], rows)}</div>`;
   onAct(view, {
-    new: type => voucherForm(null, isSeller() ? 'receipt' : type),
-    open: id => { const v = db.vouchers.find(x => x.id === id); if (isSeller() && v && v.type !== 'receipt') return; voucherForm(v); },
+    new: type => go('#/voucher/new?type=' + type),
+    open: id => go('#/voucher/' + id),
   });
-  if (q.new) voucherForm(null, q.new === 'payment' ? 'payment' : 'receipt', q.acc);
+  if (q.new) go(`#/voucher/new?type=${q.new === 'payment' ? 'payment' : 'receipt'}${q.acc ? '&acc=' + encodeURIComponent(q.acc) : ''}`);
 };
 
 /* ------------------------- القيود اليومية ------------------------- */
@@ -2832,7 +2965,7 @@ V.journal = (id, q, view) => {
       if (!e) return;
       if (e.src === 'manual') go('#/entry/' + e.id);
       else if (e.src === 'invoice') go('#/invoice/' + e.ref);
-      else if (e.src === 'voucher') voucherForm(db.vouchers.find(v => v.id === e.ref));
+      else if (e.src === 'voucher') go('#/voucher/' + e.ref);
       else go('#/items');
     },
   });
