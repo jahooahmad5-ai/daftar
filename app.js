@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '6.89';
+const APP_VERSION = '6.90';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -482,7 +482,7 @@ function printDoc(html) {
 
 /* ------------------------- الموجّه ------------------------- */
 const V = {};
-const NAV_MAP = { invoice: 'invoices', entry: 'journal', report: 'reports' };
+const NAV_MAP = { invoice: 'invoices', invprev: 'invoices', entry: 'journal', report: 'reports' };
 /* ------------------------- وضع البيّاع (لهالموبايل بس) ------------------------- */
 // محفوظ عالجهاز (مش بالمزامنة) — هيك بيتفعّل على موبايل الشب بس
 // «وضع البيّاع» القديم (بالرمز السري) انشال: الموبايل يلي كان عليه بيصير موبايل نقطة بيع (بالباركود والتفعيل)
@@ -528,7 +528,7 @@ function repBoxDialog() {
   });
 }
 const NO_BOX = '💰 صندوقك لسا ما وصل — اكبس 🔄 مزامنة. إذا ضل، خلّي المدير يفتح الإعدادات عنده';
-const SELLER_ROUTES = ['home', 'invoices', 'invoice', 'vouchers'];
+const SELLER_ROUTES = ['home', 'invoices', 'invoice', 'invprev', 'vouchers'];
 // موبايل انفتح من رابط/باركود نقطة البيع: بينقفل عليها من أول فتحة (حتى قبل تسجيل الدخول)
 const POS_DEV_KEY = 'daftar_pos_device';
 // قفل البرنامج: الدفتر الكامل بيفتح بس على موبايل مسجّل دخول بحساب المدير وفاتح الشركة — غير هيك شاشة دخول بس
@@ -633,7 +633,7 @@ function route() {
   if (!window.Cloud && window.DAFTAR_CLOUD && window.DAFTAR_CLOUD.url) { view.innerHTML = '<p class="muted" style="text-align:center;margin-top:40px">⏳</p>'; return; }
   if (isSeller()) {
     const bad = !SELLER_ROUTES.includes(key)
-      || (key === 'invoice' && (id === 'new' ? (q.type || 'sale') !== 'sale' : (() => { const iv = db.invoices.find(x => x.id === id); return !iv || iv.type !== 'sale' || iv.rep !== myRep(); })()));
+      || ((key === 'invoice' || key === 'invprev') && (id === 'new' ? key === 'invprev' || (q.type || 'sale') !== 'sale' : (() => { const iv = db.invoices.find(x => x.id === id); return !iv || iv.type !== 'sale' || iv.rep !== myRep(); })()));
     if (bad) { if (location.hash && location.hash !== '#/') { toast('🔒 هالصفحة مسكّرة بوضع البيّاع', 1); } history.replaceState(null, '', '#/'); key = 'home'; }
   } else if (needLogin() && key !== 'pos' && key !== 'sellersetup') {
     key = 'lock';
@@ -2528,7 +2528,7 @@ V.invoice = (id, q, view) => {
     save(); navigator.vibrate?.([60, 40, 60]); toast(`✅ انحفظت الفاتورة رقم ${out.no} — ${lines.length} مادة`);
     // حفظ وطباعة ← منرجع عالرئيسية | حفظ / حفظ التعديلات ← منضل بنفس الفاتورة وبنفس المكان
     leaveGuard = null;
-    if (target) go(target);
+    if (target) go(target === '#/invprev/' ? target + out.id : target);
     else if (print) go('#/');
     else if (andNew) go('#/invoice/new?type=' + out.type);
     else { keepScrollY = window.scrollY; go('#/invoice/' + out.id + '?saved=1' + (then ? '&then=' + then : '')); }
@@ -2560,25 +2560,6 @@ V.invoice = (id, q, view) => {
       else acts.editItem(i);
     }));
   };
-  // 📤 طباعة ومشاركة (للفاتورة المحفوظة)
-  const shareSheet = () => {
-    const d0 = orig; if (!d0) return;
-    modal(`📤 ${INV_TYPES[d0.type]} رقم ${d0.no}`, `<div class="share-grid">
-      <button type="button" data-s="wa">💬 واتساب</button>
-      ${isSeller() ? '' : '<button type="button" data-s="pdf">📄 PDF</button>'}
-      ${window.Receipt ? '<button type="button" data-s="receipt">🧾 إيصال</button><button type="button" data-s="bt">📶 طباعة بلوتوث</button>' : ''}
-      <button type="button" data-s="a4">🖨 طباعة A4</button></div>`);
-    const d = $('#dlg');
-    d.querySelectorAll('[data-s]').forEach(b => (b.onclick = () => {
-      d.close();
-      const k = b.dataset.s;
-      if (k === 'wa') acts.wa();
-      else if (k === 'pdf') waShareDoc('invoices', d0, null, 'pdf');
-      else if (k === 'receipt') Receipt.open(d0);
-      else if (k === 'bt') Receipt.printDirect(d0);
-      else printDoc(invoiceHtml(d0));
-    }));
-  };
   const acts = {
     cam: () => scanBarcode(addByCode),
     paste: () => window.OrderPaste && OrderPaste.open({ sideSale, onDone: r => fromPaste({ ...r, pay: r.pay ? toDoc(r.pay) : 0 }) }),
@@ -2589,7 +2570,7 @@ V.invoice = (id, q, view) => {
     lineMenu: i => lineMenu(+i),
     find: () => { scanIn.focus(); toTop(); },
     calc: () => window.Calc && Calc.toggle(),
-    share: () => (orig && !isDirty() ? shareSheet() : doSave(false, false, undefined, 'share')),
+    share: () => (orig && !isDirty() ? go('#/invprev/' + orig.id) : doSave(false, false, '#/invprev/')),
     customPrint: () => (orig && !isDirty() ? printDoc(invoiceHtml(orig)) : doSave(false, false, undefined, 'print')),
     newInv: () => go('#/invoice/new?type=' + inv.type),
     // ✏️ تعديل بطاقة المادة من جوّا الفاتورة — بلا ما نطلع منها ولا تضيع المواد
@@ -2649,7 +2630,7 @@ V.invoice = (id, q, view) => {
   // بعد «حفظ» من زر «طباعة ومشاركة» أو «طباعة مخصصة»: منكمّل الشغلة على الفاتورة المحفوظة
   if (orig && q.then) {
     history.replaceState(null, '', location.hash.replace(/&then=\w+/, '')); curHash = location.hash;
-    setTimeout(() => (q.then === 'share' ? shareSheet() : q.then === 'print' ? printDoc(invoiceHtml(orig)) : 0), 80);
+    setTimeout(() => (q.then === 'print' ? printDoc(invoiceHtml(orig)) : 0), 80);
   }
   scanIn.addEventListener('focus', () => { if (needParty()) { scanIn.blur(); pickParty(); } });
   // للأوامر الصوتية
@@ -2681,6 +2662,105 @@ V.invoice = (id, q, view) => {
   };
   if (window.Voice) Voice.invReady();
   if (window.Receipt) { Receipt.pill(); const w = Receipt.warm(); if (w) w.then(() => Receipt.pill()); }
+};
+
+/* ------------------------- معاينة الفاتورة (طباعة ومشاركة) ------------------------- */
+const safeLogo = () => { const l = String(db.settings.logo || ''); return /^data:image\/(png|jpe?g|webp);base64,[A-Za-z0-9+/=]+$/.test(l) ? l : ''; };
+function invPreviewHtml(inv) {
+  const s = db.settings, t = invTotals(inv), sym = docSym(inv), a = acc(inv.party), sideSale = ['sale', 'saleReturn'].includes(inv.type);
+  const hasCp = s.receiptCp !== '0', tm = inv.created ? new Date(inv.created) : null, logo = safeLogo();
+  const kind = { sale: 'مبيع', purchase: 'شراء', saleReturn: 'مرتجع مبيع', purchaseReturn: 'مرتجع شراء' }[inv.type] || '';
+  const paid = inv.pay === 'cash' ? t.net : r2(paidBase(inv) / (docRate(inv) || 1));
+  const B = isSeller() || !a || isWalkin(a.id) || !window.Receipt ? null : Receipt.balances(inv);
+  const dir = v => (v > 0 ? (a && a.type === 'asset' ? ' عليه' : ' له') : v < 0 ? (a && a.type === 'asset' ? ' له' : ' عليه') : '');
+  const bal = v => `${fmt(Math.abs(v))}${dir(v)}`;
+  const kv = (l, v) => `<div class="ip-k">${l}</div><div class="ip-v">${v}</div>`;
+  const rows = inv.lines.map((l, i) => {
+    const it = db.items.find(x => x.id === l.item) || {}, cp = num(l.cp) || num(it.consumerPrice);
+    return `<tr><td>${i + 1}</td><td>${esc(it.name || '')}</td><td>${fmt(l.qty)}</td><td>${esc(it.unit || '')}</td><td>${fmt(l.price)}</td><td>${fmt(num(l.qty) * num(l.price))}</td>${hasCp ? `<td>${cp ? fmt(cp) : ''}</td>` : ''}</tr>`;
+  }).join('');
+  const now = new Date();
+  return `<div class="ip-doc">
+    <div class="ip-top">
+      <div class="ip-grid">${kv('التاريخ', esc(inv.date))}${tm ? kv('التوقيت', tm.toTimeString().slice(0, 8)) : ''}${kv('رقم الفاتورة', esc(inv.no))}${kv('العملة', esc(docCurName(inv)))}${inv.rep ? kv('المندوب', esc(inv.rep)) : ''}</div>
+      <div class="ip-logo">${logo ? `<img src="${logo}" alt="">` : ''}</div>
+      <div class="ip-co"><b>${esc(s.company)}</b>${s.receiptHeader ? `<div>${esc(s.receiptHeader)}</div>` : ''}${s.address ? `<div>${esc(s.address)}</div>` : ''}${s.phone ? `<div>${esc(s.phone)}</div>` : ''}</div>
+    </div>
+    <div class="ip-kind">${kind} - ${inv.pay === 'cash' ? 'نقدي' : 'آجل'}</div>
+    <div class="ip-party">
+      ${kv(sideSale ? 'اسم الحساب' : 'المورد', esc(a ? a.name : 'زبون عام'))}
+      ${kv('العنوان', esc(a && a.address || ''))}${kv('رقم الموبايل', esc(a && a.phone || ''))}
+    </div>
+    <table class="ip-tbl"><thead><tr><th>م</th><th>اسم المادة</th><th>العدد</th><th>الوحدة</th><th>الإفرادي</th><th>الإجمالي</th>${hasCp ? '<th>سعر المستهلك</th>' : ''}</tr></thead><tbody>${rows}</tbody></table>
+    <div class="ip-sum">
+      <div class="ip-grid">
+        ${kv('مجموع الفاتورة', `${fmt(t.gross)} ${esc(sym)}`)}
+        ${kv('دفعة نقدية', `${fmt(paid)} ${esc(sym)}`)}
+        ${kv('الخصم/الإضافة', `${fmt(t.add - t.disc)} ${esc(sym)}${inv.addNote ? ` (${esc(inv.addNote)})` : ''}`)}
+        ${kv('<b>صافي الفاتورة</b>', `<b>${fmt(t.net)} ${esc(sym)}</b>`)}
+        ${inv.cur === 'fx' ? kv(`المعادل بـ ${esc(cur())}`, fmt(t.net * num(inv.rate))) : ''}
+        ${oldOn() ? kv('الصافي بالقديم', oldAmt(t.net * docRate(inv))) : ''}
+      </div>
+      <div class="ip-grid">
+        ${kv('مجموع الكميات', fmt(inv.lines.reduce((x, l) => x + num(l.qty), 0)))}
+        ${B ? kv('رصيده قبل الفاتورة', bal(B.before)) + kv('رصيده بعد الفاتورة', bal(B.after)) + kv('<b>رصيد الحساب الحالي</b>', `<b>${bal(B.now)}</b>`) : ''}
+      </div>
+    </div>
+    <div class="ip-words">${esc(moneyWords(t.net, inv))}</div>
+    ${inv.note ? `<div class="ip-note">ملاحظات: ${esc(inv.note)}</div>` : ''}
+    <div class="ip-foot">
+      ${s.phone ? `<div>عند وجود أي استفسار يرجى التواصل مع هذا الرقم: ${esc(s.phone)}</div>` : ''}
+      ${s.receiptFooter ? `<div>${esc(s.receiptFooter)}</div>` : ''}
+      <div class="ip-pdate">تاريخ الطباعة ${today()} ${now.toTimeString().slice(0, 8)}</div>
+    </div>
+  </div>`;
+}
+V.invprev = (id, q, view) => {
+  const inv = db.invoices.find(x => x.id === id);
+  if (!inv) return go('#/invoices');
+  view.innerHTML = head(`${INV_TYPES[inv.type]} رقم ${esc(inv.no)}${repTagH(inv)}`, `<a class="btn" href="#/invoice/${esc(inv.id)}">↩️ رجوع للفاتورة</a>`) + `
+    <div class="ip-acts">
+      <button type="button" data-act="wifi"><i>🖨</i>WIFI</button>
+      <button type="button" data-act="share"><i>📤</i>مشاركة</button>
+      <button type="button" data-act="pdf"><i>📄</i>فتح PDF</button>
+      <button type="button" data-act="xls"><i>📊</i>تصدير</button>
+    </div>
+    <div class="ip-paper">${invPreviewHtml(inv)}</div>
+    <div class="ip-acts low">
+      <button type="button" data-act="bt"><i>📶</i>بلوتوث</button>
+      <button type="button" data-act="unpair"><i>✂️</i>إلغاء الاقتران</button>
+      ${isSeller() ? '' : '<button type="button" data-act="settings"><i>⚙️</i>إعدادات</button>'}
+    </div>`;
+  onAct(view, {
+    wifi: () => { $('#print').innerHTML = `<div class="pdoc">${invPreviewHtml(inv)}</div>`; window.print(); },
+    share: () => (isSeller() ? repWaAsk('invoices', inv) : waSendDoc('invoices', inv)),
+    pdf: async () => {
+      if (!window.Receipt) return;
+      try {
+        const b = await Receipt.pdf(inv), u = URL.createObjectURL(b);
+        const w = window.open(u, '_blank');
+        if (!w) { const el = document.createElement('a'); el.href = u; el.download = `فاتورة-${inv.no}.pdf`; el.click(); }
+        setTimeout(() => URL.revokeObjectURL(u), 60000);
+      } catch (e) { toast('ما زبط الـ PDF: ' + (e && e.message || e), 1); }
+    },
+    xls: async () => {
+      try {
+        await loadXlsx();
+        const t = invTotals(inv);
+        const rows = inv.lines.map((l, i) => { const it = db.items.find(x => x.id === l.item) || {}; return { 'م': i + 1, 'اسم المادة': it.name || '', 'العدد': num(l.qty), 'الوحدة': it.unit || '', 'الإفرادي': num(l.price), 'الإجمالي': r2(num(l.qty) * num(l.price)), 'سعر المستهلك': num(l.cp) || num(it.consumerPrice) || '' }; });
+        rows.push({}, { 'اسم المادة': 'مجموع الفاتورة', 'الإجمالي': t.gross }, { 'اسم المادة': 'الحسم', 'الإجمالي': t.disc }, { 'اسم المادة': 'الإضافة', 'الإجمالي': t.add }, { 'اسم المادة': 'صافي الفاتورة', 'الإجمالي': t.net });
+        const wb = XLSX.utils.book_new(); wb.Workbook = { Views: [{ RTL: true }] };
+        const ws = XLSX.utils.json_to_sheet(rows); ws['!views'] = [{ RTL: true }];
+        XLSX.utils.book_append_sheet(wb, ws, 'فاتورة ' + inv.no);
+        const f = new File([XLSX.write(wb, { type: 'array', bookType: 'xlsx' })], `invoice-${String(inv.no).replace(/[^\w-]/g, '')}.xlsx`, { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+        const u = URL.createObjectURL(f), el = document.createElement('a'); el.href = u; el.download = f.name; document.body.appendChild(el); el.click(); el.remove(); setTimeout(() => URL.revokeObjectURL(u), 3000);
+        toast('📊 نزل ملف Excel');
+      } catch (e) { toast('ما زبط التصدير: ' + (e && e.message || e), 1); }
+    },
+    bt: () => window.Receipt && Receipt.printDirect(inv),
+    unpair: () => { if (!window.Receipt || !confirm('إلغاء الاقتران مع الطابعة؟ المرة الجاية بتختارها من جديد.')) return; Receipt.forget(); toast('✂️ انلغى الاقتران مع الطابعة'); },
+    settings: () => go('#/settings'),
+  });
 };
 
 /* ------------------------- السندات ------------------------- */

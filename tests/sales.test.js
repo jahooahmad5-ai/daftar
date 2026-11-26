@@ -279,7 +279,7 @@ module.exports = [
     },
   },
   {
-    name: 'شكل الفاتورة الجديد: عناوين الأعمدة، سعر المستهلك عالبطاقة، ••• للمادة (الحذف)، الخصم والصافي تحت، و«طباعة ومشاركة» بتحفظ وبتفتح الخيارات',
+    name: 'شكل الفاتورة الجديد: عناوين الأعمدة، سعر المستهلك عالبطاقة، ••• للمادة (الحذف)، الخصم والصافي تحت، و«طباعة ومشاركة» بتحفظ وبتفتح صفحة الفاتورة (WIFI، مشاركة، PDF، Excel، بلوتوث)',
     fn: async base => {
       const p = await page(base, { cloud: OWNER });
       await p.evaluate(() => { db.items.push({ id: 'it1', name: 'بسكوت', unit: 'كرتونة', sellPrice: 1000, openQty: 50 }, { id: 'it2', name: 'شيبس', sellPrice: 500, openQty: 50 }); ensureWalkin(); save(); });
@@ -297,13 +297,21 @@ module.exports = [
       await p.fill('.inv-bar [name=discount]', '100');
       assert.match(await p.text('#barNet'), /900/);
       assert.match(await p.text('.bar-strip'), /المجموع \[ 1,000 \]/);
-      // طباعة ومشاركة ← بتحفظ وبتفتح الخيارات على الفاتورة المحفوظة
+      // طباعة ومشاركة ← بتحفظ وبتفتح صفحة الفاتورة للمراجعة
       await p.click('[data-act=share]'); await p.waitForTimeout(500);
       const inv = await p.evaluate(() => db.invoices.slice(-1)[0]);
       assert.strictEqual(inv.discount, 100); assert.strictEqual(inv.lines[0].cp, 1200);
-      assert.match(await p.evaluate(() => location.hash), new RegExp('invoice/' + inv.id + '\\?saved=1$'));
-      assert.match(await p.text('#dlg'), /واتساب/); assert.match(await p.text('#dlg'), /طباعة A4/);
-      await p.closeDlg();
+      assert.strictEqual(await p.evaluate(() => location.hash), '#/invprev/' + inv.id);
+      const doc = await p.text('.ip-doc');
+      assert.match(doc, /مبيع - نقدي/); assert.match(doc, /بسكوت 1 كرتونة 1,000 1,000 1,200/); assert.match(doc, /صافي الفاتورة 900/);
+      for (const a of ['wifi', 'share', 'pdf', 'xls', 'bt', 'unpair', 'settings']) assert.strictEqual(await p.locator(`[data-act=${a}]`).count(), 1, a);
+      // تصدير Excel بينزّل ملف
+      const [dl] = await Promise.all([p.waitForEvent('download'), p.click('[data-act=xls]')]);
+      assert.match(dl.suggestedFilename(), /^invoice-\d+\.xlsx$/);
+      // كبسة «طباعة ومشاركة» على فاتورة محفوظة بلا تعديل ← دغري عالصفحة
+      await p.go('#/invoice/' + inv.id); await p.click('[data-act=share]'); await p.waitForTimeout(300);
+      assert.strictEqual(await p.evaluate(() => location.hash), '#/invprev/' + inv.id);
+      await p.go('#/invoice/' + inv.id);
       // فاتورة جديدة من الشريط
       await p.click('[data-act=newInv]'); await p.waitForTimeout(300);
       assert.match(await p.evaluate(() => location.hash), /invoice\/new/);
