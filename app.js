@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '6.86';
+const APP_VERSION = '6.87';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -1892,19 +1892,26 @@ V.invoice = (id, q, view) => {
   <div id="dirtyNote" class="dirty-note" hidden>⚠️ في تغييرات على هالفاتورة <b>لسا ما انحفظت</b> — كبّس «💾 حفظ التعديلات» تحت</div>
   ${restored ? (orig ? '<div class="draft-note">↩️ رجّعتلك التعديلات اللي ما كانت محفوظة على هالفاتورة. <button class="btn" data-act="discard">تراجع عنها</button></div>'
     : '<div class="draft-note">↩️ رجّعتلك الفاتورة اللي ما كانت محفوظة. <button class="btn red" data-act="clearAll">🗑 بلّش من جديد</button></div>') : ''}
+  <div class="inv-top">
+    <button type="button" class="it-btn on" data-act="save"><i>💾</i>${orig ? 'حفظ التعديلات' : 'حفظ الفاتورة'}</button>
+    <button type="button" class="it-btn" data-act="share"><i>📤</i>طباعة ومشاركة</button>
+    <button type="button" class="it-btn" data-act="customPrint"><i>🖨</i>طباعة مخصصة</button>
+  </div>
+  <div id="lastAdd" class="last-add" hidden></div>
   <div class="search-wrap">
     <div class="scan-row">
       ${canScan() ? '<button class="sq-btn" data-act="cam" title="مسح بالكاميرا">▮▯▮</button>' : ''}
-      <input id="scanIn" type="search" enterkeyhint="search" autocomplete="off" placeholder="ادخل اسم المادة أو الباركود لإضافتها للفاتورة">
+      <input id="scanIn" type="search" enterkeyhint="search" autocomplete="off" placeholder="ادخل اسم المادة لاضافتها للفاتورة">
       ${canVoice() ? '<button class="sq-btn round" data-act="mic" title="بحث صوتي">🎤</button>' : ''}
+      ${window.OrderPaste ? '<button class="sq-btn pic" data-act="paste" title="لصق طلبية">📋</button>' : ''}
     </div>
     <div id="sugg" class="sugg" hidden></div>
+    <div class="ln-cols"><span>الكمية</span><span>الوحدة</span><span>الإفرادي</span><span>الإجمالي</span></div>
   </div>
-  <div id="lastAdd" class="last-add" hidden></div>
   <div id="ln" class="ln-list"></div>
-  ${sideSale && inv.type === 'sale' ? `<button type="button" class="btn more-btn" data-act="more">✏️ تعديل <small id="moreSum"></small></button>` : ''}
   <div id="invMore" ${sideSale && inv.type === 'sale' ? 'hidden' : ''}>
   <div class="card">
+    <div class="more-sum">✏️ <small id="moreSum"></small></div>
     <div class="grid4">
       ${field({ k: 'date', l: 'التاريخ', t: 'date', req: 1 }, inv.date)}
       ${field({ k: 'pay', l: 'طريقة الدفع', t: 'select', opts: [['cash', 'نقدي'], ['credit', 'آجل (على الحساب)']] }, inv.pay)}
@@ -1921,7 +1928,6 @@ V.invoice = (id, q, view) => {
       ${field({ k: 'note', l: 'ملاحظات', t: 'textarea' }, inv.note)}
       <div class="tot-box">
         <div><span>الإجمالي</span><b id="tGross" class="n">0</b></div>
-        <div><span>➖ حسم</span><input name="discount" type="number" step="any" inputmode="decimal" placeholder="0" value="${esc(inv.discount || '')}"></div>
         <div><span>➕ إضافة</span><input name="addition" type="number" step="any" inputmode="decimal" placeholder="0" value="${esc(inv.addition || '')}"></div>
         <input name="addNote" placeholder="سبب الإضافة/الحسم (أجور نقل…) — اختياري" value="${esc(inv.addNote || '')}" style="width:100%;font-size:13px">
         <div class="net"><span>الصافي</span><b id="tNet" class="n">0</b></div>
@@ -1937,10 +1943,18 @@ V.invoice = (id, q, view) => {
   </div>
   <p id="limWarn" class="limit-warn" hidden></p>
   <div class="inv-bar">
-    <div class="inv-bar-sum"><small id="barInfo"></small><small id="prnPill" class="prn-pill"></small><b id="barNet">0</b><small id="barOld" class="old-bar"></small></div>
-    ${orig ? '' : '<button class="btn" data-act="saveNew">＋ حفظ وجديد</button>'}
-    <button class="btn pri" data-act="save">${orig ? '💾 حفظ التعديلات' : '💾 حفظ'}</button>
-    <button class="btn prt" data-act="savePrint">🖨 حفظ وطباعة</button>
+    <div class="bar-strip">المجموع [ <b id="barGross">0</b> ] <span id="barInfo"></span><small id="barOld" class="old-bar"></small><small id="prnPill" class="prn-pill"></small></div>
+    <div class="bar-mid">
+      <label class="bar-box disc"><span>الخصم</span><input name="discount" type="number" step="any" inputmode="decimal" placeholder="0" value="${esc(inv.discount || '')}"></label>
+      <button type="button" class="bar-ic" data-act="find" aria-label="بحث عن مادة">🔍</button>
+      <button type="button" class="bar-ic calc" data-act="calc" aria-label="آلة حاسبة">🧮</button>
+      <div class="bar-box net"><span>الصافي</span><b id="barNet">0</b></div>
+    </div>
+    <div class="bar-low">
+      <button type="button" data-act="savePrint">📶 طباعة بلوتوث</button>
+      <button type="button" data-act="${orig ? 'newInv' : 'saveNew'}">＋ فاتورة جديدة</button>
+      ${sideSale && inv.type === 'sale' ? '<button type="button" data-act="more">المزيد ⬇</button>' : ''}
+    </div>
   </div>`;
 
   const val = n => $(`[name="${n}"]`, view).value;
@@ -2003,7 +2017,8 @@ V.invoice = (id, q, view) => {
     $('#cntPcs', view).textContent = fmt(cnt);
     const tc = $('#topCnt'); if (tc) { tc.hidden = false; tc.textContent = fmt(cnt) + ' قطعة'; }
     $('#barNet', view).textContent = fmt(n) + ' ' + sym;
-    $('#barInfo', view).textContent = `${fmt(cnt)} قطعة${val('pay') === 'credit' ? ' — آجل' : ' — نقدي'}`;
+    $('#barGross', view).textContent = fmt(g);
+    $('#barInfo', view).textContent = `${INV_TYPES[inv.type].replace('فاتورة ', '')} ${val('pay') === 'credit' ? 'آجل' : 'نقدي'}${accName(val('party')) ? ' - ' + accName(val('party')) : ''}`;
     { const ms = $('#moreSum', view); if (ms) ms.textContent = [accName(val('party')) || 'بلا زبون', val('pay') === 'credit' ? 'آجل' : 'نقدي', val('date'), num(val('discount')) ? 'حسم ' + fmt(num(val('discount'))) : '', num(val('payment')) ? 'دفعة ' + fmt(num(val('payment'))) : ''].filter(Boolean).join(' · '); }
   };
   const toBase = x => (inv.cur === 'fx' ? num(x) * rate() : num(x));
@@ -2011,23 +2026,21 @@ V.invoice = (id, q, view) => {
   const lineHtml = (l, i) => {
     const it = itemById(l.item) || { name: '(مادة محذوفة)' };
     const s = it.id ? stockOf(it) : 0, low = it.id && (s <= 0 || (num(it.minQty) > 0 && s <= num(it.minQty)));
-    return `<div class="ln-card" data-i="${i}">
+    return `<div class="ln-card${low ? ' low' : ''}" data-i="${i}">
       <div class="ln-head">
         <button class="qb" data-act="inc" data-id="${i}" aria-label="زيادة">＋</button>
         <button class="qb minus" data-act="dec" data-id="${i}" aria-label="إنقاص">−</button>
-        <span class="ln-no">${i + 1}</span><b class="ln-name">${esc(it.name)}</b>
-        ${it.id ? `<button class="qb edit" data-act="editItem" data-id="${i}" aria-label="تعديل المادة" title="تعديل المادة">✏️</button>` : ''}
-        <button class="qb del" data-act="rmLine" data-id="${i}" aria-label="حذف">✕</button>
+        <b class="ln-name"><span class="ln-no">${i + 1}</span>${esc(it.name)}</b>
+        <button class="qb dots" data-act="lineMenu" data-id="${i}" aria-label="خيارات المادة">•••</button>
       </div>
       <div class="ln-row">
-        <label><span>الكمية</span><input data-f="qty" type="number" step="any" inputmode="decimal" value="${esc(l.qty)}"></label>
-        <label class="unit"><span>الوحدة</span><b>${esc(it.unit || '—')}</b></label>
-        <label><span>الإفرادي</span><input data-f="price" type="number" step="any" inputmode="decimal" value="${esc(l.price)}"></label>
-        <label><span>المستهلك</span><input data-f="cp" type="number" step="any" inputmode="decimal" value="${esc(l.cp ?? '')}"></label>
-        <label class="tot"><span>الإجمالي</span><b data-tot>${fmt(num(l.qty) * num(l.price))}</b></label>
+        <input data-f="qty" type="number" step="any" inputmode="decimal" value="${esc(l.qty)}" aria-label="الكمية">
+        <b class="unit">${esc(it.unit || 'الوحدة')}</b>
+        <input data-f="price" type="number" step="any" inputmode="decimal" value="${esc(l.price)}" aria-label="الإفرادي">
+        <b class="tot" data-tot>${fmt(num(l.qty) * num(l.price))}</b>
       </div>
       <small class="old-eq" data-old>${lineOld(l)}</small>
-      ${it.id ? `<small class="${low ? 'bad' : 'muted'}">المتوفر: ${fmt(s)} ${esc(it.unit || '')}${low ? (s <= 0 ? ' — نفدت المادة' : ' — قاربت المادة على النفاد') : ''}</small>` : ''}
+      ${low ? `<small class="bad">المتوفر: ${fmt(s)} ${esc(it.unit || '')}${s <= 0 ? ' — نفدت المادة' : ' — قاربت المادة على النفاد'}</small>` : ''}
     </div>`;
   };
   const draw = hl => {
@@ -2276,11 +2289,11 @@ V.invoice = (id, q, view) => {
     const fix = () => { if (!card.isConnected) return; const d = card.getBoundingClientRect().top - top0; if (Math.abs(d) > 2) window.scrollBy(0, d); };
     requestAnimationFrame(fix); [120, 300, 600, 900].forEach(t => setTimeout(fix, t));
   };
-  view.addEventListener('pointerdown', e => { const c = e.target.closest('.ln-card'); if (c && e.target.closest('.qb:not(.edit), input')) lineActAt = Date.now(); }, true);
+  view.addEventListener('pointerdown', e => { const c = e.target.closest('.ln-card'); if (c && e.target.closest('.qb:not(.edit):not(.dots), input')) lineActAt = Date.now(); }, true);
   // أزرار + و − بالمادة: ما منخلّي الكبسة تنقل التركيز (الكيبورد بيتسكّر بهدوء)،
   // وإذا الموبايل نطّ بالصفحة لفوق خلال ثانيتين منرجّعها لنفس المكان
   view.addEventListener('pointerdown', e => {
-    const b = e.target.closest('.ln-card .qb:not(.edit)'); if (!b) return;
+    const b = e.target.closest('.ln-card .qb:not(.edit):not(.dots)'); if (!b) return;
     e.preventDefault();
     const ae = document.activeElement; if (ae && ae !== document.body && ae.matches('input, textarea, select')) ae.blur();
     const y0 = window.scrollY; if (y0 < 250) return;
@@ -2414,7 +2427,7 @@ V.invoice = (id, q, view) => {
   // «✏️ تعديل»: كل خانات الفاتورة (الزبون، الدفع، التاريخ، الحسم، الدفعة، الملاحظات) مخبّاية تحت زر واحد
   const openMore = (on = true) => { const m = $('#invMore', view), b = $('[data-act=more]', view); if (!m || !b) return; m.hidden = !on; b.classList.toggle('on', on); };
   let savedAt = 0;
-  const doSave = (andNew, print, target) => {
+  const doSave = (andNew, print, target, then) => {
     if (Date.now() - savedAt < 2000) return; // منع الحفظ المكرر بكبستين ورا بعض
     const lines = inv.lines.filter(l => l.item && num(l.qty) > 0).map(l => ({ item: l.item, qty: num(l.qty), price: num(l.price), cp: num(l.cp) }));
     if (!lines.length) return toast('أضف مادة واحدة على الأقل بكمية صحيحة', 1);
@@ -2511,7 +2524,7 @@ V.invoice = (id, q, view) => {
     if (target) go(target);
     else if (print) go('#/');
     else if (andNew) go('#/invoice/new?type=' + out.type);
-    else { keepScrollY = window.scrollY; go('#/invoice/' + out.id + '?saved=1'); }
+    else { keepScrollY = window.scrollY; go('#/invoice/' + out.id + '?saved=1' + (then ? '&then=' + then : '')); }
     if (print && window.Receipt) Receipt.printDirect(out);
   };
   const step = (i, d) => {
@@ -2522,13 +2535,58 @@ V.invoice = (id, q, view) => {
     anchorCard(card);
     $('[data-f=qty]', card).value = nq; $('[data-tot]', card).textContent = fmt(nq * num(l.price)); $('[data-old]', card).textContent = lineOld(l); totals();
   };
-  onAct(view, {
+  const isDirty = () => !!(leaveGuard && leaveGuard.dirty());
+  // ••• خيارات المادة: سعر المستهلك، المتوفر، تعديل بطاقة المادة، حذف من الفاتورة
+  const lineMenu = i => {
+    const l = inv.lines[i], it = l && itemById(l.item); if (!l) return;
+    const s = it ? stockOf(it) : 0;
+    modal('••• ' + (it ? it.name : '(مادة محذوفة)'), `
+      ${it ? `<p class="muted" style="margin:0 0 10px">المتوفر: <b class="${s <= 0 ? 'bad' : ''}">${fmt(s)} ${esc(it.unit || '')}</b></p>` : ''}
+      <label class="fld"><span>سعر المستهلك</span><input id="lmCp" type="number" step="any" inputmode="decimal" value="${esc(l.cp ?? '')}"></label>
+      <div class="lm-acts">
+        ${it ? '<button type="button" class="btn" data-m="editItem">✏️ تعديل بطاقة المادة</button>' : ''}
+        <button type="button" class="btn red" data-m="rmLine">🗑 حذف من الفاتورة</button>
+      </div>`);
+    const d = $('#dlg'), cp = $('#lmCp', d);
+    cp.oninput = () => { l.cp = cp.value; totals(); };
+    d.querySelectorAll('[data-m]').forEach(b => (b.onclick = () => {
+      d.close();
+      if (b.dataset.m === 'rmLine') { inv.lines.splice(i, 1); draw(); }
+      else acts.editItem(i);
+    }));
+  };
+  // 📤 طباعة ومشاركة (للفاتورة المحفوظة)
+  const shareSheet = () => {
+    const d0 = orig; if (!d0) return;
+    modal(`📤 ${INV_TYPES[d0.type]} رقم ${d0.no}`, `<div class="share-grid">
+      <button type="button" data-s="wa">💬 واتساب</button>
+      ${isSeller() ? '' : '<button type="button" data-s="pdf">📄 PDF</button>'}
+      ${window.Receipt ? '<button type="button" data-s="receipt">🧾 إيصال</button><button type="button" data-s="bt">📶 طباعة بلوتوث</button>' : ''}
+      <button type="button" data-s="a4">🖨 طباعة A4</button></div>`);
+    const d = $('#dlg');
+    d.querySelectorAll('[data-s]').forEach(b => (b.onclick = () => {
+      d.close();
+      const k = b.dataset.s;
+      if (k === 'wa') acts.wa();
+      else if (k === 'pdf') waShareDoc('invoices', d0, null, 'pdf');
+      else if (k === 'receipt') Receipt.open(d0);
+      else if (k === 'bt') Receipt.printDirect(d0);
+      else printDoc(invoiceHtml(d0));
+    }));
+  };
+  const acts = {
     cam: () => scanBarcode(addByCode),
     paste: () => window.OrderPaste && OrderPaste.open({ sideSale, onDone: r => fromPaste({ ...r, pay: r.pay ? toDoc(r.pay) : 0 }) }),
     mic: () => (window.Voice ? Voice.listen() : voice()),
     inc: i => step(i, 1),
     dec: i => step(i, -1),
     rmLine: i => { inv.lines.splice(+i, 1); draw(); },
+    lineMenu: i => lineMenu(+i),
+    find: () => { scanIn.focus(); toTop(); },
+    calc: () => window.Calc && Calc.toggle(),
+    share: () => (orig && !isDirty() ? shareSheet() : doSave(false, false, undefined, 'share')),
+    customPrint: () => (orig && !isDirty() ? printDoc(invoiceHtml(orig)) : doSave(false, false, undefined, 'print')),
+    newInv: () => go('#/invoice/new?type=' + inv.type),
     // ✏️ تعديل بطاقة المادة من جوّا الفاتورة — بلا ما نطلع منها ولا تضيع المواد
     editItem: i => {
       if (isSeller()) return toast('🔒 تعديل بطاقة المادة (والأسعار) مسكّر بوضع البيّاع — خلّي المدير يعدّلها', 1);
@@ -2550,12 +2608,13 @@ V.invoice = (id, q, view) => {
     clearAll: () => { if (inv.lines.length && !confirm('تفريغ الفاتورة ومسح كل المواد اللي فيها؟')) return; dropDraft(); inv.lines = []; leaveGuard = null; route(); },
     save: () => doSave(false),
     saveNew: () => doSave(true),
-    savePrint: () => doSave(false, true),
+    savePrint: () => (orig && !isDirty() && window.Receipt ? Receipt.printDirect(orig) : doSave(false, true)),
     print: () => printDoc(invoiceHtml(orig)),
     wa: () => (isSeller() ? repWaAsk('invoices', orig) : waSendDoc('invoices', orig)),
     receipt: () => window.Receipt && Receipt.open(orig),
     del: () => { if (isSeller()) return toast('🔒 الحذف مسكّر بوضع البيّاع', 1); if (!confirm('حذف الفاتورة نهائياً؟ سيتم عكس أثرها على الحسابات والمستودع.')) return; db.invoices = db.invoices.filter(x => x.id !== orig.id); db.vouchers = db.vouchers.filter(v => v.inv !== orig.id); save(); toast('تم الحذف'); leaveGuard = null; go('#/invoices'); },
-  });
+  };
+  onAct(view, acts);
   // ما في طلعة من الفاتورة إلا بالحفظ أو الحذف (أو التراجع عن التعديلات على فاتورة محفوظة)
   leaveGuard = {
     dirty: () => {
@@ -2582,6 +2641,11 @@ V.invoice = (id, q, view) => {
   $('[name=payment]', view).value = payNow || '';
   toggles(); draw();
   if (sideSale && !orig && needParty()) setTimeout(() => pickParty(), 60);
+  // بعد «حفظ» من زر «طباعة ومشاركة» أو «طباعة مخصصة»: منكمّل الشغلة على الفاتورة المحفوظة
+  if (orig && q.then) {
+    history.replaceState(null, '', location.hash.replace(/&then=\w+/, '')); curHash = location.hash;
+    setTimeout(() => (q.then === 'share' ? shareSheet() : q.then === 'print' ? printDoc(invoiceHtml(orig)) : 0), 80);
+  }
   scanIn.addEventListener('focus', () => { if (needParty()) { scanIn.blur(); pickParty(); } });
   // للأوامر الصوتية
   window.InvHook = {
