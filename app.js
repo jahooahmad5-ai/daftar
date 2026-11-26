@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '6.96';
+const APP_VERSION = '6.98';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -2052,9 +2052,9 @@ V.invoice = (id, q, view) => {
       </div>
       <div class="ln-row">
         <label><span>الكمية</span><input data-f="qty" type="number" step="any" inputmode="decimal" value="${esc(l.qty)}"></label>
+        <label class="cp-s"><span>المستهلك</span><input data-f="cp" type="number" step="any" inputmode="decimal" value="${esc(l.cp ?? '')}"></label>
         <label class="unit"><span>الوحدة</span><b>${esc(it.unit || '—')}</b></label>
         <label><span>الإفرادي</span><input data-f="price" type="number" step="any" inputmode="decimal" value="${esc(l.price)}"></label>
-        <label><span>المستهلك</span><input data-f="cp" type="number" step="any" inputmode="decimal" value="${esc(l.cp ?? '')}"></label>
         <label class="tot"><span>الإجمالي</span><b data-tot>${fmt(num(l.qty) * num(l.price))}</b></label>
       </div>
       <small class="old-eq" data-old>${lineOld(l)}</small>
@@ -2313,7 +2313,13 @@ V.invoice = (id, q, view) => {
   view.addEventListener('pointerdown', e => {
     const b = e.target.closest('.ln-card .qb:not(.edit)'); if (!b) return;
     e.preventDefault();
-    const ae = document.activeElement; if (ae && ae !== document.body && ae.matches('input, textarea, select')) ae.blur();
+    // الكيبورد بيضل مفتوح: ما منشيل التركيز عن الخانة، وإذا المتصفح نقله للزر منرجّعه بلا ما تتحرك الصفحة
+    const ae = document.activeElement;
+    if (ae && ae !== document.body && ae.matches('input, textarea')) {
+      const back = () => { if (ae.isConnected && document.activeElement !== ae) ae.focus({ preventScroll: true }); };
+      b.addEventListener('focus', back, { once: true });
+      setTimeout(() => { b.removeEventListener('focus', back); back(); }, 0);
+    }
     const y0 = window.scrollY; if (y0 < 250) return;
     const until = Date.now() + 2000;
     const guard = () => {
