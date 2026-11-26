@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '6.99';
+const APP_VERSION = '7.00';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -1135,6 +1135,7 @@ V.home = (id, q, view) => {
   <div class="quick">
     <a href="#/invoice/new?type=sale"><i>🧾</i>فاتورة مبيع</a>
     <a href="#/invoice/new?type=purchase"><i>🛒</i>فاتورة شراء</a>
+    <a href="#/voucher/new?type=receipt&mode=cust" class="hot"><i>💵</i>دفعة من زبون</a>
     <a href="#/vouchers?new=receipt"><i>📥</i>سند قبض</a>
     <a href="#/vouchers?new=payment"><i>📤</i>سند دفع</a>
     <a href="#/debts"><i>💳</i>الديون</a>
@@ -2695,7 +2696,10 @@ V.voucher = (id, q, view) => {
   const orig = id === 'new' ? null : db.vouchers.find(x => x.id === id);
   if (id !== 'new' && !orig) return go('#/vouchers');
   let type = orig ? orig.type : q.type === 'payment' ? 'payment' : 'receipt';
-  const others = postable().filter(a => !isUnder(a.id, 'cashGroup') && a.id !== 'inventory' && (!isWalkin(a.id) || (orig && orig.acc === a.id)));
+  // «💵 دفعة من زبون»: نفس الصفحة بس للزباين وقبض بس
+  const custMode = q.mode === 'cust' && type === 'receipt', mq = custMode ? '&mode=cust' : '';
+  const others = custMode ? customers().filter(a => !isWalkin(a.id) || (orig && orig.acc === a.id))
+    : postable().filter(a => !isUnder(a.id, 'cashGroup') && a.id !== 'inventory' && (!isWalkin(a.id) || (orig && orig.acc === a.id)));
   let accId = orig ? orig.acc : q.acc || '';
   const v = orig || { date: today(), amount: '', cur: 'base', rate: db.settings.rate || '', note: '', cashAcc: cashAccounts()[0]?.id || '' };
   if (!orig) reserveNo(type);
@@ -2707,15 +2711,15 @@ V.voucher = (id, q, view) => {
     const isR = type === 'receipt';
     view.innerHTML = `
     <div class="vp ${isR ? 'is-r' : 'is-p'}">
-    <div class="vp-seg">
+    ${custMode ? '<h1 class="vp-title">💵 دفعة من زبون</h1>' : `<div class="vp-seg">
       <button type="button" class="${isR ? 'on' : ''}" data-act="type" data-id="receipt">📥 سند قبض</button>
       <button type="button" class="${!isR ? 'on' : ''}" data-act="type" data-id="payment">📤 سند دفع</button>
-    </div>
+    </div>`}
     <div class="vp-card">
-      <div class="vp-top"><span class="vp-no">${orig ? `رقم <b>${esc(no)}</b>` : '<b>سند جديد</b>'}</span><input name="date" type="date" value="${esc(v.date)}" aria-label="التاريخ"></div>
-      <small class="vp-lbl">${isR ? 'استلمنا من' : 'دفعنا إلى'}</small>
+      <div class="vp-top"><span class="vp-no">${orig ? `رقم <b>${esc(no)}</b>` : `<b>${custMode ? 'دفعة جديدة' : 'سند جديد'}</b>`}</span><input name="date" type="date" value="${esc(v.date)}" aria-label="التاريخ"></div>
+      <small class="vp-lbl">${custMode ? 'الزبون' : isR ? 'استلمنا من' : 'دفعنا إلى'}</small>
       <div class="vp-acc">
-        <button type="button" class="vp-name" data-act="pick">${a ? `<i>${esc((a.name || '؟').trim().charAt(0))}</i><span>${esc(a.name)}</span>` : '<i>👤</i><span class="muted">اختار الحساب…</span>'}</button>
+        <button type="button" class="vp-name" data-act="pick">${a ? `<i>${esc((a.name || '؟').trim().charAt(0))}</i><span>${esc(a.name)}</span>` : `<i>👤</i><span class="muted">${custMode ? 'اختار الزبون…' : 'اختار الحساب…'}</span>`}</button>
         <button type="button" class="vp-ic" data-act="more" aria-label="عمليات أخرى">⋯</button>
       </div>
       <small class="vp-lbl">المبلغ</small>
@@ -2728,9 +2732,9 @@ V.voucher = (id, q, view) => {
       <small class="vp-old" id="vpOld"></small>
       <input name="note" class="vp-in" placeholder="📝 ملاحظات (اختياري)" value="${esc(v.note || '')}">
       ${boxes.length > 1 ? `<select name="cashAcc" class="vp-in">${boxes.map(bx => `<option value="${bx.id}"${v.cashAcc === bx.id ? ' selected' : ''}>💰 ${isR ? 'إلى' : 'من'}: ${esc(bx.name)}</option>`).join('')}</select>` : ''}
-      <button type="button" class="vp-save" data-act="save">💾 ${orig ? 'حفظ التعديلات' : 'حفظ السند'}</button>
+      <button type="button" class="vp-save" data-act="save">💾 ${orig ? 'حفظ التعديلات' : custMode ? 'حفظ الدفعة' : 'حفظ السند'}</button>
       <div class="vp-acts">
-        ${orig ? '<button type="button" data-act="share">📤 مشاركة وطباعة</button><button type="button" data-act="another">🆕 سند جديد</button>' : ''}
+        ${orig ? `<button type="button" data-act="share">📤 مشاركة وطباعة</button><button type="button" data-act="another">🆕 ${custMode ? 'دفعة جديدة' : 'سند جديد'}</button>` : ''}
         ${orig ? '<button type="button" class="red" data-act="del">🗑 حذف</button>' : ''}
       </div>
     </div>
@@ -2771,11 +2775,11 @@ V.voucher = (id, q, view) => {
     if (orig) Object.assign(orig, o, { type });
     else db.vouchers.push(sv = { id: uid(), type, ...newNo(type), created: Date.now(), ...o });
     save(); toast(`✅ انحفظ ${type === 'receipt' ? 'سند القبض' : 'سند الدفع'} رقم ${sv.no}`);
-    go('#/voucher/' + sv.id);
+    go('#/voucher/' + sv.id + (custMode ? '?mode=cust' : ''));
   };
   onAct(view, {
     type: t => { if (orig && orig.type !== t && !confirm('تغيير نوع السند؟')) return; type = t; if (!orig) reserveNo(t); draw(); },
-    reset: () => go('#/voucher/new?type=' + type + (accId ? '&acc=' + accId : '')),
+    reset: () => go('#/voucher/new?type=' + type + mq + (accId ? '&acc=' + accId : '')),
     pick, save: doSave,
     stmt: () => (accId ? go('#/report/statement?acc=' + accId) : pick()),
     more: () => {
@@ -2796,7 +2800,7 @@ V.voucher = (id, q, view) => {
     },
     calc: () => { $('[name=amount]', view).focus(); if (window.Calc) Calc.toggle(); },
     share: () => (orig ? voucherPrintAsk(orig) : toast('احفظ السند أول', 1)),
-    another: () => go('#/voucher/new?type=' + type),
+    another: () => go('#/voucher/new?type=' + type + mq),
     del: () => { if (!confirm('حذف السند؟')) return; db.vouchers = db.vouchers.filter(x => x.id !== orig.id); save(); toast('تم الحذف'); go('#/vouchers'); },
     settle: () => settleDebt(accId),
     openMv: k => { const [src, ref] = k.split(':'); if (src === 'invoice') go('#/invoice/' + ref); else if (src === 'voucher' && ref !== (orig && orig.id)) go('#/voucher/' + ref); },

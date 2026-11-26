@@ -372,4 +372,28 @@ module.exports = [
       assert.deepStrictEqual(p.errors, []);
     },
   },
+  {
+    name: '«💵 دفعة من زبون» مربع لحاله بالرئيسية والقائمة: زباين بس، بينحفظ سند قبض',
+    fn: async base => {
+      const p = await page(base, { cloud: OWNER });
+      await p.evaluate(() => {
+        db.accounts.push({ id: 'c1', code: '112001', name: 'أحمد', type: 'asset', parent: 'customers', group: false, openBal: 0 });
+        db.accounts.push({ id: 's1', code: '221001', name: 'مورد السكر', type: 'liability', parent: 'suppliers', group: false }); save(); route();
+      });
+      assert.strictEqual(await p.locator('#nav a[href*="mode=cust"]').count(), 1, 'بالقائمة');
+      await p.click('.quick a[href*="mode=cust"]'); await p.waitForTimeout(300);
+      assert.match(await p.text('.vp'), /دفعة من زبون/);
+      assert.strictEqual(await p.locator('.vp-seg').count(), 0, 'ما في قبض/دفع — قبض بس');
+      await p.click('[data-act=pick]'); await p.waitForTimeout(200);
+      assert.strictEqual(await p.locator('#dlg .pp-item[data-id=s1]').count(), 0, 'الموردين ما بيطلعوا');
+      await p.click('#dlg .pp-item[data-id=c1]'); await p.waitForTimeout(200);
+      await p.fill('[name=amount]', '700'); await p.click('[data-act=save]'); await p.waitForTimeout(300);
+      const v = await p.evaluate(() => db.vouchers.slice(-1)[0]);
+      assert.strictEqual(v.type, 'receipt'); assert.strictEqual(v.acc, 'c1'); assert.strictEqual(v.amount, 700);
+      assert.match(await p.text('.vp'), /دفعة من زبون/, 'بعد الحفظ بيضل بنفس الشكل');
+      await p.click('[data-act=another]'); await p.waitForTimeout(200);
+      assert.match(await p.evaluate(() => location.hash), /mode=cust/);
+      assert.deepStrictEqual(p.errors, []);
+    },
+  },
 ];
