@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '6.91';
+const APP_VERSION = '6.92';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -1907,7 +1907,7 @@ V.invoice = (id, q, view) => {
       ${window.OrderPaste ? '<button class="sq-btn pic" data-act="paste" title="لصق طلبية">📋</button>' : ''}
     </div>
     <div id="sugg" class="sugg" hidden></div>
-    <div class="ln-cols"><span>الكمية</span><span>الوحدة</span><span>الإفرادي</span><span>الإجمالي</span><span>المستهلك</span></div>
+    <div class="ln-cols"><span>الكمية</span><span>الإفرادي</span><span>الإجمالي</span><span>المستهلك</span></div>
   </div>
   <div id="ln" class="ln-list"></div>
   <div id="invMore" ${sideSale && inv.type === 'sale' ? 'hidden' : ''}>
@@ -2036,7 +2036,6 @@ V.invoice = (id, q, view) => {
       </div>
       <div class="ln-row">
         <input data-f="qty" type="number" step="any" inputmode="decimal" value="${esc(l.qty)}" aria-label="الكمية">
-        <b class="unit">${esc(it.unit || 'الوحدة')}</b>
         <input data-f="price" type="number" step="any" inputmode="decimal" value="${esc(l.price)}" aria-label="الإفرادي">
         <b class="tot" data-tot>${fmt(num(l.qty) * num(l.price))}</b>
         <input data-f="cp" class="cp" type="number" step="any" inputmode="decimal" placeholder="—" value="${esc(l.cp ?? '')}" aria-label="سعر المستهلك">

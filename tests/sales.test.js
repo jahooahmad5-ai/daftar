@@ -284,10 +284,10 @@ module.exports = [
       const p = await page(base, { cloud: OWNER });
       await p.evaluate(() => { db.items.push({ id: 'it1', name: 'بسكوت', unit: 'كرتونة', sellPrice: 1000, openQty: 50 }, { id: 'it2', name: 'شيبس', sellPrice: 500, openQty: 50 }); ensureWalkin(); save(); });
       await p.go('#/invoice/new?type=sale'); await p.click('.pp-item.wk'); await p.waitForTimeout(150);
-      assert.match(await p.text('.ln-cols'), /الكمية الوحدة الإفرادي الإجمالي/);
+      assert.match(await p.text('.ln-cols'), /الكمية الإفرادي الإجمالي المستهلك/);
       for (const n of ['بسكوت', 'شيبس']) { await p.fill('#scanIn', n); await p.keyboard.press('Enter'); await p.waitForTimeout(200); }
       await p.evaluate(() => document.activeElement.blur());
-      assert.match(await p.text('.ln-card[data-i="0"] .unit'), /كرتونة/);
+      assert.strictEqual(await p.locator('.ln-card .unit').count(), 0, 'خانة الوحدة انشالت');
       // سعر المستهلك ظاهر عالبطاقة نفسها
       await p.fill('.ln-card[data-i="0"] [data-f=cp]', '1200');
       // ••• ← حذف من الفاتورة
