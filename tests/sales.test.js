@@ -279,7 +279,7 @@ module.exports = [
     },
   },
   {
-    name: 'شكل الفاتورة الجديد: عناوين الأعمدة، ••• للمادة (سعر المستهلك والحذف)، الخصم والصافي تحت، و«طباعة ومشاركة» بتحفظ وبتفتح الخيارات',
+    name: 'شكل الفاتورة الجديد: عناوين الأعمدة، سعر المستهلك عالبطاقة، ••• للمادة (الحذف)، الخصم والصافي تحت، و«طباعة ومشاركة» بتحفظ وبتفتح الخيارات',
     fn: async base => {
       const p = await page(base, { cloud: OWNER });
       await p.evaluate(() => { db.items.push({ id: 'it1', name: 'بسكوت', unit: 'كرتونة', sellPrice: 1000, openQty: 50 }, { id: 'it2', name: 'شيبس', sellPrice: 500, openQty: 50 }); ensureWalkin(); save(); });
@@ -288,9 +288,8 @@ module.exports = [
       for (const n of ['بسكوت', 'شيبس']) { await p.fill('#scanIn', n); await p.keyboard.press('Enter'); await p.waitForTimeout(200); }
       await p.evaluate(() => document.activeElement.blur());
       assert.match(await p.text('.ln-card[data-i="0"] .unit'), /كرتونة/);
-      // ••• ← سعر المستهلك
-      await p.click('.ln-card[data-i="0"] [data-act=lineMenu]');
-      await p.fill('#dlg #lmCp', '1200'); await p.closeDlg();
+      // سعر المستهلك ظاهر عالبطاقة نفسها
+      await p.fill('.ln-card[data-i="0"] [data-f=cp]', '1200');
       // ••• ← حذف من الفاتورة
       await p.click('.ln-card[data-i="1"] [data-act=lineMenu]'); await p.click('#dlg [data-m=rmLine]');
       assert.strictEqual(await p.locator('.ln-card').count(), 1);

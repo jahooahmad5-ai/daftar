@@ -498,3 +498,6 @@ td.rest{white-space:nowrap}
 .bar-box.net{flex-grow:2.2;padding-inline:10px}
 .bar-box.disc{flex-grow:1}
 body:has(#view .inv-bar) > #calc > #calcFab{display:none}
+.ln-cp{display:flex;align-items:center;justify-content:center;gap:8px;margin-top:6px}
+.ln-cp span{font-size:13px;color:#55606b;font-weight:600}
+.ln-cp input{width:110px;text-align:center;font-weight:700;font-size:15px;border:1px solid #c3ccd6;border-radius:10px;padding:5px 4px;background:#fff;font-variant-numeric:tabular-nums}

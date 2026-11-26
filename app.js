@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '6.87';
+const APP_VERSION = '6.88';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -2039,6 +2039,7 @@ V.invoice = (id, q, view) => {
         <input data-f="price" type="number" step="any" inputmode="decimal" value="${esc(l.price)}" aria-label="الإفرادي">
         <b class="tot" data-tot>${fmt(num(l.qty) * num(l.price))}</b>
       </div>
+      <label class="ln-cp"><span>سعر المستهلك</span><input data-f="cp" type="number" step="any" inputmode="decimal" placeholder="—" value="${esc(l.cp ?? '')}"></label>
       <small class="old-eq" data-old>${lineOld(l)}</small>
       ${low ? `<small class="bad">المتوفر: ${fmt(s)} ${esc(it.unit || '')}${s <= 0 ? ' — نفدت المادة' : ' — قاربت المادة على النفاد'}</small>` : ''}
     </div>`;
@@ -2536,19 +2537,17 @@ V.invoice = (id, q, view) => {
     $('[data-f=qty]', card).value = nq; $('[data-tot]', card).textContent = fmt(nq * num(l.price)); $('[data-old]', card).textContent = lineOld(l); totals();
   };
   const isDirty = () => !!(leaveGuard && leaveGuard.dirty());
-  // ••• خيارات المادة: سعر المستهلك، المتوفر، تعديل بطاقة المادة، حذف من الفاتورة
+  // ••• خيارات المادة: المتوفر، تعديل بطاقة المادة، حذف من الفاتورة
   const lineMenu = i => {
     const l = inv.lines[i], it = l && itemById(l.item); if (!l) return;
     const s = it ? stockOf(it) : 0;
     modal('••• ' + (it ? it.name : '(مادة محذوفة)'), `
       ${it ? `<p class="muted" style="margin:0 0 10px">المتوفر: <b class="${s <= 0 ? 'bad' : ''}">${fmt(s)} ${esc(it.unit || '')}</b></p>` : ''}
-      <label class="fld"><span>سعر المستهلك</span><input id="lmCp" type="number" step="any" inputmode="decimal" value="${esc(l.cp ?? '')}"></label>
       <div class="lm-acts">
         ${it ? '<button type="button" class="btn" data-m="editItem">✏️ تعديل بطاقة المادة</button>' : ''}
         <button type="button" class="btn red" data-m="rmLine">🗑 حذف من الفاتورة</button>
       </div>`);
-    const d = $('#dlg'), cp = $('#lmCp', d);
-    cp.oninput = () => { l.cp = cp.value; totals(); };
+    const d = $('#dlg');
     d.querySelectorAll('[data-m]').forEach(b => (b.onclick = () => {
       d.close();
       if (b.dataset.m === 'rmLine') { inv.lines.splice(i, 1); draw(); }
