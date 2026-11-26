@@ -77,9 +77,12 @@ const Receipt = (() => {
     line();
     // الحسابات بالترتيب: مجموع الفاتورة ← الحساب القديم ← كامل الحساب ← الدفعة ← رصيد الحساب الحالي
     const k = docRate(inv), netB = r2(t.net * k), sgn = ['sale', 'purchase'].includes(inv.type) ? 1 : -1;
-    const paidB = inv.pay === 'cash' ? netB : paidFor(inv);
+    const paidB = inv.pay === 'cash' ? netB : opt && opt.paid != null ? r2(opt.paid) : paidFor(inv);
     // بوضع البيّاع ما منطلّع حساب الزبون (القديم والرصيد) بالإيصال
-    const B = typeof isSeller === 'function' && isSeller() ? null : balances(inv);
+    // مراجعة فاتورة لسا ما انحفظت: الحساب القديم جاي من برّا، والرصيد = القديم + الفاتورة − الدفعة
+    const B = typeof isSeller === 'function' && isSeller() ? null
+      : opt && opt.before != null ? (a ? { before: r2(opt.before), after: r2(opt.before + (netB - paidB) * sgn) } : null)
+      : balances(inv);
     // رمز العملة (ل.س) مع المبالغ: براس العمودين إذا في جديد وقديم، وإلا جنب كل مبلغ
     const cs = db.settings.currency || 'ل.س';
     const row = (label, v, o = {}) => ops.push({ k: 'tri', l: label, m: oldOn() ? fmt(v) : `${fmt(v)} ${cs}`, r: oldOn() ? oldAmt(v) : '', ...o });
@@ -523,6 +526,6 @@ const Receipt = (() => {
       else { toast(`❌ ما زبطت الطباعة بالبلوتوث — ${nm} محفوظ${isVoucher(inv) ? '' : 'ة'}، جرّب طريقة تانية`, 1); open(inv); }
     }
   }
-  return { open, pdfBlob, printDirect, warm, pill, build: inv => make(inv), buildVoucher, picture, pdf: pdfDoc, escpos, loadLogo, balances };
+  return { open, pdfBlob, printDirect, warm, pill, build: (inv, opt) => make(inv, opt), buildVoucher, picture, pdf: pdfDoc, escpos, loadLogo, balances };
 })();
 window.Receipt = Receipt;

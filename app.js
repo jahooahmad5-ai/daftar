@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '6.93';
+const APP_VERSION = '6.94';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -1896,7 +1896,7 @@ V.invoice = (id, q, view) => {
     <div class="scan-row">
       ${canScan() ? '<button class="sq-btn" data-act="cam" title="مسح بالكاميرا">▮▯▮</button>' : ''}
       <input id="scanIn" type="search" enterkeyhint="search" autocomplete="off" placeholder="ادخل اسم المادة أو الباركود لإضافتها للفاتورة">
-      ${canVoice() ? '<button class="sq-btn round" data-act="mic" title="بحث صوتي">🎤</button>' : ''}
+      <button class="sq-btn rev" data-act="review" title="مراجعة الفاتورة">👁 مراجعة</button>
     </div>
     <div id="sugg" class="sugg" hidden></div>
   </div>
@@ -2526,6 +2526,24 @@ V.invoice = (id, q, view) => {
     cam: () => scanBarcode(addByCode),
     paste: () => window.OrderPaste && OrderPaste.open({ sideSale, onDone: r => fromPaste({ ...r, pay: r.pay ? toDoc(r.pay) : 0 }) }),
     mic: () => (window.Voice ? Voice.listen() : voice()),
+    // 👁 مراجعة: صورة الفاتورة متل ما رح تنطبع (حتى لو لسا ما انحفظت)
+    review: async () => {
+      if (!window.Receipt) return;
+      const lines = inv.lines.filter(l => l.item && num(l.qty) > 0).map(l => ({ item: l.item, qty: num(l.qty), price: num(l.price), cp: num(l.cp) }));
+      if (!lines.length) return toast('ما في مواد بالفاتورة لتراجعها', 1);
+      const pay = val('pay'), party = val('party');
+      const d = { ...inv, id: orig ? orig.id : '', no: orig ? orig.no : 'جديدة', created: orig ? orig.created : Date.now(), date: val('date'), pay, party, cur: inv.cur, rate: inv.cur === 'fx' ? rate() : '',
+        discount: num(val('discount')), addition: num(val('addition')), addNote: val('addNote').trim(), note: val('note'), lines, ...(isSeller() && !orig ? { rep: myRep() } : {}) };
+      // الحساب القديم: رصيد الزبون بلا هالفاتورة (ولا دفعتها)
+      const pa = acc(party);
+      let before = null;
+      if (pa && !isWalkin(pa.id)) before = orig && orig.party === pa.id ? Receipt.balances(orig).before : partyBal(pa);
+      await Receipt.loadLogo();
+      const c = Receipt.build(d, { paid: pay === 'credit' ? toBase(val('payment')) : null, before });
+      modal('👁 مراجعة الفاتورة' + (orig ? ' رقم ' + orig.no : ''), `<div class="rev-wrap"><img class="rev-img" alt="صورة الفاتورة" src="${c.toDataURL('image/png')}"></div>
+        <p class="muted" style="margin:6px 0 0;text-align:center">كبّس عالصورة لتكبّرها</p>`);
+      const img = $('#dlg .rev-img'); img.onclick = () => img.classList.toggle('big');
+    },
     inc: i => step(i, 1),
     dec: i => step(i, -1),
     rmLine: i => { inv.lines.splice(+i, 1); draw(); },
