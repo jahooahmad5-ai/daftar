@@ -143,4 +143,6 @@
   new MutationObserver(home).observe(document.body, { subtree: true, attributes: true, attributeFilter: ['open'] });
 
   document.body.appendChild(root); place();
+  // لأزرار 🧮 جوّا الصفحات
+  window.Calc = { toggle: () => open($c('#calcBox').hidden) };
 })();

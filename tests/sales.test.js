@@ -333,4 +333,43 @@ module.exports = [
       assert.deepStrictEqual(p.errors, []);
     },
   },
+  {
+    name: 'صفحة السند: قبض ودفع من صفحة لحالها، الحساب، المبلغ، الحركات الأخيرة والرصيد، والتعديل',
+    fn: async base => {
+      const p = await page(base, { cloud: OWNER });
+      await p.evaluate(() => {
+        db.items.push({ id: 'it1', code: '1', name: 'سكر', sellPrice: 1000, buyPrice: 900, openQty: 50 });
+        db.accounts.push({ id: 'c1', code: '112001', name: 'أحمد', type: 'asset', parent: 'customers', group: false });
+        db.invoices.push({ id: 'o', type: 'sale', no: 5, date: '2026-01-01', pay: 'credit', party: 'c1', cur: 'base', rate: '', lines: [{ item: 'it1', qty: 5, price: 1000 }], discount: 0, created: 1 }); save();
+      });
+      await p.go('#/vouchers'); await p.click('[data-act=new][data-id=receipt]'); await p.waitForTimeout(300);
+      assert.match(await p.evaluate(() => location.hash), /#\/voucher\/new\?type=receipt/);
+      // بلا حساب ← بتنفتح قائمة الحسابات
+      await p.fill('[name=amount]', '1500'); await p.click('[data-act=save]'); await p.waitForTimeout(200);
+      assert.ok(await p.evaluate(() => document.getElementById('dlg').open));
+      await p.click('#dlg .pp-item[data-id=c1]'); await p.waitForTimeout(200);
+      assert.match(await p.text('.vp-hist'), /مبيع #5/);
+      assert.match(await p.text('.vp-bar'), /5,000 ل.س عليه/);
+      assert.strictEqual(await p.inputValue('[name=amount]'), '1500', 'المبلغ ما ضاع لما اخترت الحساب');
+      await p.fill('[name=note]', 'دفعة'); await p.click('[data-act=save]'); await p.waitForTimeout(300);
+      const v = await p.evaluate(() => db.vouchers.slice(-1)[0]);
+      assert.strictEqual(v.type, 'receipt'); assert.strictEqual(v.acc, 'c1'); assert.strictEqual(v.amount, 1500); assert.strictEqual(v.note, 'دفعة');
+      assert.strictEqual(await p.evaluate(() => location.hash), '#/voucher/' + v.id);
+      assert.match(await p.text('.vp-bar'), /3,500 ل.س عليه/);
+      assert.match(await p.text('.vp-hist'), /سند قبض #\d+ .*دفعة \+1,500/);
+      // تعديل المبلغ
+      await p.fill('[name=amount]', '2000'); await p.click('[data-act=save]'); await p.waitForTimeout(300);
+      assert.strictEqual(await p.evaluate(id => db.vouchers.find(x => x.id === id).amount, v.id), 2000);
+      assert.strictEqual(await p.evaluate(() => db.vouchers.length), 1);
+      // مشاركة وطباعة ← خيارات الواتساب والطباعة
+      await p.click('[data-act=share]'); assert.ok(await p.locator('#dlg #vWa').count()); await p.closeDlg();
+      // سند دفع لنفس الزبون
+      await p.go('#/voucher/new?type=payment&acc=c1'); await p.waitForTimeout(200);
+      assert.match(await p.text('.vp-card'), /دفعنا إلى/);
+      await p.fill('[name=amount]', '500'); await p.click('[data-act=save]'); await p.waitForTimeout(300);
+      assert.strictEqual(await p.evaluate(() => db.vouchers.slice(-1)[0].type), 'payment');
+      assert.match(await p.text('.vp-bar'), /3,500 ل.س عليه/);
+      assert.deepStrictEqual(p.errors, []);
+    },
+  },
 ];

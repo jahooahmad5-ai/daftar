@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '6.98';
+const APP_VERSION = '6.99';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -2704,45 +2704,45 @@ V.voucher = (id, q, view) => {
     const a = acc(accId), no = orig ? orig.no : 'جديد';
     const moves = a ? accMoves(a) : [];
     const bal = a ? partyBal(a) : 0;
+    const isR = type === 'receipt';
     view.innerHTML = `
-    <div class="vp-type">
-      <button type="button" class="vp-r${type === 'payment' ? ' on' : ''}" data-act="type" data-id="payment"><i></i>سند دفع <small>(عليه)</small></button>
-      <button type="button" class="vp-r${type === 'receipt' ? ' on' : ''}" data-act="type" data-id="receipt"><i></i>سند قبض <small>(له)</small></button>
-      <button type="button" class="vp-ic" data-act="reset" aria-label="سند جديد">⟳</button>
+    <div class="vp ${isR ? 'is-r' : 'is-p'}">
+    <div class="vp-seg">
+      <button type="button" class="${isR ? 'on' : ''}" data-act="type" data-id="receipt">📥 سند قبض</button>
+      <button type="button" class="${!isR ? 'on' : ''}" data-act="type" data-id="payment">📤 سند دفع</button>
     </div>
-    <div class="vp-acc">
-      <button type="button" class="vp-ic list" data-act="stmt" aria-label="كشف حساب">📋</button>
-      <button type="button" class="vp-name" data-act="pick">${a ? esc(a.name) : '<span class="muted">اختار الحساب</span>'}</button>
-      <button type="button" class="vp-more" data-act="more">عمليات أخرى</button>
-    </div>
-    <div class="vp-meta"><label>التاريخ<input name="date" type="date" value="${esc(v.date)}"></label><label>الرقم<b>${esc(no)}</b></label></div>
-    <div class="vp-main">
-      <div class="vp-fields">
-        <div class="vp-amt">
-          <input name="amount" type="number" step="any" inputmode="decimal" placeholder="المبلغ" value="${esc(v.amount)}">
-          <button type="button" class="vp-calc" data-act="calc" aria-label="آلة حاسبة">🧮</button>
-          <select name="cur">${[['base', cur()], ['fx', FX().sym]].map(([k, l]) => `<option value="${k}"${v.cur === k ? ' selected' : ''}>${esc(l)}</option>`).join('')}</select>
-        </div>
-        <input name="rate" class="vp-rate" type="number" step="any" placeholder="سعر الصرف (${esc(cur())} لكل 1 ${esc(FX().sym)})" value="${esc(v.rate)}" ${v.cur === 'fx' ? '' : 'hidden'}>
-        <small class="vp-old" id="vpOld"></small>
-        <input name="note" class="vp-note" placeholder="ملاحظات" value="${esc(v.note || '')}">
-        ${boxes.length > 1 ? `<select name="cashAcc" class="vp-box">${boxes.map(b => `<option value="${b.id}"${v.cashAcc === b.id ? ' selected' : ''}>${type === 'receipt' ? 'إلى' : 'من'}: ${esc(b.name)}</option>`).join('')}</select>` : ''}
+    <div class="vp-card">
+      <div class="vp-top"><span class="vp-no">${orig ? `رقم <b>${esc(no)}</b>` : '<b>سند جديد</b>'}</span><input name="date" type="date" value="${esc(v.date)}" aria-label="التاريخ"></div>
+      <small class="vp-lbl">${isR ? 'استلمنا من' : 'دفعنا إلى'}</small>
+      <div class="vp-acc">
+        <button type="button" class="vp-name" data-act="pick">${a ? `<i>${esc((a.name || '؟').trim().charAt(0))}</i><span>${esc(a.name)}</span>` : '<i>👤</i><span class="muted">اختار الحساب…</span>'}</button>
+        <button type="button" class="vp-ic" data-act="more" aria-label="عمليات أخرى">⋯</button>
       </div>
-      <button type="button" class="vp-save" data-act="save"><i>💾</i>حفظ</button>
+      <small class="vp-lbl">المبلغ</small>
+      <div class="vp-amt">
+        <input name="amount" type="number" step="any" inputmode="decimal" placeholder="0" value="${esc(v.amount)}">
+        <select name="cur" aria-label="العملة">${[['base', cur()], ['fx', FX().sym]].map(([k, l]) => `<option value="${k}"${v.cur === k ? ' selected' : ''}>${esc(l)}</option>`).join('')}</select>
+        <button type="button" class="vp-ic calc" data-act="calc" aria-label="آلة حاسبة">🧮</button>
+      </div>
+      <input name="rate" class="vp-in" type="number" step="any" inputmode="decimal" placeholder="سعر الصرف (${esc(cur())} لكل 1 ${esc(FX().sym)})" value="${esc(v.rate)}" ${v.cur === 'fx' ? '' : 'hidden'}>
+      <small class="vp-old" id="vpOld"></small>
+      <input name="note" class="vp-in" placeholder="📝 ملاحظات (اختياري)" value="${esc(v.note || '')}">
+      ${boxes.length > 1 ? `<select name="cashAcc" class="vp-in">${boxes.map(bx => `<option value="${bx.id}"${v.cashAcc === bx.id ? ' selected' : ''}>💰 ${isR ? 'إلى' : 'من'}: ${esc(bx.name)}</option>`).join('')}</select>` : ''}
+      <button type="button" class="vp-save" data-act="save">💾 ${orig ? 'حفظ التعديلات' : 'حفظ السند'}</button>
+      <div class="vp-acts">
+        ${orig ? '<button type="button" data-act="share">📤 مشاركة وطباعة</button><button type="button" data-act="another">🆕 سند جديد</button>' : ''}
+        ${orig ? '<button type="button" class="red" data-act="del">🗑 حذف</button>' : ''}
+      </div>
     </div>
-    <div class="vp-acts">
-      <button type="button" data-act="share">📤 مشاركة وطباعة</button>
-      <button type="button" data-act="another">🆕 إنشاء سند آخر</button>
-      ${orig ? '<button type="button" class="red" data-act="del">🗑 حذف</button>' : ''}
-    </div>
-    <div class="vp-hist-h">الحركات الأخيرة</div>
-    <div class="vp-hist">${!a ? '<p class="muted" style="text-align:center">اختار الحساب لتشوف حركاته</p>' : moves.length ? moves.map(m => `
-      <div class="vp-mv" data-act="openMv" data-id="${esc(m.src + ':' + m.ref)}">
-        <div class="vp-mv-h"><span><i class="${m.amt >= 0 ? 'up' : 'down'}">${m.amt >= 0 ? '▲' : '▼'}</i>${esc(m.label)} [${esc(m.no)}]</span><b>${esc(m.date)}</b></div>
-        <div class="vp-mv-a">${fmt(m.amt)} <small>${esc(cur())}</small></div>
-        ${m.note ? `<div class="vp-mv-n">${esc(m.note)}</div>` : ''}
-      </div>`).join('') : '<p class="muted" style="text-align:center">ما في حركات</p>'}</div>
-    ${a ? `<div class="vp-bar"><span>رصيده [ ${fmt(Math.abs(bal))} ${esc(cur())} ${balWord(a, bal)} ]</span>${isUnder(a.id, 'customers') ? '<button type="button" data-act="settle">تصفية الديون</button>' : ''}</div>` : ''}`;
+    ${a ? `<div class="vp-hist-h"><span>الحركات الأخيرة</span><a href="#/report/statement?acc=${esc(a.id)}">كشف الحساب ←</a></div>
+    <div class="vp-hist">${moves.length ? moves.map(m => `
+      <button type="button" class="vp-mv" data-act="openMv" data-id="${esc(m.src + ':' + m.ref)}">
+        <i class="${m.amt >= 0 ? 'up' : 'down'}">${m.amt >= 0 ? '↑' : '↓'}</i>
+        <span class="vp-mv-t"><b>${esc(m.label)} <small>#${esc(m.no)}</small></b><small>${esc(m.date)}${m.note ? ' · ' + esc(m.note) : ''}</small></span>
+        <span class="vp-mv-a ${m.amt >= 0 ? 'up' : 'down'}">${m.amt > 0 ? '+' : ''}${fmt(m.amt)}</span>
+      </button>`).join('') : '<p class="muted" style="text-align:center">ما في حركات</p>'}</div>
+    <div class="vp-bar"><span><small>رصيده</small><b>${fmt(Math.abs(bal))} ${esc(cur())}</b>${bal ? `<em class="${balWord(a, bal) === 'عليه' ? 'down' : 'up'}">${balWord(a, bal)}</em>` : ''}</span>${isUnder(a.id, 'customers') && balWord(a, bal) === 'عليه' ? '<button type="button" data-act="settle">✅ تصفية الحساب</button>' : ''}</div>` : ''}
+    </div>`;
     const am = $('[name=amount]', view), cu = $('[name=cur]', view), rt = $('[name=rate]', view), old = $('#vpOld', view);
     const upd = () => {
       const x = num(am.value), fx = cu.value === 'fx', R = num(rt.value), base = fx ? x * R : x;
@@ -2794,7 +2794,7 @@ V.voucher = (id, q, view) => {
         else pick();
       }));
     },
-    calc: () => { $('[name=amount]', view).focus(); const f = document.getElementById('calcFab'); if (f) { f.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true })); f.dispatchEvent(new PointerEvent('pointerup', { bubbles: true })); } },
+    calc: () => { $('[name=amount]', view).focus(); if (window.Calc) Calc.toggle(); },
     share: () => (orig ? voucherPrintAsk(orig) : toast('احفظ السند أول', 1)),
     another: () => go('#/voucher/new?type=' + type),
     del: () => { if (!confirm('حذف السند؟')) return; db.vouchers = db.vouchers.filter(x => x.id !== orig.id); save(); toast('تم الحذف'); go('#/vouchers'); },
@@ -2934,10 +2934,10 @@ V.vouchers = (id, q, view) => {
     `<div class="tabs">${tab('all', 'الكل')}${tab('receipt', 'سندات القبض')}${tab('payment', 'سندات الدفع')}</div>
     <div class="card">${table(['الرقم', 'النوع', 'التاريخ', 'الحساب', 'البيان', 'المبلغ'], rows)}</div>`;
   onAct(view, {
-    new: type => voucherForm(null, isSeller() ? 'receipt' : type),
-    open: id => { const v = db.vouchers.find(x => x.id === id); if (isSeller() && v && v.type !== 'receipt') return; voucherForm(v); },
+    new: type => go('#/voucher/new?type=' + type),
+    open: id => go('#/voucher/' + id),
   });
-  if (q.new) voucherForm(null, q.new === 'payment' ? 'payment' : 'receipt', q.acc);
+  if (q.new) go(`#/voucher/new?type=${q.new === 'payment' ? 'payment' : 'receipt'}${q.acc ? '&acc=' + encodeURIComponent(q.acc) : ''}`);
 };
 
 /* ------------------------- القيود اليومية ------------------------- */
@@ -2961,7 +2961,7 @@ V.journal = (id, q, view) => {
       if (!e) return;
       if (e.src === 'manual') go('#/entry/' + e.id);
       else if (e.src === 'invoice') go('#/invoice/' + e.ref);
-      else if (e.src === 'voucher') voucherForm(db.vouchers.find(v => v.id === e.ref));
+      else if (e.src === 'voucher') go('#/voucher/' + e.ref);
       else go('#/items');
     },
   });
