@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '6.95';
+const APP_VERSION = '6.96';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -3330,6 +3330,19 @@ function loadDemo() {
 $('#appName').textContent = APP_NAME;
 $('#topTitle').textContent = APP_NAME;
 $('#coName').textContent = db.settings.company;
+/* حجم خط البرنامج: لكل موبايل لحاله (ما بيتزامن)، من 80% لـ 160% */
+const FONT_KEY = 'daftar_font';
+const fontGet = () => { let v = 100; try { v = +localStorage.getItem(FONT_KEY) || 100; } catch (e) { /* */ } return Math.min(160, Math.max(80, v)); };
+function fontApply(v) {
+  v = Math.min(160, Math.max(80, Math.round(v / 10) * 10));
+  try { if (v === 100) localStorage.removeItem(FONT_KEY); else localStorage.setItem(FONT_KEY, v); } catch (e) { /* */ }
+  document.documentElement.style.setProperty('--fz', v / 100);
+  document.body.classList.toggle('fz', v !== 100);
+  const p = $('#fontPct'); if (p) p.textContent = v + '%';
+  return v;
+}
+fontApply(fontGet());
+$('#fontCtl').onclick = e => { const b = e.target.closest('[data-f]'); if (b) toast('🔠 حجم الخط ' + fontApply(fontGet() + 10 * b.dataset.f) + '%'); };
 $('#menuBtn').onclick = () => document.body.classList.toggle('menu-open');
 $('#backdrop').onclick = () => document.body.classList.remove('menu-open');
 window.addEventListener('hashchange', route);

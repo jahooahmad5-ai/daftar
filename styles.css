@@ -488,3 +488,14 @@ td.rest{white-space:nowrap}
 .rev-zoom input{flex:1;min-width:0}
 .rev-zoom .btn{padding:6px 10px;font-size:16px}
 .rev-pct{min-width:46px;text-align:center;font-variant-numeric:tabular-nums}
+/* حجم خط البرنامج (من القائمة الجانبية): بيكبّر الصفحات والنوافذ */
+body.fz .main-wrap,body.fz #dlg{zoom:var(--fz,1)}
+.font-ctl{display:flex;align-items:center;gap:6px;margin-top:12px;padding:8px 10px;border-radius:10px;background:rgba(255,255,255,.08);color:#e6f4f2;font-size:14px}
+.font-ctl span{flex:1}
+.font-ctl button{border:0;border-radius:8px;background:#14b8a6;color:#04211e;font:inherit;font-weight:800;width:38px;height:34px;cursor:pointer}
+.font-ctl b{min-width:44px;text-align:center;font-variant-numeric:tabular-nums}
+
+/* الخط الكبير: أزرار المادة بتنزل لسطر تاني بدل ما تطلع برّا الشاشة */
+body.fz .ln-head{flex-wrap:wrap}
+body.fz .ln-name{flex:1 1 130px;min-width:0}
+body.fz .ln-head{row-gap:4px}

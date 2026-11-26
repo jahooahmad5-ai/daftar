@@ -91,4 +91,24 @@ module.exports = [
       assert.strictEqual(shown, expect);
     },
   },
+  {
+    name: 'حجم الخط: A+ و A− من القائمة بيكبّروا ويصغّروا البرنامج، وبيضل محفوظ عالموبايل بعد ما يرجع يفتح',
+    fn: async base => {
+      const p = await page(base, { cloud: OWNER });
+      const h = () => p.evaluate(() => document.querySelector('#view').getBoundingClientRect().width > 0 && document.querySelector('.top b').getBoundingClientRect().height);
+      const h0 = await h();
+      await p.evaluate(() => document.querySelector('#fontCtl [data-f="1"]').click());
+      await p.evaluate(() => document.querySelector('#fontCtl [data-f="1"]').click());
+      assert.match(await p.evaluate(() => document.getElementById('fontPct').textContent), /120%/);
+      assert.ok(await h() > h0 * 1.15, 'الخط ما كبر');
+      assert.strictEqual(await p.evaluate(() => localStorage.getItem('daftar_font')), '120');
+      await p.asReload(); await p.waitForTimeout(300);
+      assert.match(await p.evaluate(() => document.getElementById('fontPct').textContent), /120%/);
+      assert.ok(await h() > h0 * 1.15, 'ما ضل محفوظ');
+      for (let i = 0; i < 10; i++) await p.evaluate(() => document.querySelector('#fontCtl [data-f="-1"]').click());
+      assert.match(await p.evaluate(() => document.getElementById('fontPct').textContent), /80%/, 'أصغر شي 80%');
+      assert.ok(await h() < h0, 'الخط ما صغر');
+      assert.deepStrictEqual(p.errors, []);
+    },
+  },
 ];
