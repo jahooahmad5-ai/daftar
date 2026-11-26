@@ -523,6 +523,13 @@ const Receipt = (() => {
       else { toast(`❌ ما زبطت الطباعة بالبلوتوث — ${nm} محفوظ${isVoucher(inv) ? '' : 'ة'}، جرّب طريقة تانية`, 1); open(inv); }
     }
   }
-  return { open, pdfBlob, printDirect, warm, pill, build: inv => make(inv), buildVoucher, picture, pdf: pdfDoc, escpos, loadLogo, balances };
+  // إلغاء الاقتران: منفصل عن الطابعة ومننسى الطابعة المحفوظة
+  function forget() {
+    try { if (dev && dev.gatt && dev.gatt.connected) dev.gatt.disconnect(); } catch (e) { /* */ }
+    dev = null; ch = null;
+    try { localStorage.removeItem('daftar-printer'); localStorage.removeItem('daftar-printer-name'); } catch (e) { /* */ }
+    try { pill(); } catch (e) { /* */ }
+  }
+  return { open, forget, pdfBlob, printDirect, warm, pill, build: inv => make(inv), buildVoucher, picture, pdf: pdfDoc, escpos, loadLogo, balances };
 })();
 window.Receipt = Receipt;
