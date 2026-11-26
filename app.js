@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '6.88';
+const APP_VERSION = '6.89';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -2291,12 +2291,18 @@ V.invoice = (id, q, view) => {
     requestAnimationFrame(fix); [120, 300, 600, 900].forEach(t => setTimeout(fix, t));
   };
   view.addEventListener('pointerdown', e => { const c = e.target.closest('.ln-card'); if (c && e.target.closest('.qb:not(.edit):not(.dots), input')) lineActAt = Date.now(); }, true);
-  // أزرار + و − بالمادة: ما منخلّي الكبسة تنقل التركيز (الكيبورد بيتسكّر بهدوء)،
+  // أزرار + و − بالمادة: ما منخلّي الكبسة تنقل التركيز — الكيبورد بيضل مفتوح متل ما هو،
   // وإذا الموبايل نطّ بالصفحة لفوق خلال ثانيتين منرجّعها لنفس المكان
   view.addEventListener('pointerdown', e => {
     const b = e.target.closest('.ln-card .qb:not(.edit):not(.dots)'); if (!b) return;
     e.preventDefault();
-    const ae = document.activeElement; if (ae && ae !== document.body && ae.matches('input, textarea, select')) ae.blur();
+    const ae = document.activeElement;
+    if (ae && ae !== document.body && ae.matches('input, textarea')) {
+      // إذا المتصفح نقل التركيز للزر رغم هيك، منرجّعه للخانة بلا ما تتحرك الصفحة
+      const back = () => { if (ae.isConnected && document.activeElement !== ae) ae.focus({ preventScroll: true }); };
+      b.addEventListener('focus', back, { once: true });
+      setTimeout(() => { b.removeEventListener('focus', back); back(); }, 0);
+    }
     const y0 = window.scrollY; if (y0 < 250) return;
     const until = Date.now() + 2000;
     const guard = () => {

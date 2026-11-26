@@ -310,4 +310,21 @@ module.exports = [
       assert.deepStrictEqual(p.errors, []);
     },
   },
+  {
+    name: 'زر + و − بالمادة ما بيسكّر الكيبورد: التركيز بيضل بخانة البحث (كبس بالإصبع)',
+    fn: async base => {
+      const p = await page(base, { cloud: OWNER, device: { hasTouch: true, isMobile: true } });
+      await p.evaluate(() => { db.items.push({ id: 'it1', name: 'بسكوت', sellPrice: 1000, openQty: 50 }); ensureWalkin(); save(); });
+      await p.go('#/invoice/new?type=sale'); await p.click('.pp-item.wk'); await p.waitForTimeout(150);
+      await p.fill('#scanIn', 'بسكوت'); await p.keyboard.press('Enter'); await p.waitForTimeout(300);
+      await p.focus('#scanIn');
+      await p.tap('.ln-card [data-act=inc]'); await p.waitForTimeout(200);
+      assert.strictEqual(await p.evaluate(() => document.activeElement.id), 'scanIn', 'الكيبورد تسكّر');
+      assert.strictEqual(await p.inputValue('.ln-card [data-f=qty]'), '2');
+      await p.tap('.ln-card [data-act=dec]'); await p.waitForTimeout(200);
+      assert.strictEqual(await p.evaluate(() => document.activeElement.id), 'scanIn');
+      assert.strictEqual(await p.inputValue('.ln-card [data-f=qty]'), '1');
+      assert.deepStrictEqual(p.errors, []);
+    },
+  },
 ];
