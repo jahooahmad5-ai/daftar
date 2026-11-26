@@ -278,4 +278,53 @@ module.exports = [
       assert.deepStrictEqual(p.errors, []);
     },
   },
+  {
+    name: 'شكل الفاتورة الجديد: عناوين الأعمدة، سعر المستهلك عالبطاقة، ••• للمادة (الحذف)، الخصم والصافي تحت، و«طباعة ومشاركة» بتحفظ وبتفتح الخيارات',
+    fn: async base => {
+      const p = await page(base, { cloud: OWNER });
+      await p.evaluate(() => { db.items.push({ id: 'it1', name: 'بسكوت', unit: 'كرتونة', sellPrice: 1000, openQty: 50 }, { id: 'it2', name: 'شيبس', sellPrice: 500, openQty: 50 }); ensureWalkin(); save(); });
+      await p.go('#/invoice/new?type=sale'); await p.click('.pp-item.wk'); await p.waitForTimeout(150);
+      assert.match(await p.text('.ln-cols'), /الكمية الوحدة الإفرادي الإجمالي/);
+      for (const n of ['بسكوت', 'شيبس']) { await p.fill('#scanIn', n); await p.keyboard.press('Enter'); await p.waitForTimeout(200); }
+      await p.evaluate(() => document.activeElement.blur());
+      assert.match(await p.text('.ln-card[data-i="0"] .unit'), /كرتونة/);
+      // سعر المستهلك ظاهر عالبطاقة نفسها
+      await p.fill('.ln-card[data-i="0"] [data-f=cp]', '1200');
+      // ••• ← حذف من الفاتورة
+      await p.click('.ln-card[data-i="1"] [data-act=lineMenu]'); await p.click('#dlg [data-m=rmLine]');
+      assert.strictEqual(await p.locator('.ln-card').count(), 1);
+      // الخصم بالشريط تحت
+      await p.fill('.inv-bar [name=discount]', '100');
+      assert.match(await p.text('#barNet'), /900/);
+      assert.match(await p.text('.bar-strip'), /المجموع \[ 1,000 \]/);
+      // طباعة ومشاركة ← بتحفظ وبتفتح الخيارات على الفاتورة المحفوظة
+      await p.click('[data-act=share]'); await p.waitForTimeout(500);
+      const inv = await p.evaluate(() => db.invoices.slice(-1)[0]);
+      assert.strictEqual(inv.discount, 100); assert.strictEqual(inv.lines[0].cp, 1200);
+      assert.match(await p.evaluate(() => location.hash), new RegExp('invoice/' + inv.id + '\\?saved=1$'));
+      assert.match(await p.text('#dlg'), /واتساب/); assert.match(await p.text('#dlg'), /طباعة A4/);
+      await p.closeDlg();
+      // فاتورة جديدة من الشريط
+      await p.click('[data-act=newInv]'); await p.waitForTimeout(300);
+      assert.match(await p.evaluate(() => location.hash), /invoice\/new/);
+      assert.deepStrictEqual(p.errors, []);
+    },
+  },
+  {
+    name: 'زر + و − بالمادة ما بيسكّر الكيبورد: التركيز بيضل بخانة البحث (كبس بالإصبع)',
+    fn: async base => {
+      const p = await page(base, { cloud: OWNER, device: { hasTouch: true, isMobile: true } });
+      await p.evaluate(() => { db.items.push({ id: 'it1', name: 'بسكوت', sellPrice: 1000, openQty: 50 }); ensureWalkin(); save(); });
+      await p.go('#/invoice/new?type=sale'); await p.click('.pp-item.wk'); await p.waitForTimeout(150);
+      await p.fill('#scanIn', 'بسكوت'); await p.keyboard.press('Enter'); await p.waitForTimeout(300);
+      await p.focus('#scanIn');
+      await p.tap('.ln-card [data-act=inc]'); await p.waitForTimeout(200);
+      assert.strictEqual(await p.evaluate(() => document.activeElement.id), 'scanIn', 'الكيبورد تسكّر');
+      assert.strictEqual(await p.inputValue('.ln-card [data-f=qty]'), '2');
+      await p.tap('.ln-card [data-act=dec]'); await p.waitForTimeout(200);
+      assert.strictEqual(await p.evaluate(() => document.activeElement.id), 'scanIn');
+      assert.strictEqual(await p.inputValue('.ln-card [data-f=qty]'), '1');
+      assert.deepStrictEqual(p.errors, []);
+    },
+  },
 ];
