@@ -279,7 +279,7 @@ module.exports = [
     },
   },
   {
-    name: 'زر «مراجعة» بدل المايك بالفاتورة: بيفتح صورة الفاتورة حتى لو لسا ما انحفظت، والرصيد محسوب صح',
+    name: 'زر «مراجعة» بدل المايك بالفاتورة: بيفتح صورة الفاتورة حتى لو لسا ما انحفظت، والرصيد محسوب صح، والصورة بتكبر وبتصغر',
     fn: async base => {
       const p = await page(base, { cloud: OWNER });
       await p.evaluate(() => {
@@ -300,6 +300,14 @@ module.exports = [
       assert.deepStrictEqual(await p.evaluate(() => window.__rev), { no: 'جديدة', before: 5000, paid: 300, n: 1 });
       assert.ok(await p.evaluate(() => document.querySelector('#dlg .rev-img').src.startsWith('data:image/png')));
       assert.strictEqual(await p.evaluate(() => db.invoices.length), 1, 'المراجعة ما بتحفظ الفاتورة');
+      // تكبير وتصغير: بالأزرار وبالشريط، وبين 50% و400%
+      const w = () => p.evaluate(() => document.querySelector('#dlg .rev-img').style.width);
+      await p.click('#dlg [data-z=in]'); assert.strictEqual(await w(), '125%');
+      await p.click('#dlg [data-z=out]'); await p.click('#dlg [data-z=out]'); assert.strictEqual(await w(), '75%');
+      await p.fill('#dlg .rev-zoom input', '400'); assert.strictEqual(await w(), '400%');
+      await p.click('#dlg [data-z=in]'); assert.strictEqual(await w(), '400%', 'ما بيكبر أكتر من 400%');
+      assert.match(await p.text('#dlg .rev-pct'), /400%/);
+      await p.click('#dlg [data-z=fit]'); assert.strictEqual(await w(), '100%');
       assert.deepStrictEqual(p.errors, []);
     },
   },
