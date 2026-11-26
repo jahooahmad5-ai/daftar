@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '6.85';
+const APP_VERSION = '6.86';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -1030,6 +1030,26 @@ function bindStash(view) {
   b.onclick = () => { const x = Cloud.info().stash; if (x) window.open('https://wa.me/?text=' + encodeURIComponent(stashText(x)), '_blank'); };
 }
 
+/* ---- تثبيت البرنامج كتطبيق (موبايل نقطة البيع ما عنده قائمة، فمنبيّن الزر بالرئيسية) ---- */
+const isStandalone = () => { try { return matchMedia('(display-mode: standalone)').matches || matchMedia('(display-mode: fullscreen)').matches || navigator.standalone === true; } catch (e) { return false; } };
+function installCardHtml() {
+  if (isStandalone()) return '';
+  const ios = /iphone|ipad|ipod/i.test(navigator.userAgent);
+  const how = ios ? 'من Safari: كبّس زر المشاركة <b>⬆️</b> ← <b>«إضافة إلى الشاشة الرئيسية»</b>'
+    : 'من Chrome: كبّس <b>⋮</b> (فوق) ← <b>«تثبيت التطبيق»</b> أو <b>«إضافة إلى الشاشة الرئيسية»</b>';
+  return `<div class="card" id="installCard" style="text-align:center"><p><b>📲 نزّل نقطة البيع كتطبيق</b></p>
+    <p class="muted">بتطلع أيقونة عالشاشة الرئيسية وبتفتح لحالها بلا المتصفح — وبتشتغل بلا نت.</p>
+    ${window.__installEvt ? '<div class="acts" style="justify-content:center"><button type="button" class="btn pri" id="installNow">📲 تثبيت هلق</button></div>' : `<p class="muted" style="margin:0">${how}</p>`}</div>`;
+}
+function bindInstall(view) {
+  const b = $('#installNow', view); if (!b) return;
+  b.onclick = async () => {
+    const e = window.__installEvt; if (!e) return;
+    e.prompt(); const r = await e.userChoice.catch(() => null); window.__installEvt = null;
+    if (r && r.outcome === 'accepted') { const c = $('#installCard'); if (c) c.remove(); toast('✓ انضافت نقطة البيع عالشاشة الرئيسية'); } else route();
+  };
+}
+
 /* ------------------------- الرئيسية ------------------------- */
 function sellerHome(view) {
   const t = today(), mine = db.invoices.filter(i => i.type === 'sale' && i.date === t && i.rep === myRep());
@@ -1043,6 +1063,7 @@ function sellerHome(view) {
   </div>
   <div class="kpis">${kpi('مبيعات اليوم', fmt(r2(tot)) + ' ' + esc(cur()))}${kpi('عدد فواتير اليوم', mine.length)}${kpi('مقبوضات اليوم', fmt(r2(db.vouchers.filter(v => v.type === 'receipt' && v.date === t && v.rep === myRep() && !v.inv).reduce((x, v) => x + num(v.amount) * docRate(v), 0))) + ' ' + esc(cur()))}</div>
   ${myBox() ? `<p class="muted" style="text-align:center">💰 ${esc(myBox().name)}</p>` : `<p class="bad" style="text-align:center">${NO_BOX}</p>`}
+  ${installCardHtml()}
   <p class="muted" style="text-align:center;margin-top:14px">الإصدار ${APP_VERSION}${window.Cloud && Cloud.info().email && !/@pos\.daftar\.app$/.test(Cloud.info().email) ? ` — ${esc(Cloud.info().email)}` : ''}</p>
   <p style="text-align:center;margin-top:4px"><button class="btn" style="font-size:12px;opacity:.7" data-act="boss">🔑 دخول المدير</button></p>`;
   if (window.Cloud) {
@@ -1051,6 +1072,7 @@ function sellerHome(view) {
     else if (!ci.linked && ci.posReq) view.insertAdjacentHTML('beforeend', '<div class="card warn-card"><b>📶 هالموبايل مش متصل بالسحابة هلق</b><br><span class="muted">فيك تكمّل بيع — المبيعات محفوظة وبترتفع لحالها أول ما يرجع النت. إذا ضل هيك، خلّي المدير يبعتلك رابط نقطة البيع من جديد.</span></div>');
     else if (!ci.linked) { const c = document.createElement('div'); c.className = 'card'; view.appendChild(c); Cloud.card(c); }
   }
+  bindInstall(view);
   if (!repName()) {
     modal('🧑‍💼 اسم المندوب', '<p class="muted">اكتب اسمك مرة وحدة — بيطلع على كل فواتيرك.</p>' + fields([{ k: 'name', l: 'اسم المندوب', req: 1, full: 1 }]), {
       saveText: 'حفظ', onSave: d => { const n = String(d.name || '').trim(); if (!n) return false; localStorage.setItem(REP_KEY, n); route(); },
@@ -3270,5 +3292,10 @@ if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
 }
 if (navigator.storage?.persist) navigator.storage.persist().catch(() => {});
 let deferredPrompt = null;
-window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferredPrompt = e; $('#installBtn').hidden = false; });
-$('#installBtn').onclick = async () => { if (!deferredPrompt) return; deferredPrompt.prompt(); await deferredPrompt.userChoice; deferredPrompt = null; $('#installBtn').hidden = true; };
+window.addEventListener('beforeinstallprompt', e => {
+  e.preventDefault(); deferredPrompt = e; window.__installEvt = e; $('#installBtn').hidden = false;
+  // رئيسية نقطة البيع مفتوحة: منبدّل الشرح بزر «تثبيت هلق»
+  const c = $('#installCard'); if (c) { c.outerHTML = installCardHtml(); bindInstall($('#view')); }
+});
+window.addEventListener('appinstalled', () => { window.__installEvt = null; deferredPrompt = null; $('#installBtn').hidden = true; const c = $('#installCard'); if (c) c.remove(); });
+$('#installBtn').onclick = async () => { if (!deferredPrompt) return; deferredPrompt.prompt(); await deferredPrompt.userChoice; deferredPrompt = null; window.__installEvt = null; $('#installBtn').hidden = true; };
