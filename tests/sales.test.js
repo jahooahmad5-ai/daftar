@@ -278,4 +278,29 @@ module.exports = [
       assert.deepStrictEqual(p.errors, []);
     },
   },
+  {
+    name: 'زر «مراجعة» بدل المايك بالفاتورة: بيفتح صورة الفاتورة حتى لو لسا ما انحفظت، والرصيد محسوب صح',
+    fn: async base => {
+      const p = await page(base, { cloud: OWNER });
+      await p.evaluate(() => {
+        db.items.push({ id: 'it1', code: '1', name: 'سكر', sellPrice: 1000, buyPrice: 900, openQty: 50 });
+        db.accounts.push({ id: 'c1', code: '112001', name: 'أحمد', type: 'asset', parent: 'customers', group: false });
+        db.invoices.push({ id: 'o', type: 'sale', no: 1, date: '2026-01-01', pay: 'credit', party: 'c1', cur: 'base', rate: '', lines: [{ item: 'it1', qty: 5, price: 1000 }], discount: 0, created: 1 }); save();
+      });
+      await p.go('#/invoice/new?type=sale'); await p.closePicker();
+      assert.strictEqual(await p.locator('.search-wrap [data-act=mic]').count(), 0, 'المايك انشال من جنب البحث');
+      await p.click('[data-act=review]'); await p.waitForTimeout(200);
+      assert.match(await p.text('#toast'), /ما في مواد/);
+      await p.evaluate(() => InvHook.setParty('c1'));
+      await p.fill('#scanIn', 'سكر'); await p.keyboard.press('Enter'); await p.waitForTimeout(200);
+      await p.click('[data-act=more]'); await p.fill('[name=payment]', '300'); await p.dispatchEvent('[name=payment]', 'input');
+      // نفس الأرقام يلي بتنرسم بالصورة
+      await p.evaluate(() => { const b = Receipt.build; window.__rev = null; Receipt.build = (d, o) => { window.__rev = { no: d.no, before: o.before, paid: o.paid, n: d.lines.length }; return b(d, o); }; });
+      await p.click('[data-act=review]'); await p.waitForTimeout(500);
+      assert.deepStrictEqual(await p.evaluate(() => window.__rev), { no: 'جديدة', before: 5000, paid: 300, n: 1 });
+      assert.ok(await p.evaluate(() => document.querySelector('#dlg .rev-img').src.startsWith('data:image/png')));
+      assert.strictEqual(await p.evaluate(() => db.invoices.length), 1, 'المراجعة ما بتحفظ الفاتورة');
+      assert.deepStrictEqual(p.errors, []);
+    },
+  },
 ];
