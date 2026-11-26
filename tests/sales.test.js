@@ -335,4 +335,18 @@ module.exports = [
       assert.deepStrictEqual(p.errors, []);
     },
   },
+  {
+    name: 'الفاتورة مضغوطة: بشاشة موبايل عادية بيبيّنوا ٥ مواد كاملين بين البحث وشريط المجموع',
+    fn: async base => {
+      const p = await page(base, { cloud: OWNER, device: { viewport: { width: 412, height: 870 } } });
+      await p.evaluate(() => { for (let i = 0; i < 6; i++) db.items.push({ id: 'i' + i, code: '90' + i, name: 'بسكوت 1000 دبل 24ق ' + i, unit: 'كرتونة', sellPrice: 20000, consumerPrice: 24000, openQty: 50 }); ensureWalkin(); save(); });
+      await p.go('#/invoice/new?type=sale'); await p.click('.pp-item.wk'); await p.waitForTimeout(150);
+      for (let i = 0; i < 6; i++) { await p.fill('#scanIn', '90' + i); await p.keyboard.press('Enter'); await p.waitForTimeout(80); }
+      await p.evaluate(() => document.activeElement.blur()); await p.waitForTimeout(300);
+      await p.evaluate(() => window.scrollTo(0, 0)); await p.waitForTimeout(200);
+      const n = await p.evaluate(() => { const bar = document.querySelector('.inv-bar').getBoundingClientRect(); return [...document.querySelectorAll('.ln-card')].filter(c => { const r = c.getBoundingClientRect(); return r.top >= 0 && r.bottom <= bar.top + 2; }).length; });
+      assert.ok(n >= 5, 'بيبيّن ' + n + ' مواد بس');
+      assert.strictEqual(await p.locator('.ln-card [data-f=cp]').count(), 6, 'سعر المستهلك ظاهر');
+    },
+  },
 ];

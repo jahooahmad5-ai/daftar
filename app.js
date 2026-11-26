@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '6.90';
+const APP_VERSION = '6.91';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -626,7 +626,7 @@ function route() {
   const q = Object.fromEntries(new URLSearchParams(qs || ''));
   const view = $('#view');
   view.onclick = view.oninput = view.onchange = view.onsubmit = null;
-  view.classList.remove('typing');
+  view.classList.remove('typing', 'inv-new');
   { const tc = $('#topCnt'); if (tc) tc.hidden = true; }
   let key = V[name] ? name : 'home';
   // لسا السحابة ما تحمّلت: ما منفرجي شي لحتى نعرف إذا الموبايل مسموحله (ما في وميض للدفتر)
@@ -1885,6 +1885,7 @@ V.invoice = (id, q, view) => {
   const itemById = id => items.find(x => x.id === id);
   const stockOf = it => (st[it.id] ? st[it.id].qty : num(it.openQty));
 
+  view.classList.toggle('inv-new', !orig);
   view.innerHTML = head(INV_TYPES[inv.type] + (orig ? ` رقم ${esc(orig.no)}${repTagH(orig)}` : ' جديدة' + (isSeller() ? ` — مندوب: ${esc(myRep())}` : '')),
     `${orig ? `<button class="btn wa" data-act="wa">واتساب</button><button class="btn" data-act="receipt">🧾 إيصال</button><button class="btn" data-act="print">🖨 طباعة</button><button class="btn red" data-act="del">حذف</button><a class="btn" href="#/invoices">رجوع</a>` : ''}`) + `
   ${orig && q.saved ? `<div class="saved-ok">✅ الفاتورة رقم ${esc(orig.no)} محفوظة — ${orig.lines.length} مادة، ${fmt(orig.lines.reduce((s, l) => s + num(l.qty), 0))} قطعة</div>` : ''}
@@ -1906,7 +1907,7 @@ V.invoice = (id, q, view) => {
       ${window.OrderPaste ? '<button class="sq-btn pic" data-act="paste" title="لصق طلبية">📋</button>' : ''}
     </div>
     <div id="sugg" class="sugg" hidden></div>
-    <div class="ln-cols"><span>الكمية</span><span>الوحدة</span><span>الإفرادي</span><span>الإجمالي</span></div>
+    <div class="ln-cols"><span>الكمية</span><span>الوحدة</span><span>الإفرادي</span><span>الإجمالي</span><span>المستهلك</span></div>
   </div>
   <div id="ln" class="ln-list"></div>
   <div id="invMore" ${sideSale && inv.type === 'sale' ? 'hidden' : ''}>
@@ -1943,12 +1944,12 @@ V.invoice = (id, q, view) => {
   </div>
   <p id="limWarn" class="limit-warn" hidden></p>
   <div class="inv-bar">
-    <div class="bar-strip">المجموع [ <b id="barGross">0</b> ] <span id="barInfo"></span><small id="barOld" class="old-bar"></small><small id="prnPill" class="prn-pill"></small></div>
+    <div class="bar-strip">المجموع [ <b id="barGross">0</b> ] <span id="barInfo"></span><small id="prnPill" class="prn-pill"></small></div>
     <div class="bar-mid">
       <label class="bar-box disc"><span>الخصم</span><input name="discount" type="number" step="any" inputmode="decimal" placeholder="0" value="${esc(inv.discount || '')}"></label>
       <button type="button" class="bar-ic" data-act="find" aria-label="بحث عن مادة">🔍</button>
       <button type="button" class="bar-ic calc" data-act="calc" aria-label="آلة حاسبة">🧮</button>
-      <div class="bar-box net"><span>الصافي</span><b id="barNet">0</b></div>
+      <div class="bar-box net"><span>الصافي</span><div class="bn"><b id="barNet">0</b><small id="barOld" class="old-bar"></small></div></div>
     </div>
     <div class="bar-low">
       <button type="button" data-act="savePrint">📶 طباعة بلوتوث</button>
@@ -2022,7 +2023,7 @@ V.invoice = (id, q, view) => {
     { const ms = $('#moreSum', view); if (ms) ms.textContent = [accName(val('party')) || 'بلا زبون', val('pay') === 'credit' ? 'آجل' : 'نقدي', val('date'), num(val('discount')) ? 'حسم ' + fmt(num(val('discount'))) : '', num(val('payment')) ? 'دفعة ' + fmt(num(val('payment'))) : ''].filter(Boolean).join(' · '); }
   };
   const toBase = x => (inv.cur === 'fx' ? num(x) * rate() : num(x));
-  const lineOld = l => (oldOn() && num(l.price) ? `بالقديم: الإفرادي ${oldAmt(toBase(l.price))} — الإجمالي ${oldAmt(toBase(num(l.qty) * num(l.price)))}${num(l.cp) ? ` — المستهلك ${oldAmt(toBase(l.cp))}` : ''}` : '');
+  const lineOld = l => (oldOn() && num(l.price) ? `قديم: ${oldAmt(toBase(l.price))} · ${oldAmt(toBase(num(l.qty) * num(l.price)))}` : '');
   const lineHtml = (l, i) => {
     const it = itemById(l.item) || { name: '(مادة محذوفة)' };
     const s = it.id ? stockOf(it) : 0, low = it.id && (s <= 0 || (num(it.minQty) > 0 && s <= num(it.minQty)));
@@ -2030,7 +2031,7 @@ V.invoice = (id, q, view) => {
       <div class="ln-head">
         <button class="qb" data-act="inc" data-id="${i}" aria-label="زيادة">＋</button>
         <button class="qb minus" data-act="dec" data-id="${i}" aria-label="إنقاص">−</button>
-        <b class="ln-name"><span class="ln-no">${i + 1}</span>${esc(it.name)}</b>
+        <div class="ln-name"><b><span class="ln-no">${i + 1}</span>${esc(it.name)}</b><small class="old-eq" data-old>${lineOld(l)}</small></div>
         <button class="qb dots" data-act="lineMenu" data-id="${i}" aria-label="خيارات المادة">•••</button>
       </div>
       <div class="ln-row">
@@ -2038,9 +2039,8 @@ V.invoice = (id, q, view) => {
         <b class="unit">${esc(it.unit || 'الوحدة')}</b>
         <input data-f="price" type="number" step="any" inputmode="decimal" value="${esc(l.price)}" aria-label="الإفرادي">
         <b class="tot" data-tot>${fmt(num(l.qty) * num(l.price))}</b>
+        <input data-f="cp" class="cp" type="number" step="any" inputmode="decimal" placeholder="—" value="${esc(l.cp ?? '')}" aria-label="سعر المستهلك">
       </div>
-      <label class="ln-cp"><span>سعر المستهلك</span><input data-f="cp" type="number" step="any" inputmode="decimal" placeholder="—" value="${esc(l.cp ?? '')}"></label>
-      <small class="old-eq" data-old>${lineOld(l)}</small>
       ${low ? `<small class="bad">المتوفر: ${fmt(s)} ${esc(it.unit || '')}${s <= 0 ? ' — نفدت المادة' : ' — قاربت المادة على النفاد'}</small>` : ''}
     </div>`;
   };
