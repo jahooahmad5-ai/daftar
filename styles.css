@@ -482,5 +482,9 @@ td.rest{white-space:nowrap}
 /* زر «مراجعة» بخانة البحث بالفاتورة، وصورة المراجعة */
 .sq-btn.rev{letter-spacing:0;font-size:14px;padding:0 10px;background:#2f6f9f;white-space:nowrap}
 .rev-wrap{max-height:70vh;overflow:auto;background:#f3f4f6;border-radius:10px;padding:6px;text-align:center}
-.rev-img{width:100%;max-width:420px;display:block;margin:auto;background:#fff;cursor:zoom-in}
-.rev-img.big{width:200%;max-width:none;cursor:zoom-out}
+.rev-wrap{touch-action:pan-x pan-y;text-align:start}
+.rev-img{width:100%;max-width:none;display:block;margin:auto;background:#fff;user-select:none;-webkit-user-drag:none}
+.rev-zoom{display:flex;align-items:center;gap:6px;margin-bottom:8px}
+.rev-zoom input{flex:1;min-width:0}
+.rev-zoom .btn{padding:6px 10px;font-size:16px}
+.rev-pct{min-width:46px;text-align:center;font-variant-numeric:tabular-nums}

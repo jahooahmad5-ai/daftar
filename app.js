@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '6.94';
+const APP_VERSION = '6.95';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -1841,6 +1841,37 @@ function invoiceHtml(inv) {
     ${inv.note ? `<p>ملاحظات: ${esc(inv.note)}</p>` : ''}<div class="psign"><span>توقيع المستلم</span><span>توقيع المحاسب</span></div>`;
 }
 
+/* تكبير وتصغير صورة المراجعة: أزرار، شريط، وإصبعين (أو Ctrl + عجلة الماوس) */
+function revZoom(d) {
+  const wrap = $('.rev-wrap', d), img = $('.rev-img', d), rng = $('.rev-zoom input', d), pct = $('.rev-pct', d);
+  let z = 100;
+  const set = (nz, cx, cy) => {
+    nz = Math.round(Math.min(400, Math.max(50, nz)));
+    const r = wrap.getBoundingClientRect();
+    // منحافظ عالنقطة يلي تحت الإصبعين بنفس مكانها
+    const px = cx == null ? r.width / 2 : cx - r.left, py = cy == null ? r.height / 2 : cy - r.top;
+    const fx = (wrap.scrollLeft + px) / (wrap.scrollWidth || 1), fy = (wrap.scrollTop + py) / (wrap.scrollHeight || 1);
+    z = nz; img.style.width = z + '%'; rng.value = z; pct.textContent = z + '%';
+    wrap.scrollLeft = fx * wrap.scrollWidth - px; wrap.scrollTop = fy * wrap.scrollHeight - py;
+  };
+  $$('[data-z]', d).forEach(b => (b.onclick = () => set(b.dataset.z === 'in' ? z + 25 : b.dataset.z === 'out' ? z - 25 : 100)));
+  rng.oninput = () => set(+rng.value);
+  const pts = new Map(); let start = null;
+  const dist = () => { const [a, b] = [...pts.values()]; return Math.hypot(a.x - b.x, a.y - b.y); };
+  const mid = () => { const [a, b] = [...pts.values()]; return [(a.x + b.x) / 2, (a.y + b.y) / 2]; };
+  wrap.addEventListener('pointerdown', e => { pts.set(e.pointerId, { x: e.clientX, y: e.clientY }); if (pts.size === 2) start = { d: dist(), z }; });
+  wrap.addEventListener('pointermove', e => {
+    if (!pts.has(e.pointerId)) return;
+    pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pts.size === 2 && start) { e.preventDefault(); const [cx, cy] = mid(); set(start.z * dist() / start.d, cx, cy); }
+  });
+  const up = e => { pts.delete(e.pointerId); if (pts.size < 2) start = null; };
+  ['pointerup', 'pointercancel', 'pointerleave'].forEach(t => wrap.addEventListener(t, up));
+  wrap.addEventListener('wheel', e => { if (!e.ctrlKey) return; e.preventDefault(); set(z * (e.deltaY < 0 ? 1.1 : 0.9), e.clientX, e.clientY); }, { passive: false });
+  // كبستين ورا بعض: بتكبّر للضعف أو بترجع
+  img.ondblclick = e => set(z > 100 ? 100 : 200, e.clientX, e.clientY);
+}
+
 /* تطبيع النص العربي للبحث: أ إ آ ← ا، ة ← ه، ى ← ي، وإزالة التشكيل */
 const normAr = s => String(s || '').toLowerCase().replace(/[ً-ْـ]/g, '').replace(/[أإآ]/g, 'ا').replace(/ة/g, 'ه').replace(/ى/g, 'ي').replace(/[٠-٩]/g, d => AR_DIG.indexOf(d)).trim();
 const canVoice = () => 'webkitSpeechRecognition' in window || 'SpeechRecognition' in window;
@@ -2540,9 +2571,15 @@ V.invoice = (id, q, view) => {
       if (pa && !isWalkin(pa.id)) before = orig && orig.party === pa.id ? Receipt.balances(orig).before : partyBal(pa);
       await Receipt.loadLogo();
       const c = Receipt.build(d, { paid: pay === 'credit' ? toBase(val('payment')) : null, before });
-      modal('👁 مراجعة الفاتورة' + (orig ? ' رقم ' + orig.no : ''), `<div class="rev-wrap"><img class="rev-img" alt="صورة الفاتورة" src="${c.toDataURL('image/png')}"></div>
-        <p class="muted" style="margin:6px 0 0;text-align:center">كبّس عالصورة لتكبّرها</p>`);
-      const img = $('#dlg .rev-img'); img.onclick = () => img.classList.toggle('big');
+      modal('👁 مراجعة الفاتورة' + (orig ? ' رقم ' + orig.no : ''), `<div class="rev-zoom">
+          <button type="button" class="btn" data-z="out" aria-label="تصغير">➖</button>
+          <input type="range" min="50" max="400" step="10" value="100" aria-label="حجم الصورة">
+          <button type="button" class="btn" data-z="in" aria-label="تكبير">➕</button>
+          <b class="rev-pct">100%</b><button type="button" class="btn" data-z="fit">↺</button>
+        </div>
+        <div class="rev-wrap"><img class="rev-img" alt="صورة الفاتورة" src="${c.toDataURL('image/png')}"></div>
+        <p class="muted" style="margin:6px 0 0;text-align:center">كبّر وصغّر بإصبعين، أو بالأزرار فوق</p>`);
+      revZoom($('#dlg'));
     },
     inc: i => step(i, 1),
     dec: i => step(i, -1),
