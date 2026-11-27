@@ -2745,7 +2745,7 @@ V.voucher = (id, q, view) => {
         <span class="vp-mv-t"><b>${esc(m.label)} <small>#${esc(m.no)}</small></b><small>${esc(m.date)}${m.note ? ' · ' + esc(m.note) : ''}</small></span>
         <span class="vp-mv-a ${m.amt >= 0 ? 'down' : 'up'}">${m.amt > 0 ? '+' : ''}${fmt(m.amt)}</span>
       </button>`).join('') : '<p class="muted" style="text-align:center">ما في حركات</p>'}</div>
-    <div class="vp-bar"><span><small>رصيده</small><b>${fmt(Math.abs(bal))} ${esc(cur())}</b>${bal ? `<em class="${balWord(a, bal) === 'عليه' ? 'down' : 'up'}">${balWord(a, bal)}</em>` : ''}${bal && oldOn() ? `<small class="vp-bar-old">بالقديم: ${oldAmt(Math.abs(bal))}</small>` : ''}</span>${isUnder(a.id, 'customers') && balWord(a, bal) === 'عليه' ? '<button type="button" data-act="settle">✅ تصفية الحساب</button>' : ''}</div>` : ''}
+    <div class="vp-bar${balWord(a, bal) === 'عليه' ? ' owe' : ''}"><span><small>رصيده</small><b>${fmt(Math.abs(bal))} ${esc(cur())}</b>${bal ? `<em class="${balWord(a, bal) === 'عليه' ? 'down' : 'up'}">${balWord(a, bal)}</em>` : ''}${bal && oldOn() ? `<small class="vp-bar-old">بالقديم: ${oldAmt(Math.abs(bal))}</small>` : ''}</span>${isUnder(a.id, 'customers') && balWord(a, bal) === 'عليه' ? '<button type="button" data-act="settle">✅ تصفية الحساب</button>' : ''}</div>` : ''}
     </div>`;
     const am = $('[name=amount]', view), cu = $('[name=cur]', view), rt = $('[name=rate]', view), old = $('#vpOld', view);
     const upd = () => {
