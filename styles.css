@@ -543,7 +543,7 @@ body.fz .ln-head{row-gap:4px}
 .vp-mv-a{font-weight:800;font-size:16px;direction:ltr;font-variant-numeric:tabular-nums}
 .vp-mv-a.up{color:#067647}
 .vp-mv-a.down{color:#b42318}
-.vp-bar{position:sticky;bottom:8px;display:flex;align-items:center;gap:10px;background:var(--pri-2);color:#fff;border-radius:16px;padding:10px 14px;box-shadow:0 -4px 20px rgba(0,0,0,.18)}
+.vp-bar{position:sticky;bottom:calc(8px + var(--kb, 0px));transition:bottom .15s;display:flex;align-items:center;gap:10px;background:var(--pri-2);color:#fff;border-radius:16px;padding:10px 14px;box-shadow:0 -4px 20px rgba(0,0,0,.18)}
 .vp-bar span{flex:1;display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
 .vp-bar small{color:#9fc9c2}
 .vp-bar b{font-size:26px;font-weight:900;font-variant-numeric:tabular-nums}
