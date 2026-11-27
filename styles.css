@@ -531,30 +531,36 @@ body.fz .ln-head{row-gap:4px}
 .vp-acts button{border:0;background:transparent;font:inherit;font-size:14px;color:#3d5550;cursor:pointer;padding:6px 2px}
 .vp-acts button.red{color:var(--red)}
 .vp-hist-h{display:flex;justify-content:space-between;align-items:baseline;padding:0 4px 6px;font-weight:800;font-size:16px}
+.vp-hist-l{display:flex;align-items:center;gap:10px}
+.vp-hist-l button{border:0;border-radius:10px;background:#fdecea;color:#a3161a;font:inherit;font-size:13px;font-weight:800;padding:5px 10px;cursor:pointer}
 .vp-hist-h a{font-size:13px;font-weight:600;color:var(--pri)}
 .vp-hist{display:flex;flex-direction:column;gap:6px;margin-bottom:76px}
 .vp-mv{display:flex;align-items:center;gap:10px;width:100%;border:0;background:#fff;border-radius:12px;padding:10px 12px;box-shadow:var(--sh);font:inherit;color:var(--ink);text-align:start;cursor:pointer}
 .vp-mv > i{flex:none;width:32px;height:32px;border-radius:50%;display:grid;place-items:center;font-style:normal;font-weight:800}
-.vp-mv > i.up,.vp-bar em.up{background:#e7f6ec;color:#067647}
-.vp-mv > i.down,.vp-bar em.down{background:#fdecea;color:#b42318}
+.vp-mv > i.up{background:#e7f6ec;color:#067647}
+.vp-mv > i.down{background:#fdecea;color:#b42318}
 .vp-mv-t{flex:1;min-width:0;display:flex;flex-direction:column}
 .vp-mv-t b small{color:var(--muted);font-weight:400}
 .vp-mv-t > small{color:var(--muted);font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .vp-mv-a{font-weight:800;font-size:16px;direction:ltr;font-variant-numeric:tabular-nums}
 .vp-mv-a.up{color:#067647}
 .vp-mv-a.down{color:#b42318}
-.vp-bar{position:sticky;bottom:calc(8px + var(--kb, 0px));transition:bottom .15s;display:flex;align-items:center;gap:10px;background:var(--pri-2);color:#fff;border-radius:16px;padding:10px 14px;box-shadow:0 -4px 20px rgba(0,0,0,.18)}
-.vp-bar span{flex:1;display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
-.vp-bar small{color:#9fc9c2}
-.vp-bar b{font-size:26px;font-weight:900;font-variant-numeric:tabular-nums}
-.vp-bar small.vp-bar-old{flex-basis:100%;color:#ffd58a;font-size:14px;font-weight:700;font-variant-numeric:tabular-nums}
-.vp-bar em{font-style:normal;font-size:13px;font-weight:700;border-radius:8px;padding:2px 8px}
-.vp-bar button{border:0;border-radius:12px;background:#14b8a6;color:#04211e;font:inherit;font-weight:800;padding:10px 12px;cursor:pointer;white-space:nowrap}
+.quick a.hot{background:#e3f3f0;border-color:#0f766e;color:#0b3b37}
+
+/* رصيده مثبّت فوق جنب «دفعة من زبون» */
+.vp-head{position:sticky;top:var(--vpt, 0px);z-index:20;display:flex;align-items:center;gap:10px;background:var(--bg);padding:8px 0;margin:-8px 0 4px}
+.vp-head:empty{display:none}
+.vp-head.solo .vp-bar{flex:1}
+.vp-title{flex:1;min-width:0;margin:0;font-size:18px;white-space:nowrap;color:var(--vc);text-align:start}
+.vp-bar{flex:none;max-width:60%;background:var(--pri-2);color:#fff;border-radius:14px;padding:6px 12px 8px;box-shadow:0 4px 14px rgba(0,0,0,.18)}
+.vp-bar span{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:0 8px}
+.vp-bar small{color:#bfe0da;font-size:13px;font-weight:700}
+.vp-bar b{order:3;flex-basis:100%;font-size:26px;font-weight:900;line-height:1.15;font-variant-numeric:tabular-nums;white-space:nowrap}
+.vp-bar em{font-style:normal;font-size:13px;font-weight:800;border-radius:8px;padding:1px 8px}
+.vp-bar em.up{background:#e7f6ec;color:#067647}
+.vp-bar em.down{background:#fff;color:#a3161a}
+.vp-bar small.vp-bar-old{order:4;flex-basis:100%;color:#ffe7a8;font-size:14px;font-variant-numeric:tabular-nums}
 .vp-bar.owe{background:#a3161a}
 .vp-bar.owe small{color:#ffd9d6}
-.vp-bar.owe b{color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.35)}
-.vp-bar.owe small.vp-bar-old{color:#ffe7a8;font-size:15px}
-.vp-bar.owe em.down{background:#fff;color:#a3161a}
-.vp-bar.owe button{background:#fff;color:#a3161a}
-.vp-title{margin:0 0 12px;font-size:22px;text-align:center;color:var(--vc)}
-.quick a.hot{background:#e3f3f0;border-color:#0f766e;color:#0b3b37}
+.vp-bar.owe b{text-shadow:0 1px 2px rgba(0,0,0,.35)}
+.vp-bar.owe small.vp-bar-old{color:#ffe7a8}

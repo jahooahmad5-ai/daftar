@@ -358,15 +358,11 @@ module.exports = [
       assert.match(await p.text('.vp-bar'), /3,500 ل.س عليه/);
       assert.match(await p.text('.vp-bar-old'), /بالقديم: 350,000/, 'الرصيد بالعملة القديمة تحت الرصيد');
       assert.ok(await p.locator('.vp-bar.owe').count(), 'الشريط أحمر لما الزبون عليه');
-      // الكيبورد: بيفتح ← الشريط بيطلع فوقه، بيتسكّر ← بيرجع ينزل
-      const barBottom = () => p.evaluate(() => getComputedStyle(document.querySelector('.vp-bar')).bottom);
-      assert.strictEqual(await barBottom(), '8px');
-      await p.evaluate(() => { const vv = visualViewport; Object.defineProperty(vv, 'height', { configurable: true, get: () => innerHeight - 300 }); vv.dispatchEvent(new Event('resize')); });
-      await p.waitForTimeout(250);
-      assert.strictEqual(await barBottom(), '308px', 'الشريط فوق الكيبورد');
-      await p.evaluate(() => { const vv = visualViewport; delete vv.height; vv.dispatchEvent(new Event('resize')); });
-      await p.waitForTimeout(250);
-      assert.strictEqual(await barBottom(), '8px', 'الشريط رجع لتحت');
+      // رصيده مثبّت فوق: بعد التمرير لتحت بيضل مبيّن تحت الشريط الأخضر
+      await p.evaluate(() => scrollTo(0, document.body.scrollHeight)); await p.waitForTimeout(200);
+      const r = await p.evaluate(() => { const b = document.querySelector('.vp-bar').getBoundingClientRect(); return { top: b.top, bottom: b.bottom, h: innerHeight }; });
+      assert.ok(r.top >= 0 && r.bottom <= r.h, 'رصيده مبيّن بعد التمرير');
+      await p.evaluate(() => scrollTo(0, 0));
       assert.match(await p.text('.vp-hist'), /سند قبض #\d+ .*دفعة -1,500/);
       // الألوان: فاتورة المبيع (دين) أحمر، سند القبض (مصاري داخلة) أخضر
       assert.deepStrictEqual(await p.evaluate(() => [...document.querySelectorAll('.vp-mv-a')].map(x => x.className.split(' ').pop())), ['up', 'down']);
