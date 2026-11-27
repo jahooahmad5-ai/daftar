@@ -357,6 +357,7 @@ module.exports = [
       assert.strictEqual(await p.evaluate(() => location.hash), '#/voucher/' + v.id);
       assert.match(await p.text('.vp-bar'), /3,500 ل.س عليه/);
       assert.match(await p.text('.vp-bar-old'), /بالقديم: 350,000/, 'الرصيد بالعملة القديمة تحت الرصيد');
+      assert.ok(await p.locator('.vp-bar.owe').count(), 'الشريط أحمر لما الزبون عليه');
       assert.match(await p.text('.vp-hist'), /سند قبض #\d+ .*دفعة -1,500/);
       // الألوان: فاتورة المبيع (دين) أحمر، سند القبض (مصاري داخلة) أخضر
       assert.deepStrictEqual(await p.evaluate(() => [...document.querySelectorAll('.vp-mv-a')].map(x => x.className.split(' ').pop())), ['up', 'down']);
