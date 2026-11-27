@@ -348,7 +348,7 @@ module.exports = [
       await p.fill('[name=amount]', '1500'); await p.click('[data-act=save]'); await p.waitForTimeout(200);
       assert.ok(await p.evaluate(() => document.getElementById('dlg').open));
       await p.click('#dlg .pp-item[data-id=c1]'); await p.waitForTimeout(200);
-      assert.match(await p.text('.vp-hist'), /مبيع #5/);
+      assert.match(await p.text('.vp-hist'), /مبيع #5.*\+5,000/);
       assert.match(await p.text('.vp-bar'), /5,000 ل.س عليه/);
       assert.strictEqual(await p.inputValue('[name=amount]'), '1500', 'المبلغ ما ضاع لما اخترت الحساب');
       await p.fill('[name=note]', 'دفعة'); await p.click('[data-act=save]'); await p.waitForTimeout(300);
@@ -356,7 +356,10 @@ module.exports = [
       assert.strictEqual(v.type, 'receipt'); assert.strictEqual(v.acc, 'c1'); assert.strictEqual(v.amount, 1500); assert.strictEqual(v.note, 'دفعة');
       assert.strictEqual(await p.evaluate(() => location.hash), '#/voucher/' + v.id);
       assert.match(await p.text('.vp-bar'), /3,500 ل.س عليه/);
-      assert.match(await p.text('.vp-hist'), /سند قبض #\d+ .*دفعة \+1,500/);
+      assert.match(await p.text('.vp-bar-old'), /بالقديم: 350,000/, 'الرصيد بالعملة القديمة تحت الرصيد');
+      assert.match(await p.text('.vp-hist'), /سند قبض #\d+ .*دفعة -1,500/);
+      // الألوان: فاتورة المبيع (دين) أحمر، سند القبض (مصاري داخلة) أخضر
+      assert.deepStrictEqual(await p.evaluate(() => [...document.querySelectorAll('.vp-mv-a')].map(x => x.className.split(' ').pop())), ['up', 'down']);
       // تعديل المبلغ
       await p.fill('[name=amount]', '2000'); await p.click('[data-act=save]'); await p.waitForTimeout(300);
       assert.strictEqual(await p.evaluate(id => db.vouchers.find(x => x.id === id).amount, v.id), 2000);

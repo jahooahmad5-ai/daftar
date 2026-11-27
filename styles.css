@@ -546,7 +546,8 @@ body.fz .ln-head{row-gap:4px}
 .vp-bar{position:sticky;bottom:8px;display:flex;align-items:center;gap:10px;background:var(--pri-2);color:#fff;border-radius:16px;padding:10px 14px;box-shadow:0 -4px 20px rgba(0,0,0,.18)}
 .vp-bar span{flex:1;display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
 .vp-bar small{color:#9fc9c2}
-.vp-bar b{font-size:20px;font-variant-numeric:tabular-nums}
+.vp-bar b{font-size:26px;font-weight:900;font-variant-numeric:tabular-nums}
+.vp-bar small.vp-bar-old{flex-basis:100%;color:#ffd58a;font-size:14px;font-weight:700;font-variant-numeric:tabular-nums}
 .vp-bar em{font-style:normal;font-size:13px;font-weight:700;border-radius:8px;padding:2px 8px}
 .vp-bar button{border:0;border-radius:12px;background:#14b8a6;color:#04211e;font:inherit;font-weight:800;padding:10px 12px;cursor:pointer;white-space:nowrap}
 .vp-title{margin:0 0 12px;font-size:22px;text-align:center;color:var(--vc)}
