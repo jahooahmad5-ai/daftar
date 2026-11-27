@@ -2677,20 +2677,15 @@ V.invoice = (id, q, view) => {
 };
 
 /* ------------------------- صفحة السند (قبض / دفع) ------------------------- */
-// الكيبورد: منحسب قدّيش غطّى من الشاشة (--kb) لحتى شريط «رصيده» يطلع فوقه، ويرجع ينزل لما يتسكّر
+// شريط «رصيده» مثبّت فوق (--vpt): بيضل مبيّن وقت التمرير ووقت الكيبورد
 (() => {
-  const vv = window.visualViewport; if (!vv) return;
+  const vv = window.visualViewport || { offsetTop: 0, addEventListener: () => {} };
   const fit = () => {
-    const k = Math.max(0, Math.round(innerHeight - vv.height - vv.offsetTop));
-    document.documentElement.style.setProperty('--kb', (k > 80 ? k : 0) + 'px');
-    // الخانة يلي عم تكتب فيها لازم تضل مبيّنة فوق الشريط
-    const bar = document.querySelector('.vp-bar'), f = document.activeElement;
-    if (k > 80 && bar && f && f.matches('input,textarea')) setTimeout(() => {
-      const over = f.getBoundingClientRect().bottom - (vv.offsetTop + vv.height - bar.offsetHeight - 16);
-      if (over > 0) scrollBy(0, over);
-    }, 200);
+    const r = document.documentElement.style, top = document.querySelector('.top');
+    // تحت الشريط الأخضر، وإذا الكيبورد زحّط الشاشة لفوق: بأول الجزء المبيّن
+    r.setProperty('--vpt', Math.max(top ? top.offsetHeight : 0, Math.round(vv.offsetTop)) + 'px');
   };
-  vv.addEventListener('resize', fit); vv.addEventListener('scroll', fit); fit();
+  vv.addEventListener('resize', fit); vv.addEventListener('scroll', fit); addEventListener('resize', fit); fit();
 })();
 // حركات الحساب الأخيرة: + بتزيد رصيده (فاتورة مبيع للزبون)، − بتنقّصه (سند قبض)
 function accMoves(a, n = 30) {
@@ -2726,7 +2721,8 @@ V.voucher = (id, q, view) => {
     const isR = type === 'receipt';
     view.innerHTML = `
     <div class="vp ${isR ? 'is-r' : 'is-p'}">
-    ${custMode ? '<h1 class="vp-title">💵 دفعة من زبون</h1>' : `<div class="vp-seg">
+    <div class="vp-head${custMode ? '' : ' solo'}">${custMode ? '<h1 class="vp-title">💵 دفعة من زبون</h1>' : ''}${a ? `<div class="vp-bar${balWord(a, bal) === 'عليه' ? ' owe' : ''}"><span><small>رصيده</small><b>${fmt(Math.abs(bal))} ${esc(cur())}</b>${bal ? `<em class="${balWord(a, bal) === 'عليه' ? 'down' : 'up'}">${balWord(a, bal)}</em>` : ''}${bal && oldOn() ? `<small class="vp-bar-old">بالقديم: ${oldAmt(Math.abs(bal))}</small>` : ''}</span></div>` : ''}</div>
+    ${custMode ? '' : `<div class="vp-seg">
       <button type="button" class="${isR ? 'on' : ''}" data-act="type" data-id="receipt">📥 سند قبض</button>
       <button type="button" class="${!isR ? 'on' : ''}" data-act="type" data-id="payment">📤 سند دفع</button>
     </div>`}
@@ -2753,14 +2749,14 @@ V.voucher = (id, q, view) => {
         ${orig ? '<button type="button" class="red" data-act="del">🗑 حذف</button>' : ''}
       </div>
     </div>
-    ${a ? `<div class="vp-hist-h"><span>الحركات الأخيرة</span><a href="#/report/statement?acc=${esc(a.id)}">كشف الحساب ←</a></div>
+    ${a ? `<div class="vp-hist-h"><span>الحركات الأخيرة</span><span class="vp-hist-l">${isUnder(a.id, 'customers') && balWord(a, bal) === 'عليه' ? '<button type="button" data-act="settle">✅ تصفية الحساب</button>' : ''}<a href="#/report/statement?acc=${esc(a.id)}">كشف الحساب ←</a></span></div>
     <div class="vp-hist">${moves.length ? moves.map(m => `
       <button type="button" class="vp-mv" data-act="openMv" data-id="${esc(m.src + ':' + m.ref)}">
         <i class="${m.amt >= 0 ? 'down' : 'up'}">${m.amt >= 0 ? '↑' : '↓'}</i>
         <span class="vp-mv-t"><b>${esc(m.label)} <small>#${esc(m.no)}</small></b><small>${esc(m.date)}${m.note ? ' · ' + esc(m.note) : ''}</small></span>
         <span class="vp-mv-a ${m.amt >= 0 ? 'down' : 'up'}">${m.amt > 0 ? '+' : ''}${fmt(m.amt)}</span>
       </button>`).join('') : '<p class="muted" style="text-align:center">ما في حركات</p>'}</div>
-    <div class="vp-bar${balWord(a, bal) === 'عليه' ? ' owe' : ''}"><span><small>رصيده</small><b>${fmt(Math.abs(bal))} ${esc(cur())}</b>${bal ? `<em class="${balWord(a, bal) === 'عليه' ? 'down' : 'up'}">${balWord(a, bal)}</em>` : ''}${bal && oldOn() ? `<small class="vp-bar-old">بالقديم: ${oldAmt(Math.abs(bal))}</small>` : ''}</span>${isUnder(a.id, 'customers') && balWord(a, bal) === 'عليه' ? '<button type="button" data-act="settle">✅ تصفية الحساب</button>' : ''}</div>` : ''}
+` : ''}
     </div>`;
     const am = $('[name=amount]', view), cu = $('[name=cur]', view), rt = $('[name=rate]', view), old = $('#vpOld', view);
     const upd = () => {
