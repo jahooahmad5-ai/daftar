@@ -2677,6 +2677,21 @@ V.invoice = (id, q, view) => {
 };
 
 /* ------------------------- صفحة السند (قبض / دفع) ------------------------- */
+// الكيبورد: منحسب قدّيش غطّى من الشاشة (--kb) لحتى شريط «رصيده» يطلع فوقه، ويرجع ينزل لما يتسكّر
+(() => {
+  const vv = window.visualViewport; if (!vv) return;
+  const fit = () => {
+    const k = Math.max(0, Math.round(innerHeight - vv.height - vv.offsetTop));
+    document.documentElement.style.setProperty('--kb', (k > 80 ? k : 0) + 'px');
+    // الخانة يلي عم تكتب فيها لازم تضل مبيّنة فوق الشريط
+    const bar = document.querySelector('.vp-bar'), f = document.activeElement;
+    if (k > 80 && bar && f && f.matches('input,textarea')) setTimeout(() => {
+      const over = f.getBoundingClientRect().bottom - (vv.offsetTop + vv.height - bar.offsetHeight - 16);
+      if (over > 0) scrollBy(0, over);
+    }, 200);
+  };
+  vv.addEventListener('resize', fit); vv.addEventListener('scroll', fit); fit();
+})();
 // حركات الحساب الأخيرة: + بتزيد رصيده (فاتورة مبيع للزبون)، − بتنقّصه (سند قبض)
 function accMoves(a, n = 30) {
   const sign = a.type === 'asset' || a.type === 'expense' ? 1 : -1, out = [];
