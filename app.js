@@ -2741,9 +2741,9 @@ V.voucher = (id, q, view) => {
     ${a ? `<div class="vp-hist-h"><span>الحركات الأخيرة</span><a href="#/report/statement?acc=${esc(a.id)}">كشف الحساب ←</a></div>
     <div class="vp-hist">${moves.length ? moves.map(m => `
       <button type="button" class="vp-mv" data-act="openMv" data-id="${esc(m.src + ':' + m.ref)}">
-        <i class="${m.amt >= 0 ? 'up' : 'down'}">${m.amt >= 0 ? '↑' : '↓'}</i>
+        <i class="${m.amt >= 0 ? 'down' : 'up'}">${m.amt >= 0 ? '↑' : '↓'}</i>
         <span class="vp-mv-t"><b>${esc(m.label)} <small>#${esc(m.no)}</small></b><small>${esc(m.date)}${m.note ? ' · ' + esc(m.note) : ''}</small></span>
-        <span class="vp-mv-a ${m.amt >= 0 ? 'up' : 'down'}">${m.amt > 0 ? '+' : ''}${fmt(m.amt)}</span>
+        <span class="vp-mv-a ${m.amt >= 0 ? 'down' : 'up'}">${m.amt > 0 ? '+' : ''}${fmt(m.amt)}</span>
       </button>`).join('') : '<p class="muted" style="text-align:center">ما في حركات</p>'}</div>
     <div class="vp-bar"><span><small>رصيده</small><b>${fmt(Math.abs(bal))} ${esc(cur())}</b>${bal ? `<em class="${balWord(a, bal) === 'عليه' ? 'down' : 'up'}">${balWord(a, bal)}</em>` : ''}${bal && oldOn() ? `<small class="vp-bar-old">بالقديم: ${oldAmt(Math.abs(bal))}</small>` : ''}</span>${isUnder(a.id, 'customers') && balWord(a, bal) === 'عليه' ? '<button type="button" data-act="settle">✅ تصفية الحساب</button>' : ''}</div>` : ''}
     </div>`;
