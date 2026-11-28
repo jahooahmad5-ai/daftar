@@ -534,6 +534,8 @@ body.fz .ln-head{row-gap:4px}
 .vp-acts{display:flex;justify-content:center;flex-wrap:wrap;gap:4px 14px}
 .vp-acts button{border:0;background:transparent;font:inherit;font-size:14px;color:#3d5550;cursor:pointer;padding:6px 2px}
 .vp-acts button.red{color:var(--red)}
+.vp-save.wa{background:#25d366;color:#05301a;font-size:16px;padding:12px}
+.vp-acts button.wa{color:#128c4a;font-weight:800}
 .vp-hist-h{display:flex;justify-content:space-between;align-items:baseline;padding:0 4px 6px;font-weight:800;font-size:16px}
 .vp-hist-l{display:flex;align-items:center;gap:10px}
 .vp-hist-l button{border:0;border-radius:10px;background:#fdecea;color:#a3161a;font:inherit;font-size:13px;font-weight:800;padding:5px 10px;cursor:pointer}

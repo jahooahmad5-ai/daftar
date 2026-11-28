@@ -3,7 +3,7 @@
 // - إذا النت ضعيف أو «متصل بلا إنترنت» (الراوتر شغّال والنت مقطوع): ما منستنى للأبد،
 //   بعد ثانيتين ونص منفتح من الكاش، وبنكمّل التحديث بالخلفية
 // - بعد أول بطء: منفتح من الكاش دغري لدقيقة (هيك ما منستنى عند كل ملف)
-const CACHE = 'daftar-v169';
+const CACHE = 'daftar-v170';
 const FILES = ['./', 'index.html', 'store.js', 'styles.css', 'app.js', 'cloud.js', 'printer.js', 'import.js', 'order.js', 'voice.js', 'calc.js', 'config.js', 'manifest.json', 'icon.svg', 'icon-192.png', 'icon-512.png', 'lib/xlsx.full.min.js', 'lib/qrcode.js'];
 const WAIT = 2500, SLOW_FOR = 60000;
 let slowUntil = 0;
