@@ -18,8 +18,8 @@ module.exports = [
     fn: async base => {
       const p = await page(base, { cloud: OWNER });
       await setup(p);
-      // قبل: السكر انباع بكلفة صفر
-      assert.strictEqual(await p.evaluate(() => r2(engine().moves.filter(m => m.item === 'su' && m.kind === 'sale').reduce((s, m) => s + m.cost, 0))), 0);
+      // قبل: السكر انباع قبل ما ينشرى ← كلفته تقديرية من سعر الشراء بالبطاقة (مش صفر)
+      assert.strictEqual(await p.evaluate(() => r2(engine().moves.filter(m => m.item === 'su' && m.kind === 'sale').reduce((s, m) => s + m.cost, 0))), 8000);
       await p.go('#/items');
       assert.match(await p.text(), /شراء المواد السالبة \(2\)/);
       await p.go('#/invoice/new?type=purchase&neg=1');
@@ -37,6 +37,23 @@ module.exports = [
       assert.deepStrictEqual(r.ri, [0, 3200]);
       await p.go('#/items');
       assert.doesNotMatch(await p.text(), /شراء المواد السالبة/);
+      assert.deepStrictEqual(p.errors, []);
+    },
+  },
+  {
+    name: 'مادة انباعت قبل ما تنشرى وبعدين انشرت: كلفة المبيع من سعر الشراء بالبطاقة مش صفر، وبتقرير أرباح المواد «كلفتها تقديرية»',
+    fn: async base => {
+      const p = await page(base, { cloud: OWNER });
+      await p.evaluate(() => {
+        db.items.push({ id: 'ct', code: '1', name: 'كرتون', sellPrice: 600, buyPrice: 560 });
+        const inv = (id, type, date, qty, price) => db.invoices.push({ id, type, no: id, date, pay: 'cash', cashAcc: 'cash', party: '', cur: 'base', rate: '', lines: [{ item: 'ct', qty, price }], discount: 0, created: 1 });
+        inv('s1', 'sale', daysAgo(5), 10, 600); inv('p1', 'purchase', daysAgo(3), 20, 550); inv('s2', 'sale', daysAgo(1), 5, 600);
+        save();
+      });
+      const c = await p.evaluate(() => engine().moves.filter(m => m.kind === 'sale').map(m => [r2(m.cost), !!m.est]));
+      assert.deepStrictEqual(c, [[5600, true], [2750, false]]);
+      await p.go('#/report/itemprofit?from=' + await p.evaluate(() => daysAgo(10)));
+      assert.match(await p.text(), /10 منها كلفتها تقديرية/);
       assert.deepStrictEqual(p.errors, []);
     },
   },
