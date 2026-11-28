@@ -589,3 +589,6 @@ body.sheet-open .inv-bar .bar-edit{display:none}
 .pay-top #payRow span{font-size:13px;color:var(--muted,#64748b)}
 .pay-top #payRow input{width:100%}
 .tot-box #payOld{display:none}
+.ab-fix{display:flex;gap:4px;align-items:center}.ab-fix input{width:80px;min-width:0;text-align:center}
+.pw-warn{display:block;background:#fff6e0;border:1px solid #f0c36d;color:#7a4b00;border-radius:12px;padding:10px 12px;margin-bottom:10px;text-decoration:none;font-weight:600}
+@media print{.pw-warn{display:none}}
