@@ -452,11 +452,11 @@ const head = (title, actions = '') => `<div class="ph"><h1>${title}</h1><div cla
 const kpi = (l, v, c = '') => `<div class="kpi ${c}"><span>${l}</span><b>${v}</b></div>`;
 const table = (heads, rows, foot = '', cls = '') => `<div class="tbl"><table class="${cls}"><thead><tr>${heads.map(h => `<th>${h}</th>`).join('')}</tr></thead><tbody>${rows || `<tr><td colspan="${heads.length}" class="empty">لا توجد بيانات</td></tr>`}</tbody>${foot ? `<tfoot>${foot}</tfoot>` : ''}</table></div>`;
 
-function modal(title, body, { onSave, saveText = 'حفظ', extra = '' } = {}) {
+function modal(title, body, { onSave, saveText = 'حفظ', closeText = 'إغلاق', extra = '' } = {}) {
   const d = $('#dlg');
   d.innerHTML = `<form class="dlg-form" novalidate><header><h3>${esc(title)}</h3><button type="button" class="x" data-close>✕</button></header>
     <div class="dlg-body">${body}</div>
-    <footer>${onSave ? `<button class="btn pri">${saveText}</button>` : ''}${extra}<button type="button" class="btn" data-close>إغلاق</button></footer></form>`;
+    <footer>${onSave ? `<button class="btn pri">${saveText}</button>` : ''}${extra}<button type="button" class="btn" data-close>${closeText}</button></footer></form>`;
   const f = $('form', d);
   f.onsubmit = e => {
     e.preventDefault();
@@ -2176,7 +2176,7 @@ V.invoice = (id, q, view) => {
     const ex = inv.lines.find(l => l.item === it.id);
     lastBase = 0;
     inv.lines.push({ item: it.id, qty: 1, price: toDoc(basePrice(it)), cp: it.consumerPrice ? toDoc(num(it.consumerPrice)) : '' });
-    draw(inv.lines.length - 1);
+    draw(inv.lines.length - 1); toNew(); // المادة الجديدة بتطلع فوق — منطلع لعندها حتى لو كنا نازلين لآخر القائمة
     navigator.vibrate?.(ex ? [40, 60, 40] : 40);
     noteAdd(it, ex ? inv.lines.indexOf(ex) + 1 : 0, 1); toast((ex ? '⚠️ ' : '✓ ') + it.name + (ex ? ' — مكررة بسطر جديد' : ''), !!ex);
   };
@@ -2199,7 +2199,7 @@ V.invoice = (id, q, view) => {
       inv.lines.push({ item, qty, price: toDoc(basePrice(it)), cp: it.consumerPrice ? toDoc(num(it.consumerPrice)) : '' });
       if (r.lines.length === 1) { hl = inv.lines.length - 1; noteAdd(it, ex ? inv.lines.indexOf(ex) + 1 : 0, qty); }
     });
-    payNow = r.pay || 0; showPay(); draw(hl);
+    payNow = r.pay || 0; showPay(); draw(hl); toNew();
     if (r.lines.length > 1 || r.skipped) toast(`انضاف ${r.lines.length} مادة${r.skipped ? ` — ${r.skipped} سطر ما انضاف` : ''}`);
   };
   const addByCode = code => { const it = findByCode(code); if (it) addItem(it); else toast('لا توجد مادة بهذا الباركود: ' + code, 1); };
@@ -2352,6 +2352,13 @@ V.invoice = (id, q, view) => {
     const tb = $('.top'), off = tb && getComputedStyle(tb).display !== 'none' ? tb.offsetHeight : 0;
     window.scrollTo({ top: Math.max(0, $('.search-wrap', view).getBoundingClientRect().top + window.scrollY - off - 6) });
     fitSugg();
+  };
+  // بعد إضافة مادة: الأحدث بتطلع أول القائمة — منطلع لعندها (تحت خانة البحث الثابتة) حتى لو كنا نازلين لآخر القائمة
+  const toNew = () => {
+    const ln = $('#ln', view), sw = $('.search-wrap', view); if (!ln || !sw) return;
+    const tb = $('.top'), off = tb && getComputedStyle(tb).display !== 'none' ? tb.offsetHeight : 0;
+    const y = ln.getBoundingClientRect().top + window.scrollY - off - sw.offsetHeight - 8;
+    if (window.scrollY > y) window.scrollTo({ top: Math.max(0, y) });
   };
   // وقت الكتابة منخبّي شريط المجموع تحت حتى ما يغطّي الاقتراحات
   // (بس طول ما قائمة الاقتراحات ظاهرة — أول ما تختفي برجع الشريط وزر الحفظ)
@@ -2589,7 +2596,14 @@ V.invoice = (id, q, view) => {
     },
     inc: i => step(i, 1),
     dec: i => step(i, -1),
-    rmLine: i => { inv.lines.splice(+i, 1); draw(); },
+    rmLine: i => {
+      const l = inv.lines[+i]; if (!l) return;
+      const nm = db.items.find(x => x.id === l.item)?.name || 'هالمادة';
+      modal('🗑 حذف المادة', `<p style="margin:4px 0;font-size:16px">هل تريد حذف المادة <b>${esc(nm)}</b> من الفاتورة؟</p>`, {
+        saveText: 'نعم', closeText: 'لا',
+        onSave: () => { if (inv.lines[+i] === l) inv.lines.splice(+i, 1); draw(); },
+      });
+    },
     // ✏️ تعديل بطاقة المادة من جوّا الفاتورة — بلا ما نطلع منها ولا تضيع المواد
     editItem: i => {
       if (isSeller()) return toast('🔒 تعديل بطاقة المادة (والأسعار) مسكّر بوضع البيّاع — خلّي المدير يعدّلها', 1);

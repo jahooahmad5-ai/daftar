@@ -406,4 +406,43 @@ module.exports = [
       assert.deepStrictEqual(p.errors, []);
     },
   },
+  {
+    name: 'مادة جديدة وإنت نازل لآخر القائمة: الصفحة بتطلع لفوق لعند المادة الجديدة',
+    fn: async base => {
+      const p = await page(base, { cloud: OWNER, device: { viewport: { width: 390, height: 700 } } });
+      await p.evaluate(() => { for (let i = 1; i <= 15; i++) db.items.push({ id: 'it' + i, code: String(i), name: 'مادة ' + i, sellPrice: 1000, openQty: 50 }); db.items.push({ id: 'pep', code: '99', name: 'بيبسي', sellPrice: 400, openQty: 50 }); ensureWalkin(); save(); });
+      await p.go('#/invoice/new?type=sale'); await p.click('.pp-item.wk'); await p.waitForTimeout(150);
+      for (let i = 1; i <= 15; i++) { await p.fill('#scanIn', String(i)); await p.keyboard.press('Enter'); await p.waitForTimeout(60); }
+      await p.evaluate(() => { document.activeElement.blur(); window.scrollTo(0, document.body.scrollHeight); });
+      await p.waitForTimeout(1700);
+      assert.ok(await p.evaluate(() => window.scrollY) > 300, 'لازم نكون نازلين تحت');
+      await p.fill('#scanIn', 'بيبسي'); await p.keyboard.press('Enter'); await p.waitForTimeout(300);
+      const top = await p.evaluate(() => { const r = document.querySelector('.ln-card').getBoundingClientRect(); return { top: r.top, sw: document.querySelector('.search-wrap').getBoundingClientRect().bottom, h: innerHeight, name: document.querySelector('.ln-card').textContent }; });
+      assert.match(top.name, /بيبسي/, 'الأحدث أول وحدة');
+      assert.ok(top.top >= top.sw - 1 && top.top < top.h, 'المادة الجديدة لازم تكون ظاهرة تحت خانة البحث: ' + JSON.stringify(top));
+      assert.deepStrictEqual(p.errors, []);
+    },
+  },
+  {
+    name: 'حذف مادة من الفاتورة بالـ ✕: بيسأل «هل تريد حذف المادة» — لا ما بيحذف، نعم بيحذف',
+    fn: async base => {
+      const p = await page(base, { cloud: OWNER });
+      await p.evaluate(() => { db.items.push({ id: 'it1', code: '1', name: 'سكر', sellPrice: 1000, openQty: 50 }, { id: 'it2', code: '2', name: 'رز', sellPrice: 2000, openQty: 50 }); ensureWalkin(); save(); });
+      await p.go('#/invoice/new?type=sale'); await p.click('.pp-item.wk'); await p.waitForTimeout(150);
+      await p.fill('#scanIn', 'سكر'); await p.keyboard.press('Enter'); await p.waitForTimeout(150);
+      await p.fill('#scanIn', 'رز'); await p.keyboard.press('Enter'); await p.waitForTimeout(150);
+      const n = () => p.locator('.ln-card').count();
+      assert.strictEqual(await n(), 2);
+      await p.click('.ln-card [data-act=rmLine]'); await p.waitForTimeout(150);
+      assert.match(await p.text('#dlg'), /هل تريد حذف المادة رز/);
+      assert.match(await p.text('#dlg footer'), /نعم/); assert.match(await p.text('#dlg footer'), /لا/);
+      await p.click('#dlg footer [data-close]'); await p.waitForTimeout(150);
+      assert.strictEqual(await n(), 2, '«لا» ما بيحذف');
+      await p.click('.ln-card [data-act=rmLine]'); await p.waitForTimeout(150);
+      await p.click('#dlg footer .btn.pri'); await p.waitForTimeout(150);
+      assert.strictEqual(await n(), 1, '«نعم» بيحذف');
+      assert.match(await p.text('.ln-card'), /سكر/);
+      assert.deepStrictEqual(p.errors, []);
+    },
+  },
 ];
