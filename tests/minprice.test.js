@@ -74,7 +74,7 @@ module.exports = [
       });
       await p.go('#/invoices'); await p.go('#/invoice/new?type=sale'); await p.closePicker();
       await p.click('[data-act=more]');
-      await p.selectOption('[name=party]', 'c1'); await p.dispatchEvent('[name=party]', 'change');
+      await p.selectOption('[name=party]', 'c1'); await p.dispatchEvent('[name=party]', 'change'); await p.click('[data-act=moreDone]');
       await p.click('#scanIn'); await p.keyboard.type('فري'); await p.waitForTimeout(300);
       const m = await p.locator('.sg-meta').first().innerText();
       assert.match(m, /1,100/); assert.doesNotMatch(m, /آخر سعر إله/);

@@ -67,14 +67,14 @@ module.exports = [
       await p.click('[data-act=share]'); await p.click('#vWa'); await p.waitForTimeout(200);
       const t = (await opened(p))[0];
       assert.match(t, /^https:\/\/wa\.me\/963933123456\?text=/);
-      assert.match(t, /سند قبض رقم 9/); assert.match(t, /استلمنا من السيد: أحمد/); assert.match(t, /المبلغ: 1,500/); assert.match(t, /بالقديم: 150,000/); assert.match(t, /رصيد حسابكم/);
+      assert.match(t, /سند قبض رقم 9/); assert.match(t, /استلمنا من السيد: أحمد/); assert.match(t, /المبلغ: 1,500/); assert.match(t, /بالقديم: 150,000/); assert.match(t, /الحساب قبل الدفعة: 2,000/); assert.match(t, /الباقي عليكم: 500/);
       // المندوب: نفس السند بلا رصيد
       const r = await page(base, { cloud: REP, ls: { daftar_rep_name: 'محمد' } });
       const rt = await r.evaluate(() => {
         db.accounts.push({ id: 'c1', code: '112001', name: 'أحمد', type: 'asset', parent: 'customers', group: false });
         return waVoucherText({ id: 'x', type: 'receipt', no: 3, date: today(), acc: 'c1', cashAcc: 'cash', amount: 500, cur: 'base', rate: '', rep: 'محمد' });
       });
-      assert.match(rt, /المندوب|مندوب: محمد/); assert.doesNotMatch(rt, /رصيد/);
+      assert.match(rt, /المندوب|مندوب: محمد/); assert.doesNotMatch(rt, /رصيد|الباقي|قبل الدفعة/);
     },
   },
   {
@@ -368,6 +368,34 @@ module.exports = [
       await p.click('[data-act=wa]'); await goWa();
       o = await opened(p);
       assert.strictEqual(o.length, 2); assert.match(o[1], /2,500/);
+      assert.deepStrictEqual(p.errors, []);
+    },
+  },
+  {
+    name: 'سند القبض: بيبيّن الحساب قبل الدفعة وقديش باقي عليه بعدها — بالواتساب وبالإيصال، وللسند القديم حسب مكانه مش الرصيد هلق',
+    fn: async base => {
+      const p = await page(base, { cloud: OWNER });
+      await setup(p);
+      // أحمد: فاتورة 2,000 (setup) + فاتورة 3,000 قبل السند = 5,000 عليه، دفع 1,500 ← باقي 3,500. وبعدين فاتورة 1,000 (بعد السند)
+      const r = await p.evaluate(() => {
+        db.invoices.push({ id: 'inv2', type: 'sale', no: 5, date: daysAgo(3), pay: 'credit', cashAcc: '', party: 'c1', cur: 'base', rate: '', lines: [{ item: 'it1', qty: 3, price: 1000 }], discount: 0, created: 0 });
+        const v = db.vouchers.find(x => x.id === 'vr1'); v.date = daysAgo(1); v.created = 5;
+        db.invoices.find(x => x.id === 'inv1').date = daysAgo(2);
+        db.invoices.push({ id: 'inv3', type: 'sale', no: 6, date: today(), pay: 'credit', cashAcc: '', party: 'c1', cur: 'base', rate: '', lines: [{ item: 'it1', qty: 1, price: 1000 }], discount: 0, created: 9 });
+        save();
+        const T = []; const f = CanvasRenderingContext2D.prototype.fillText;
+        CanvasRenderingContext2D.prototype.fillText = function (t, ...a) { T.push(String(t)); return f.call(this, t, ...a); };
+        try { Receipt.build(v); } finally { CanvasRenderingContext2D.prototype.fillText = f; }
+        return { vb: Receipt.vBalances(v), wa: waVoucherText(v), drawn: T.join('|'), now: partyBal(acc('c1')) };
+      });
+      assert.deepStrictEqual(r.vb, { before: 5000, after: 3500 });
+      assert.strictEqual(r.now, 4500, 'الرصيد هلق (بعد فاتورة تانية) غير الباقي وقت السند');
+      assert.match(r.wa, /الحساب قبل الدفعة: 5,000/);
+      assert.match(r.wa, /\*الباقي عليكم: 3,500 ل\.س\*/);
+      assert.match(r.drawn, /الحساب قبل الدفعة/); assert.match(r.drawn, /الباقي عليه/); assert.match(r.drawn, /3,500/); assert.match(r.drawn, /350,000/);
+      // سدّد كل شي ← «الحساب مسدّد»
+      const z = await p.evaluate(() => { db.vouchers.push({ id: 'vr2', type: 'receipt', no: 10, date: today(), acc: 'c1', cashAcc: 'cash', amount: 4500, cur: 'base', rate: '', created: 20 }); save(); return waVoucherText(db.vouchers.find(x => x.id === 'vr2')); });
+      assert.match(z, /الحساب مسدّد: 0/);
       assert.deepStrictEqual(p.errors, []);
     },
   },

@@ -93,7 +93,7 @@ module.exports = [
       const priceFor = async party => {
         await p.go('#/invoices'); await p.go('#/invoice/new?type=sale'); await p.closePicker();
         await p.click('[data-act=more]');
-        await p.selectOption('[name=party]', party); await p.dispatchEvent('[name=party]', 'change');
+        await p.selectOption('[name=party]', party); await p.dispatchEvent('[name=party]', 'change'); await p.click('[data-act=moreDone]');
         await p.click('#scanIn'); await p.keyboard.type('سكر'); await p.waitForTimeout(300);
         return (await p.locator('.sg-meta').first().innerText()).match(/[\d,]+/)[0];
       };
@@ -186,8 +186,18 @@ module.exports = [
       assert.strictEqual(await p.locator('[name=date]').isVisible(), true);
       await p.selectOption('[name=party]', 'c1'); await p.dispatchEvent('[name=party]', 'change');
       assert.match(await p.text('#moreSum'), /أحمد · آجل/);
-      await p.click('[data-act=more]');
-      assert.strictEqual(await p.locator('#invMore').isVisible(), false, 'كبسة تانية بتسكّرها');
+      assert.match(await p.text('#barMoreSum'), /أحمد · آجل/, 'الملخص كمان عزر «تعديل» تحت');
+      // بنافذة لحالها فوق الفاتورة، وشريط الحفظ ظاهر فوقها
+      assert.strictEqual(await p.evaluate(() => getComputedStyle(document.getElementById('invMore')).position), 'fixed');
+      assert.strictEqual(await p.locator('.inv-bar [data-act=save]').isVisible(), true);
+      await p.click('[data-act=moreDone]');
+      assert.strictEqual(await p.locator('#invMore').isVisible(), false, '«✓ تم» بتسكّرها');
+      // زر «✏️ تعديل» بالشريط تحت (فوق «حفظ وطباعة») بيفتحها كمان
+      await p.click('.inv-bar [data-act=more]');
+      assert.strictEqual(await p.locator('[name=date]').isVisible(), true);
+      assert.strictEqual(await p.locator('.inv-bar [data-act=more]').isVisible(), false, 'جوّا النافذة زر «تعديل» بالشريط بيختفي');
+      await p.click('[data-act=moreDone]');
+      assert.strictEqual(await p.locator('#invMore').isVisible(), false);
       // فاتورة الشراء ما تغيّرت
       await p.go('#/invoices'); await p.go('#/invoice/new?type=purchase'); await p.closeDlg();
       assert.strictEqual(await p.locator('[name=date]').isVisible(), true);
@@ -294,7 +304,7 @@ module.exports = [
       assert.match(await p.text('#toast'), /ما في مواد/);
       await p.evaluate(() => InvHook.setParty('c1'));
       await p.fill('#scanIn', 'سكر'); await p.keyboard.press('Enter'); await p.waitForTimeout(200);
-      await p.click('[data-act=more]'); await p.fill('[name=payment]', '300'); await p.dispatchEvent('[name=payment]', 'input');
+      await p.click('[data-act=more]'); await p.fill('[name=payment]', '300'); await p.dispatchEvent('[name=payment]', 'input'); await p.click('[data-act=moreDone]');
       // نفس الأرقام يلي بتنرسم بالصورة
       await p.evaluate(() => { const b = Receipt.build; window.__rev = null; Receipt.build = (d, o) => { window.__rev = { no: d.no, before: o.before, paid: o.paid, n: d.lines.length }; return b(d, o); }; });
       await p.click('[data-act=review]'); await p.waitForTimeout(500);

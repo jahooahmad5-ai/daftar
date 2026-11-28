@@ -33,6 +33,20 @@ const Receipt = (() => {
     }
     return { before: r2(before), after: r2(before + eff), now: r2(partyBal(a)) };
   }
+  // رصيد الزبون قبل السند وبعده (السند بمكانه حسب التاريخ ووقت الإنشاء — مش الرصيد هلق)
+  function vBalances(v) {
+    const a = acc(v.acc); if (!a) return null;
+    const sign = a.type === 'asset' ? 1 : -1;
+    const cr = e => { const d = e.src === 'invoice' ? db.invoices.find(x => x.id === e.ref) : e.src === 'voucher' ? db.vouchers.find(x => x.id === e.ref) : null; return d ? num(d.created) : 0; };
+    let before = 0, eff = 0;
+    for (const e of engine().entries) {
+      const d = e.lines.filter(l => l.acc === a.id).reduce((x, l) => x + (l.dr - l.cr) * sign, 0);
+      if (!d) continue;
+      if (e.id === 'v-' + v.id) { eff += d; continue; }
+      if (e.date < v.date || (e.date === v.date && cr(e) < num(v.created))) before += d;
+    }
+    return { before: r2(before), after: r2(before + eff) };
+  }
   const paidFor = inv => db.vouchers.filter(v => v.inv === inv.id).reduce((s, v) => s + num(v.amount) * docRate(v), 0); // بالليرة
 
   function build(inv, opt) {
@@ -140,6 +154,15 @@ const Receipt = (() => {
     ops.push({ k: 'tri', l: 'المبلغ', m: fmt(base), r: fmt(base * oldF()), size: 26, bold: 1, box: 1 });
     gap(4);
     try { txt(moneyWords(v.amount, v), { size: 20, align: 'c' }); } catch (e) { /* */ }
+    // حساب الزبون: قبل الدفعة وقديش باقي عليه بعدها (بوضع البيّاع ما منطلّع الأرصدة)
+    const VB = typeof isSeller === 'function' && isSeller() ? null : vBalances(v);
+    if (VB && (isUnder(a.id, 'customers') || isUnder(a.id, 'suppliers'))) {
+      // الأرصدة بإشارة الحساب: موجب = عليه للزبون، وله للمورد
+      const cust = a.type === 'asset', word = b => (Math.abs(b) < 0.001 ? 'الحساب مسدّد' : (b > 0) === cust ? 'الباقي عليه' : 'الباقي له');
+      line();
+      ops.push({ k: 'tri', l: 'الحساب قبل الدفعة', m: fmt(Math.abs(VB.before)), r: fmt(Math.abs(VB.before) * oldF()), size: 22 });
+      ops.push({ k: 'tri', l: word(VB.after), m: fmt(Math.abs(VB.after)), r: fmt(Math.abs(VB.after) * oldF()), size: 26, bold: 1, box: 1 });
+    }
     if (v.note) { line(); txt(`البيان: ${v.note}`, { size: 22 }); }
     line();
     gap(30);
@@ -526,6 +549,6 @@ const Receipt = (() => {
       else { toast(`❌ ما زبطت الطباعة بالبلوتوث — ${nm} محفوظ${isVoucher(inv) ? '' : 'ة'}، جرّب طريقة تانية`, 1); open(inv); }
     }
   }
-  return { open, pdfBlob, printDirect, warm, pill, build: (inv, opt) => make(inv, opt), buildVoucher, picture, pdf: pdfDoc, escpos, loadLogo, balances };
+  return { open, pdfBlob, printDirect, warm, pill, build: (inv, opt) => make(inv, opt), buildVoucher, picture, pdf: pdfDoc, escpos, loadLogo, balances, vBalances };
 })();
 window.Receipt = Receipt;

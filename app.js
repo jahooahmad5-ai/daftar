@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '7.17';
+const APP_VERSION = '7.19';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -400,8 +400,12 @@ function waVoucherText(v) {
   if (v.cur === 'fx') s += `(المعادل: ${fmt(base)} ${cur()})\n`;
   s += `(بالقديم: ${oldAmt(base)})\n${moneyWords(v.amount, v)}\n`;
   if (v.note) s += `البيان: ${v.note}\n`;
-  // رصيد الزبون: بس من موبايل المدير (المندوب ما بيشوف الأرصدة)
-  if (a && !isSeller()) s += `————————\nرصيد حسابكم الحالي:\n${balWords(a, partyBal(a))}\n`;
+  // رصيد الزبون: بس من موبايل المدير (المندوب ما بيشوف الأرصدة) — قديش باقي بعد هالدفعة
+  if (a && !isSeller()) {
+    const VB = window.Receipt && Receipt.vBalances ? Receipt.vBalances(v) : null;
+    s += VB ? `————————\nالحساب قبل الدفعة: ${fmt(Math.abs(VB.before))} ${cur()}\n*${Math.abs(VB.after) < 0.001 ? 'الحساب مسدّد' : (VB.after > 0) === (a.type === 'asset') ? 'الباقي عليكم' : 'الباقي لكم'}: ${fmt(Math.abs(VB.after))} ${cur()}*\n(بالقديم: ${oldAmt(Math.abs(VB.after))})\n`
+      : `————————\nرصيد حسابكم الحالي:\n${balWords(a, partyBal(a))}\n`;
+  }
   return s + 'شكراً لتعاملكم معنا 🌹';
 }
 function waBalanceText(a) {
@@ -660,7 +664,7 @@ function route() {
   const q = Object.fromEntries(new URLSearchParams(qs || ''));
   const view = $('#view');
   view.onclick = view.oninput = view.onchange = view.onsubmit = null;
-  view.classList.remove('typing');
+  view.classList.remove('typing'); document.body.classList.toggle('sheet-open', false);
   { const tc = $('#topCnt'); if (tc) tc.hidden = true; }
   let key = V[name] ? name : 'home';
   // لسا السحابة ما تحمّلت: ما منفرجي شي لحتى نعرف إذا الموبايل مسموحله (ما في وميض للدفتر)
@@ -2028,6 +2032,7 @@ V.invoice = (id, q, view) => {
   <div id="ln" class="ln-list"></div>
   ${sideSale && inv.type === 'sale' ? `<button type="button" class="btn more-btn" data-act="more">✏️ تعديل <small id="moreSum"></small></button>` : ''}
   <div id="invMore" ${sideSale && inv.type === 'sale' ? 'hidden' : ''}>
+  ${sideSale && inv.type === 'sale' ? '<div class="sheet-h"><b>✏️ تعديل الفاتورة</b><button type="button" class="btn pri" data-act="moreDone">✓ تم</button></div>' : ''}
   <div class="card">
     <div class="grid4">
       ${field({ k: 'date', l: 'التاريخ', t: 'date', req: 1 }, inv.date)}
@@ -2062,6 +2067,7 @@ V.invoice = (id, q, view) => {
   <p id="limWarn" class="limit-warn" hidden></p>
   <div class="inv-bar">
     <div class="inv-bar-sum"><small id="barInfo"></small><small id="prnPill" class="prn-pill"></small><b id="barNet">0</b><small id="barOld" class="old-bar"></small></div>
+    ${sideSale && inv.type === 'sale' ? '<button type="button" class="btn bar-edit" data-act="more">✏️ تعديل <small id="barMoreSum"></small></button>' : ''}
     ${orig ? '' : '<button class="btn" data-act="saveNew">＋ حفظ وجديد</button>'}
     <button class="btn pri" data-act="save">${orig ? '💾 حفظ التعديلات' : '💾 حفظ'}</button>
     <button class="btn prt" data-act="savePrint">🖨 حفظ وطباعة</button>
@@ -2128,7 +2134,7 @@ V.invoice = (id, q, view) => {
     const tc = $('#topCnt'); if (tc) { tc.hidden = false; tc.textContent = fmt(cnt) + ' قطعة'; }
     $('#barNet', view).textContent = fmt(n) + ' ' + sym;
     $('#barInfo', view).textContent = `${fmt(cnt)} قطعة${val('pay') === 'credit' ? ' — آجل' : ' — نقدي'}`;
-    { const ms = $('#moreSum', view); if (ms) ms.textContent = [accName(val('party')) || 'بلا زبون', val('pay') === 'credit' ? 'آجل' : 'نقدي', val('date'), num(val('discount')) ? 'حسم ' + fmt(num(val('discount'))) : '', num(val('payment')) ? 'دفعة ' + fmt(num(val('payment'))) : ''].filter(Boolean).join(' · '); }
+    { const ms = $('#moreSum', view), bs = $('#barMoreSum', view); if (ms || bs) { const t = [accName(val('party')) || 'بلا زبون', val('pay') === 'credit' ? 'آجل' : 'نقدي', val('date'), num(val('discount')) ? 'حسم ' + fmt(num(val('discount'))) : '', num(val('payment')) ? 'دفعة ' + fmt(num(val('payment'))) : ''].filter(Boolean).join(' · '); if (ms) ms.textContent = t; if (bs) bs.textContent = t; } }
   };
   const toBase = x => (inv.cur === 'fx' ? num(x) * rate() : num(x));
   const lineOld = l => (oldOn() && num(l.price) ? `بالقديم: الإفرادي ${oldAmt(toBase(l.price))} — الإجمالي ${oldAmt(toBase(num(l.qty) * num(l.price)))}${num(l.cp) ? ` — المستهلك ${oldAmt(toBase(l.cp))}` : ''}` : '');
@@ -2571,7 +2577,13 @@ V.invoice = (id, q, view) => {
     }
   };
   // «✏️ تعديل»: كل خانات الفاتورة (الزبون، الدفع، التاريخ، الحسم، الدفعة، الملاحظات) مخبّاية تحت زر واحد
-  const openMore = (on = true) => { const m = $('#invMore', view), b = $('[data-act=more]', view); if (!m || !b) return; m.hidden = !on; b.classList.toggle('on', on); };
+  // ✏️ تعديل الفاتورة (العميل، التاريخ، الحسم، الدفعة…): بنافذة لحالها فوق الفاتورة، و«✓ تم» بترجّعك عليها
+  const openMore = (on = true) => {
+    const m = $('#invMore', view); if (!m || !$('[data-act=more]', view)) return;
+    m.hidden = !on; m.classList.toggle('sheet', on); document.body.classList.toggle('sheet-open', on);
+    $$('[data-act=more]', view).forEach(b => b.classList.toggle('on', on));
+    if (on) m.scrollTop = 0;
+  };
   let savedAt = 0;
   const doSave = (andNew, print, target) => {
     if (Date.now() - savedAt < 2000) return; // منع الحفظ المكرر بكبستين ورا بعض
@@ -2731,7 +2743,8 @@ V.invoice = (id, q, view) => {
     },
     newParty: () => newParty(($('.party-wrap .sx-in', view) || {}).value || ''),
     discard: () => { dropDraft(); leaveGuard = null; route(); },
-    more: () => { const m = $('#invMore', view); openMore(m.hidden); if (!m.hidden) m.scrollIntoView({ block: 'start', behavior: 'smooth' }); },
+    more: () => openMore($('#invMore', view).hidden),
+    moreDone: () => openMore(false),
     clearAll: () => { if (inv.lines.length && !confirm('تفريغ الفاتورة ومسح كل المواد اللي فيها؟')) return; dropDraft(); inv.lines = []; leaveGuard = null; route(); },
     save: () => doSave(false),
     saveNew: () => doSave(true),
