@@ -79,7 +79,7 @@ module.exports = [
       // آخر سعر للزبون (بالطريقة السريعة) = الطريقة القديمة
       // فاتورة جديدة بلا زبون: نافذة «اختار العميل» بتطلع لحالها — منستناها (على جهاز بطيء بتتأخر) ومنسكّرها
       await p.go('#/invoice/new?type=sale'); await p.closePicker(); await p.click('[data-act=more]');
-      await p.selectOption('[name=party]', 'c7'); await p.dispatchEvent('[name=party]', 'change');
+      await p.selectOption('[name=party]', 'c7'); await p.dispatchEvent('[name=party]', 'change'); await p.click('[data-act=moreDone]');
       await p.click('#scanIn'); await p.keyboard.type('مادة 7'); await p.waitForTimeout(300);
       const shown = (await p.locator('.sg-meta').first().innerText()).match(/[\d,]+/)[0].replace(/,/g, '');
       const expect = await p.evaluate(() => {
