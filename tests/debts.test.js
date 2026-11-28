@@ -120,6 +120,14 @@ module.exports = [
       await p.selectOption('#dlg [name=acc]', 'c3');
       await p.fill('#dlg [name=amount]', '5000'); await p.fill('#dlg [name=note]', 'سلفة');
       assert.match(await p.text('#dEq'), /رصيده هلق: 0 ← بعد الإضافة: 5,000/);
+      const refresh = v => p.evaluate(v => { db.settings.showOld = v; document.querySelector('#dlg form').dispatchEvent(new Event('input', { bubbles: true })); }, v);
+      const old0 = await p.evaluate(() => db.settings.showOld);
+      await refresh('');
+      assert.doesNotMatch(await p.text('#dEq'), /بالقديم/, 'العملة القديمة مطفية ← ما بتطلع');
+      await refresh('1');
+      assert.match(await p.text('#dEq'), /المبلغ بالقديم: 500,000/);
+      assert.match(await p.text('#dEq'), /بعد الإضافة: 5,000 .*\(بالقديم 500,000\)/);
+      await refresh(old0);
       const cash0 = await p.evaluate(() => partyBal(acc('cash')));
       await p.click('#dlg footer .btn.pri'); await p.waitForTimeout(400);
       let r = await p.evaluate(() => ({ bal: partyBal(acc('c3')), cash: partyBal(acc('cash')), v: db.vouchers.filter(v => v.acc === 'c3' && v.type === 'payment').map(v => [v.amount, v.note]) }));

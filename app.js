@@ -1399,7 +1399,7 @@ function addDebt(preAcc) {
     { k: 'date', l: 'التاريخ', t: 'date', req: 1 },
     { k: 'cashAcc', l: 'من الصندوق', t: 'select', opts: accOpts(cashAccounts()) },
     { k: 'note', l: 'البيان', ph: 'مثلاً: سلفة', full: 1 },
-  ], { acc: preAcc || '', kind: 'cash', date: today(), cashAcc: cashAccounts()[0]?.id }) + '<p class="muted" id="dEq" style="font-size:13px;margin:4px 0 0"></p>', {
+  ], { acc: preAcc || '', kind: 'cash', date: today(), cashAcc: cashAccounts()[0]?.id }) + '<p class="muted" id="dEq" style="font-size:13px;margin:4px 0 0;white-space:pre-line"></p>', {
     saveText: '➕ أضف الدين',
     onSave: d => {
       const a = acc(d.acc), amount = r2(num(d.amount));
@@ -1420,7 +1420,10 @@ function addDebt(preAcc) {
   const upd = () => {
     const old = $('[name=kind]', f).value === 'old', a = acc(sel.value), amt = num($('[name=amount]', f).value);
     $('[name=cashAcc]', f).closest('.fld').style.display = old ? 'none' : '';
-    $('#dEq', f).textContent = a ? `رصيده هلق: ${fmt(partyBal(a))} ← بعد الإضافة: ${fmt(r2(partyBal(a) + amt))} ${cur()}` : '';
+    $('#dEq', f).textContent = [
+      amt && oldOn() ? `المبلغ بالقديم: ${oldAmt(amt)}` : '',
+      a ? `رصيده هلق: ${fmt(partyBal(a))} ← بعد الإضافة: ${fmt(r2(partyBal(a) + amt))} ${cur()}${oldOn() ? ` (بالقديم ${oldAmt(r2(partyBal(a) + amt))})` : ''}` : '',
+    ].filter(Boolean).join('\n');
   };
   f.oninput = f.onchange = upd; upd();
 }
