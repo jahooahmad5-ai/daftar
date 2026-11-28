@@ -217,6 +217,9 @@ dialog::backdrop{background:rgba(10,30,26,.45)}
 .ln-card{background:#eef2f5;border:1px solid #d7dee4;border-radius:14px;padding:10px 12px}
 .ln-head{display:flex;align-items:center;gap:8px;margin-bottom:8px}
 .ln-name{flex:1;text-align:center;font-size:17px}
+.ln-name .ln-vn{color:#0f766e;font-weight:600}
+.ln-vsel{display:flex;align-items:center;gap:8px;margin:2px 0 6px;font-size:13px;color:var(--muted)}
+.ln-vsel select{flex:1;min-width:0;padding:6px 8px;border:1px solid var(--line);border-radius:10px;background:#fff;font:inherit;font-size:15px;color:inherit}
 .qb{width:38px;height:38px;border-radius:50%;border:0;background:#2f5f86;color:#fff;font-size:22px;line-height:1;cursor:pointer;flex:none}
 .qb.minus{background:#4a90d9}
 .qb.edit{background:transparent;border:1px solid #c9d8e6;font-size:16px}

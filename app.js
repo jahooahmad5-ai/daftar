@@ -416,7 +416,7 @@ function waStatementText(a, from, to, rows, open, bal) {
 }
 function waInvoiceText(inv) {
   const t = invTotals(inv), sym = docSym(inv);
-  const lines = inv.lines.map(l => { const it = db.items.find(x => x.id === l.item) || {}; return `• ${it.name || ''}: ${fmt(l.qty)} × ${fmt(l.price)} = ${fmt(num(l.qty) * num(l.price))}`; }).join('\n');
+  const lines = inv.lines.map(l => { const it = db.items.find(x => x.id === l.item) || {}; return `• ${lineName(l, it)}: ${fmt(l.qty)} × ${fmt(l.price)} = ${fmt(num(l.qty) * num(l.price))}`; }).join('\n');
   const a = acc(inv.party);
   let s = `${waHead()}\n${INV_TYPES[inv.type]} رقم ${inv.no}${repTag(inv)}\nالتاريخ: ${inv.date}\n${a ? 'السيد: ' + a.name + '\n' : ''}————————\n${lines}\n————————\n`;
   if (t.disc || t.add) s += `الإجمالي: ${fmt(t.gross)}\n${t.disc ? `الحسم: ${fmt(t.disc)}\n` : ''}${t.add ? `إضافة: ${fmt(t.add)}${inv.addNote ? ' (' + inv.addNote + ')' : ''}\n` : ''}`;
@@ -718,7 +718,7 @@ function backupData() {
   const partyRows = list => list.map(a => ({ 'الرمز': a.code, 'الاسم': a.name, 'الهاتف': a.phone || '', 'العنوان': a.address || '', 'الرصيد': bal(a) }));
   const items = [...db.items].sort(byCode).map(it => ({ 'الرمز': it.code || '', 'اسم المادة': it.name, 'الباركود': it.barcode || '', 'الوحدة': it.unit || '', 'المجموعة': it.group || '', 'سعر الشراء': num(it.buyPrice), 'سعر المبيع': num(it.sellPrice), 'سعر المستهلك': num(it.consumerPrice), 'الكمية الحالية': r2(st[it.id]?.qty || 0) }));
   const invs = [...db.invoices].sort((a, b) => (a.date < b.date ? 1 : -1)).map(i => ({ 'النوع': INV_TYPES[i.type] || i.type, 'الرقم': i.no, 'التاريخ': i.date, 'الطرف': i.party ? accName(i.party) : '', 'الدفع': i.pay === 'cash' ? 'نقدي' : 'آجل', 'الصافي': invTotals(i).net, 'عدد المواد': i.lines.length, 'ملاحظة': i.note || '' }));
-  const lines = []; db.invoices.forEach(i => i.lines.forEach(l => lines.push({ 'التاريخ': i.date, 'النوع': INV_TYPES[i.type] || i.type, 'رقم الفاتورة': i.no, 'الطرف': i.party ? accName(i.party) : '', 'المادة': db.items.find(x => x.id === l.item)?.name || '', 'الكمية': num(l.qty), 'السعر': num(l.price), 'المجموع': r2(num(l.qty) * num(l.price)) })));
+  const lines = []; db.invoices.forEach(i => i.lines.forEach(l => lines.push({ 'التاريخ': i.date, 'النوع': INV_TYPES[i.type] || i.type, 'رقم الفاتورة': i.no, 'الطرف': i.party ? accName(i.party) : '', 'المادة': lineName(l, db.items.find(x => x.id === l.item)), 'الكمية': num(l.qty), 'السعر': num(l.price), 'المجموع': r2(num(l.qty) * num(l.price)) })));
   return { 'الزباين': partyRows(customers()), 'الموردين': partyRows(suppliers()), 'المواد': items, 'الفواتير': invs, 'تفاصيل الفواتير': lines };
 }
 // مسح كل بيانات الشركة من هالموبايل (المندوب الموقوف، أو «خروج ومسح»)
@@ -1013,7 +1013,7 @@ const stashText = x => {
     const sym = d.cur === 'fx' ? x.fx : x.cur;
     if (d.kind === 'invoices') {
       L.push(`🧾 ${INV_TYPES[d.type] || 'فاتورة'} رقم ${d.no} — ${d.date} — ${x.names[d.party] || 'زبون عام'} — ${d.pay === 'cash' ? 'نقدي' : 'آجل'}`);
-      (d.lines || []).forEach(l => L.push(`   • ${x.names[l.item] || 'مادة'}: ${fmt(l.qty)} × ${fmt(l.price)} = ${fmt(num(l.qty) * num(l.price))}`));
+      (d.lines || []).forEach(l => L.push(`   • ${(x.names[l.item] || 'مادة') + (l.vn ? ` (${l.vn})` : '')}: ${fmt(l.qty)} × ${fmt(l.price)} = ${fmt(num(l.qty) * num(l.price))}`));
       L.push(`   *الصافي: ${fmt(invTotals(d).net)} ${sym}*`);
     } else L.push(`📥 سند ${d.type === 'receipt' ? 'قبض' : 'دفع'} رقم ${d.no} — ${d.date} — ${x.names[d.acc] || ''}: *${fmt(d.amount)} ${sym}*`);
   }
@@ -1542,6 +1542,8 @@ V.debts = (id, q, view) => {
 /* ---------- الباركود ---------- */
 const parseCodes = txt => [...new Set(String(txt || '').split(/[\n,،;\s]+/).map(x => x.trim()).filter(Boolean))];
 const itemCodes = i => [i.code, ...(i.barcodes || [])].filter(Boolean);
+// اسم المادة بالفاتورة: اسم البند + النوع الحقيقي إذا مختار — «بسكوت 1000 (ويفر شوكولا)»
+const lineName = (l, it) => ((it && it.name) || '') + (l && l.vn ? ` (${l.vn})` : '');
 const findByCode = c => { c = String(c || '').trim(); return c ? db.items.find(i => itemCodes(i).includes(c)) : null; };
 const canScan = () => 'BarcodeDetector' in window && !!navigator.mediaDevices?.getUserMedia;
 /* مسح باركود بكاميرا الموبايل (Chrome على أندرويد) */
@@ -1726,6 +1728,7 @@ function itemForm(it, defGroup, after) {
   const fl = [
     { k: 'code', l: 'رمز المادة' }, { k: 'name', l: 'اسم المادة', req: 1 },
     { k: 'barcodes', l: 'الباركودات (كل باركود بسطر — يمكن إضافة أكثر من باركود)', t: 'textarea', full: 1 },
+    { k: 'variants', l: 'الأنواع تحت هالبند (الاسم الحقيقي يلي بيطلع بالفاتورة — كل نوع بسطر، مثلاً: ويفر شوكولا)', t: 'textarea', full: 1 },
     { k: 'group', l: 'المجموعة', t: 'select', opts: grpOpts(), full: 1 },
     { k: 'unit', l: 'الوحدة', ph: 'قطعة، كيلو، علبة…' }, { k: 'minQty', l: 'الحد الأدنى للتنبيه', t: 'number' },
     { k: 'buyPrice', l: 'سعر الشراء', t: 'number' }, { k: 'sellPrice', l: 'سعر المبيع', t: 'number' },
@@ -1733,7 +1736,7 @@ function itemForm(it, defGroup, after) {
     { k: 'openQty', l: 'كمية أول المدة', t: 'number' }, { k: 'openCost', l: 'كلفة الوحدة أول المدة', t: 'number' },
     { k: 'aliases', l: 'أسماء تانية (متل ما بتنكتب بطلبيات الواتس — كل اسم بسطر)', t: 'textarea', full: 1 },
   ];
-  const vals = it ? { ...it, barcodes: (it.barcodes || []).join('\n'), aliases: (it.aliases || []).join('\n') } : { code: nextItemCode(), unit: 'قطعة', group: defGroup && defGroup !== 'none' ? defGroup : '' };
+  const vals = it ? { ...it, barcodes: (it.barcodes || []).join('\n'), aliases: (it.aliases || []).join('\n'), variants: (it.variants || []).join('\n') } : { code: nextItemCode(), unit: 'قطعة', group: defGroup && defGroup !== 'none' ? defGroup : '' };
   const f = modal(it ? 'تعديل مادة' : 'مادة جديدة', fields(fl, vals) +
     (canScan() ? `<button type="button" class="btn" id="bcScan" style="margin-top:8px">📷 إضافة باركود بالكاميرا</button>` : '') +
     `<p class="muted" style="font-size:13px;margin:8px 0 0">بقارئ الباركود: اضغط داخل خانة الباركودات وامسح، كل مسحة بسطر جديد.</p>`, {
@@ -1747,7 +1750,8 @@ function itemForm(it, defGroup, after) {
       }
       const aliases = String(d.aliases || '').split(/\n+/).map(x => x.trim()).filter(Boolean);
       const aliasKeys = window.OrderPaste ? [...new Set(aliases.map(OrderPaste.keyOfText).filter(Boolean))] : [];
-      const o = { code, barcodes, aliases, aliasKeys, group: d.group || null, name: d.name.trim(), unit: d.unit.trim(), minQty: num(d.minQty), buyPrice: num(d.buyPrice), sellPrice: num(d.sellPrice), consumerPrice: num(d.consumerPrice), openQty: num(d.openQty), openCost: num(d.openCost) };
+      const variants = [...new Set(String(d.variants || '').split(/\n+/).map(x => x.trim()).filter(Boolean))];
+      const o = { code, barcodes, aliases, aliasKeys, variants, group: d.group || null, name: d.name.trim(), unit: d.unit.trim(), minQty: num(d.minQty), buyPrice: num(d.buyPrice), sellPrice: num(d.sellPrice), consumerPrice: num(d.consumerPrice), openQty: num(d.openQty), openCost: num(d.openCost) };
       fillPrices(o);
       if (priceBad(o.sellPrice, o.buyPrice)) { toast(priceBadMsg('', o.sellPrice, o.buyPrice), 1); return false; }
       if (it) Object.assign(it, o); else db.items.push({ id: uid(), ...o });
@@ -1834,7 +1838,7 @@ function invoiceHtml(inv) {
   const hasCp = db.settings.receiptCp !== '0';
   const rows = inv.lines.map((l, i) => {
     const it = db.items.find(x => x.id === l.item) || {}, cp = num(l.cp) || num(it.consumerPrice);
-    return `<tr><td>${i + 1}</td><td>${esc(it.name || '')}</td><td>${esc(it.unit || '')}</td><td>${fmt(l.qty)}</td><td>${fmt(l.price)}</td>${hasCp ? `<td>${cp ? fmt(cp) : ''}</td>` : ''}<td>${fmt(num(l.qty) * num(l.price))}</td></tr>`;
+    return `<tr><td>${i + 1}</td><td>${esc(lineName(l, it))}</td><td>${esc(it.unit || '')}</td><td>${fmt(l.qty)}</td><td>${fmt(l.price)}</td>${hasCp ? `<td>${cp ? fmt(cp) : ''}</td>` : ''}<td>${fmt(num(l.qty) * num(l.price))}</td></tr>`;
   }).join('');
   const cs = hasCp ? 6 : 5;
   return `<h3 class="ptitle">${INV_TYPES[inv.type]} رقم ${esc(inv.no)}${repTagH(inv)}</h3>
@@ -1907,7 +1911,7 @@ V.invoice = (id, q, view) => {
   // منحجز رقم الفاتورة (ورقم سند الدفعة) من السيرفر من هلق، حتى الحفظ يكون فوري
   if (!orig) { const sfx = isSeller() ? '@' + myRep() : ''; reserveNo(inv.type + sfx); reserveNo((['sale', 'purchaseReturn'].includes(inv.type) ? 'receipt' : 'payment') + sfx); }
   // لمعرفة إذا في تغييرات على الفاتورة المحفوظة لسا ما انحفظت
-  const sigOf = (lines, f) => JSON.stringify([lines.map(l => [l.item, num(l.qty), num(l.price), num(l.cp)]).sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0)),
+  const sigOf = (lines, f) => JSON.stringify([lines.map(l => [l.item, num(l.qty), num(l.price), num(l.cp), l.vn || '']).sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0)),
     f.date, f.pay, f.party || '', num(f.discount), num(f.addition), String(f.note || ''), f.pay === 'credit' ? num(f.payment) : 0]);
   const baseSig = orig ? sigOf(orig.lines, { ...orig, payment: db.vouchers.filter(v => v.inv === orig.id).reduce((x, v) => x + num(v.amount), 0) }) : '';
   inv.lines = inv.lines.filter(l => l.item);
@@ -2052,10 +2056,11 @@ V.invoice = (id, q, view) => {
       <div class="ln-head">
         <button class="qb" data-act="inc" data-id="${i}" aria-label="زيادة">＋</button>
         <button class="qb minus" data-act="dec" data-id="${i}" aria-label="إنقاص">−</button>
-        <span class="ln-no">${i + 1}</span><b class="ln-name">${esc(it.name)}</b>
+        <span class="ln-no">${i + 1}</span><b class="ln-name">${esc(it.name)}${l.vn ? ` <span class="ln-vn">(${esc(l.vn)})</span>` : ''}</b>
         ${it.id ? `<button class="qb edit" data-act="editItem" data-id="${i}" aria-label="تعديل المادة" title="تعديل المادة">✏️</button>` : ''}
         <button class="qb del" data-act="rmLine" data-id="${i}" aria-label="حذف">✕</button>
       </div>
+      ${(it.variants || []).length || l.vn ? `<label class="ln-vsel"><span>النوع</span><select data-f="vn"><option value="">— بلا نوع —</option>${[...new Set([...(it.variants || []), ...(l.vn ? [l.vn] : [])])].map(v => `<option${v === l.vn ? ' selected' : ''}>${esc(v)}</option>`).join('')}</select></label>` : ''}
       <div class="ln-row">
         <label><span>الكمية</span><input data-f="qty" type="number" step="any" inputmode="decimal" value="${esc(l.qty)}"></label>
         <label class="cp-s"><span>المستهلك</span><input data-f="cp" type="number" step="any" inputmode="decimal" value="${esc(l.cp ?? '')}"></label>
@@ -2075,12 +2080,12 @@ V.invoice = (id, q, view) => {
     if (hl != null && hl >= 0) { const c = $(`.ln-card[data-i="${hl}"]`, view); if (c) c.classList.add('flash'); }
   };
   // شريط واضح تحت البحث: شو آخر شي انضاف، وإذا انضاف على مادة موجودة من قبل
-  const noteAdd = (it, merged, q) => {
+  const noteAdd = (it, merged, q, vn) => {
     const b = $('#lastAdd', view); if (!b) return;
     b.hidden = false; b.className = 'last-add' + (merged ? ' merged' : '');
     b.innerHTML = merged
-      ? `⚠️ انضاف: <b>${esc(it.name)}</b> × ${fmt(q)} — <b>مكررة</b>، موجودة كمان بالسطر رقم ${merged}`
-      : `✓ انضاف: <b>${esc(it.name)}</b> × ${fmt(q)} — صار المجموع <b>${fmt(inv.lines.reduce((s, l) => s + num(l.qty), 0))}</b> قطعة`;
+      ? `⚠️ انضاف: <b>${esc(lineName({ vn }, it))}</b> × ${fmt(q)} — <b>مكررة</b>، موجودة كمان بالسطر رقم ${merged}`
+      : `✓ انضاف: <b>${esc(lineName({ vn }, it))}</b> × ${fmt(q)} — صار المجموع <b>${fmt(inv.lines.reduce((s, l) => s + num(l.qty), 0))}</b> قطعة`;
   };
   // تحويل سعر من الليرة إلى عملة الفاتورة الحالية
   const toDoc = base => (inv.cur === 'fx' && rate() ? r2(base / rate()) : base);
@@ -2170,16 +2175,16 @@ V.invoice = (id, q, view) => {
     };
     setTimeout(() => q.focus(), 100);
   };
-  const addItem = it => {
-    if (needParty()) { scanIn.value = ''; sugg.hidden = true; return pickParty(() => addItem(it)); }
+  const addItem = (it, vn) => {
+    if (needParty()) { scanIn.value = ''; sugg.hidden = true; return pickParty(() => addItem(it, vn)); }
     lastId = it.id;
     // الصنف المكرر بينضاف بسطر جديد لحاله (ما بيندمج مع القديم)
-    const ex = inv.lines.find(l => l.item === it.id);
+    const ex = inv.lines.find(l => l.item === it.id && (l.vn || '') === (vn || ''));
     lastBase = 0;
-    inv.lines.push({ item: it.id, qty: 1, price: toDoc(basePrice(it)), cp: it.consumerPrice ? toDoc(num(it.consumerPrice)) : '' });
+    inv.lines.push({ item: it.id, qty: 1, price: toDoc(basePrice(it)), cp: it.consumerPrice ? toDoc(num(it.consumerPrice)) : '', ...(vn ? { vn } : {}) });
     draw(inv.lines.length - 1); toNew(); // المادة الجديدة بتطلع فوق — منطلع لعندها حتى لو كنا نازلين لآخر القائمة
     navigator.vibrate?.(ex ? [40, 60, 40] : 40);
-    noteAdd(it, ex ? inv.lines.indexOf(ex) + 1 : 0, 1); toast((ex ? '⚠️ ' : '✓ ') + it.name + (ex ? ' — مكررة بسطر جديد' : ''), !!ex);
+    noteAdd(it, ex ? inv.lines.indexOf(ex) + 1 : 0, 1, vn); toast((ex ? '⚠️ ' : '✓ ') + lineName({ vn }, it) + (ex ? ' — مكررة بسطر جديد' : ''), !!ex);
   };
   let payNow = 0;
   if (orig) payNow = db.vouchers.filter(v => v.inv === orig.id).reduce((x, v) => x + num(v.amount), 0);
@@ -2207,37 +2212,43 @@ V.invoice = (id, q, view) => {
 
   /* ---- البحث مع الاقتراحات ---- */
   const scanIn = $('#scanIn', view), sugg = $('#sugg', view);
-  let matches = [];
+  let matches = [], matchVn = [];
   const search = txt => {
     const qn = normAr(txt);
     if (!qn) return [];
     // كل كلمة لازم تكون بالاسم (حتى لو بلا فراغات: «12ق» = «12 ق»)، والأقرب بيطلع أول — ومنعرض لحد 40 نتيجة مش 8
     const words = qn.split(/\s+/), qc = qn.replace(/\s+/g, ''), code = txt.trim();
     const out = [];
+    const rate = nm => {
+      const nc = nm.replace(/\s+/g, '');
+      if (!words.every(w => nm.includes(w) || nc.includes(w))) return -1;
+      let sc = 0;
+      if (nm === qn || nc === qc) sc += 400;
+      else if (nm.startsWith(qn) || nc.startsWith(qc)) sc += 200;
+      else if (nm.includes(qn) || nc.includes(qc)) sc += 100;
+      const nw = nm.split(/\s+/);
+      words.forEach(w => { if (nw.some(x => x.startsWith(w))) sc += 10; });
+      return sc;
+    };
     for (const it of items) {
-      const nm = normAr(it.name), nc = nm.replace(/\s+/g, '');
+      const nm = normAr(it.name);
       let sc = -1;
       if (code && itemCodes(it).some(c => c.startsWith(code))) sc = itemCodes(it).includes(code) ? 1000 : 500;
-      else if (words.every(w => nm.includes(w) || nc.includes(w))) {
-        sc = 0;
-        if (nm === qn || nc === qc) sc += 400;
-        else if (nm.startsWith(qn) || nc.startsWith(qc)) sc += 200;
-        else if (nm.includes(qn) || nc.includes(qc)) sc += 100;
-        const nw = nm.split(/\s+/);
-        words.forEach(w => { if (nw.some(x => x.startsWith(w))) sc += 10; });
-      }
-      if (sc >= 0) out.push([sc, nm.length, it]);
+      else sc = rate(nm);
+      if (sc >= 0) out.push([sc, nm.length, it, '']);
+      // الأنواع تحت البند (الاسم الحقيقي): بتنلقى باسمها أو باسم البند، وبتنضاف عالبند نفسه مع اسمها
+      if (sc < 500) (it.variants || []).forEach(v => { const vs = rate(normAr(v + ' ' + it.name)); if (vs >= 0) out.push([vs - 1, normAr(v).length, it, v]); });
     }
-    return out.sort((a, b) => b[0] - a[0] || a[1] - b[1]).slice(0, 40).map(x => x[2]);
+    return out.sort((a, b) => b[0] - a[0] || a[1] - b[1]).slice(0, 40).map(x => ({ it: x[2], vn: x[3] }));
   };
   const showSugg = () => {
-    matches = search(scanIn.value);
+    const found = search(scanIn.value); matches = found.map(x => x.it); matchVn = found.map(x => x.vn);
     if (!scanIn.value.trim()) { sugg.hidden = true; return; }
     sugg.hidden = false; requestAnimationFrame(fitSugg);
     sugg.innerHTML = matches.length ? matches.map((it, i) => {
       const s = stockOf(it), low = s <= 0 || (num(it.minQty) > 0 && s <= num(it.minQty));
       return `<button type="button" class="sg" data-i="${i}">
-        <b>${esc(it.name)}</b>
+        <b>${matchVn[i] ? `${esc(matchVn[i])} <small class="muted">← ${esc(it.name)}</small>` : esc(it.name)}</b>
         <span class="sg-meta"><span>💰 ${fmt(toDoc(basePrice(it)))}${oldOn() ? ` <small class="muted">(${oldAmt(basePrice(it))} قديم)</small>` : ''}${sideSale && custPrice(it) ? ' <small class="muted">· آخر سعر إله</small>' : ''}</span><span class="${s <= 0 ? 'bad' : ''}">📦 ${fmt(s)} ${esc(it.unit || '')}</span></span>
         ${low ? `<small class="bad">${s <= 0 ? 'نفدت المادة' : 'قاربت المادة على النفاد'}</small>` : ''}
       </button>`;
@@ -2310,7 +2321,7 @@ V.invoice = (id, q, view) => {
   };
   const addSmart = it => { const q = smartRes ? smartRes.qty : 1; const txt = scanIn.value; scanIn.value = ''; sugg.hidden = true; fromPaste({ party: '', lines: [{ item: it.id, qty: q }], pay: payNow }); toast(`✓ ${it.name} × ${fmt(q)}`); return txt; };
   const teach = () => { const r = smartRes || smart(scanIn.value); const raw = scanIn.value.trim(); if (!r) return; sugg.hidden = true; Voice.askItem(r.ln, raw.replace(/\s*عدد.*$/, '')).then(it => { if (it) { smartRes = r; addSmart(it); } }); };
-  const pick = it => { scanIn.value = ''; sugg.hidden = true; addItem(it); scanIn.focus(); };
+  const pick = (it, vn) => { scanIn.value = ''; sugg.hidden = true; addItem(it, vn); scanIn.focus(); };
   // الكبس على اقتراح ما بيشيل التركيز عن البحث — هيك الكيبورد بيضل مفتوح للمادة الجاية
   sugg.addEventListener('mousedown', e => e.preventDefault());
   // أزرار ＋ − ✕ ما بتشيل التركيز (الكيبورد بيضل متل ما هو)
@@ -2404,7 +2415,7 @@ V.invoice = (id, q, view) => {
     }
     const exact = findByCode(c);
     if (exact) pick(exact);
-    else if (matches.length === 1) pick(matches[0]);
+    else if (matches.length === 1) pick(matches[0], matchVn[0]);
     else if (matches.length > 1) { sugg.hidden = false; toast(`في ${matches.length} مواد بهالاسم — اختار وحدة من القائمة`, 1); }
     else if (!matches.length) {
       smartRes = smart(c);
@@ -2421,7 +2432,7 @@ V.invoice = (id, q, view) => {
     if (b.dataset.smart) return addSmart(smartRes.m.it);
     if (b.dataset.teach) return teach();
     if (b.dataset.new) return quickNew();
-    pick(matches[+b.dataset.i]);
+    pick(matches[+b.dataset.i], matchVn[+b.dataset.i]);
   });
   const outside = e => { if (!view.contains(scanIn)) return document.removeEventListener('click', outside); if (!e.target.closest('.search-wrap')) sugg.hidden = true; };
   document.addEventListener('click', outside);
@@ -2447,6 +2458,8 @@ V.invoice = (id, q, view) => {
     else if (e.target.name === 'party') totals();
   };
   view.onchange = e => {
+    // تغيير النوع بالسطر ← منحدّث اسمه فوق
+    if (e.target.dataset && e.target.dataset.f === 'vn') { const c = e.target.closest('.ln-card'); if (c) { const l = inv.lines[c.dataset.i]; if (!l.vn) delete l.vn; draw(+c.dataset.i); } return; }
     if (e.target.name === 'pay') {
       if (e.target.value === 'credit' && sideSale && isWalkin(val('party'))) toast('«زبون عام» دايماً نقدي — للآجل اختار اسم الزبون', 1);
       toggles(); totals();
@@ -2478,7 +2491,7 @@ V.invoice = (id, q, view) => {
   let savedAt = 0;
   const doSave = (andNew, print, target) => {
     if (Date.now() - savedAt < 2000) return; // منع الحفظ المكرر بكبستين ورا بعض
-    const lines = inv.lines.filter(l => l.item && num(l.qty) > 0).map(l => ({ item: l.item, qty: num(l.qty), price: num(l.price), cp: num(l.cp) }));
+    const lines = inv.lines.filter(l => l.item && num(l.qty) > 0).map(l => ({ item: l.item, qty: num(l.qty), price: num(l.price), cp: num(l.cp), ...(l.vn ? { vn: l.vn } : {}) }));
     if (!lines.length) return toast('أضف مادة واحدة على الأقل بكمية صحيحة', 1);
     const pay = val('pay'), party = val('party'), cashAcc = val('cashAcc');
     if (sideSale && !party) { openMore(); const ps = $('[name=party]', view); ps.focus(); ps.scrollIntoView({ block: 'center' }); return toast(`لازم تختار اسم العميل قبل الحفظ (للبيع المباشر اختار «${WALKIN_NAME}»)`, 1); }
@@ -2586,7 +2599,7 @@ V.invoice = (id, q, view) => {
     // 👁 مراجعة: صورة الفاتورة متل ما رح تنطبع (حتى لو لسا ما انحفظت)
     review: async () => {
       if (!window.Receipt) return;
-      const lines = inv.lines.filter(l => l.item && num(l.qty) > 0).map(l => ({ item: l.item, qty: num(l.qty), price: num(l.price), cp: num(l.cp) }));
+      const lines = inv.lines.filter(l => l.item && num(l.qty) > 0).map(l => ({ item: l.item, qty: num(l.qty), price: num(l.price), cp: num(l.cp), ...(l.vn ? { vn: l.vn } : {}) }));
       if (!lines.length) return toast('ما في مواد بالفاتورة لتراجعها', 1);
       const pay = val('pay'), party = val('party');
       const d = { ...inv, id: orig ? orig.id : '', no: orig ? orig.no : 'جديدة', created: orig ? orig.created : Date.now(), date: val('date'), pay, party, cur: inv.cur, rate: inv.cur === 'fx' ? rate() : '',
