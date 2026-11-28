@@ -589,3 +589,5 @@ body.sheet-open .inv-bar .bar-edit{display:none}
 .pay-top #payRow span{font-size:13px;color:var(--muted,#64748b)}
 .pay-top #payRow input{width:100%}
 .tot-box #payOld{display:none}
+.ln-old{display:block;text-align:center;font-size:11.5px;font-weight:700;color:#8a5a00;font-variant-numeric:tabular-nums;min-height:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ln-old:empty{display:none}

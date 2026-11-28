@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '7.22';
+const APP_VERSION = '7.23';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -2165,8 +2165,15 @@ V.invoice = (id, q, view) => {
     { const ms = $('#moreSum', view), bs = $('#barMoreSum', view); if (ms || bs) { const t = [accName(val('party')) || 'بلا زبون', val('pay') === 'credit' ? 'آجل' : 'نقدي', val('date'), num(val('discount')) ? 'حسم ' + fmt(num(val('discount'))) : '', num(val('payment')) ? 'دفعة ' + fmt(num(val('payment'))) : ''].filter(Boolean).join(' · '); if (ms) ms.textContent = t; if (bs) bs.textContent = t; } }
   };
   const toBase = x => (inv.cur === 'fx' ? num(x) * rate() : num(x));
-  const lineOld = l => (oldOn() && num(l.price) ? `بالقديم: الإفرادي ${oldAmt(toBase(l.price))} — الإجمالي ${oldAmt(toBase(num(l.qty) * num(l.price)))}${num(l.cp) ? ` — المستهلك ${oldAmt(toBase(l.cp))}` : ''}` : '');
+  // السعر بالعملة القديمة: تحت كل مربع لحاله (الإفرادي، الإجمالي، المستهلك)
+  const oldOf = x => (oldOn() && num(x) ? oldAmt(toBase(x)) : '');
+  const lineOld = (l, card) => {
+    const v = { price: oldOf(l.price), tot: oldOf(num(l.qty) * num(l.price)), cp: oldOf(l.cp) };
+    if (card) Object.keys(v).forEach(k => { const e = $(`[data-old=${k}]`, card); if (e) e.textContent = v[k]; });
+    return v;
+  };
   const lineHtml = (l, i) => {
+    const o = lineOld(l);
     const it = itemById(l.item) || { name: '(مادة محذوفة)' };
     const s = it.id ? stockOf(it) : 0, low = it.id && (s <= 0 || (num(it.minQty) > 0 && s <= num(it.minQty)));
     return `<div class="ln-card" data-i="${i}">
@@ -2180,12 +2187,11 @@ V.invoice = (id, q, view) => {
       ${(it.variants || []).length || l.vn ? `<label class="ln-vsel"><span>النوع</span><select data-f="vn"><option value="">— بلا نوع —</option>${[...new Set([...(it.variants || []), ...(l.vn ? [l.vn] : [])])].map(v => `<option${v === l.vn ? ' selected' : ''}>${esc(v)}</option>`).join('')}</select></label>` : ''}
       <div class="ln-row">
         <label><span>الكمية</span><input data-f="qty" type="number" step="any" inputmode="decimal" value="${esc(l.qty)}"></label>
-        <label class="cp-s"><span>المستهلك</span><input data-f="cp" type="number" step="any" inputmode="decimal" value="${esc(l.cp ?? '')}"></label>
+        <label class="cp-s"><span>المستهلك</span><input data-f="cp" type="number" step="any" inputmode="decimal" value="${esc(l.cp ?? '')}"><small class="ln-old" data-old="cp">${o.cp}</small></label>
         <label class="unit"><span>الوحدة</span><b>${esc(it.unit || '—')}</b></label>
-        <label><span>الإفرادي</span><input data-f="price" type="number" step="any" inputmode="decimal" value="${esc(l.price)}"></label>
-        <label class="tot"><span>الإجمالي</span><b data-tot>${fmt(num(l.qty) * num(l.price))}</b></label>
+        <label><span>الإفرادي</span><input data-f="price" type="number" step="any" inputmode="decimal" value="${esc(l.price)}"><small class="ln-old" data-old="price">${o.price}</small></label>
+        <label class="tot"><span>الإجمالي</span><b data-tot>${fmt(num(l.qty) * num(l.price))}</b><small class="ln-old" data-old="tot">${o.tot}</small></label>
       </div>
-      <small class="old-eq" data-old>${lineOld(l)}</small>
       ${it.id ? `<small class="${low ? 'bad' : 'muted'}">المتوفر: ${fmt(s)} ${esc(it.unit || '')}${low ? (s <= 0 ? ' — نفدت المادة' : ' — قاربت المادة على النفاد') : ''}</small>` : ''}
     </div>`;
   };
@@ -2570,7 +2576,7 @@ V.invoice = (id, q, view) => {
     if (card && e.target.dataset.f) {
       lineActAt = Date.now();
       const l = inv.lines[card.dataset.i]; l[e.target.dataset.f] = e.target.value;
-      $('[data-tot]', card).textContent = fmt(num(l.qty) * num(l.price)); $('[data-old]', card).textContent = lineOld(l); totals();
+      $('[data-tot]', card).textContent = fmt(num(l.qty) * num(l.price)); lineOld(l, card); totals();
     } else if (e.target.name === 'payment') { payNow = num(e.target.value); totals(); }
     else if (['discount', 'addition', 'rate'].includes(e.target.name)) totals();
     else if (e.target.name === 'party') totals();
@@ -2714,7 +2720,7 @@ V.invoice = (id, q, view) => {
     l.qty = nq;
     const card = $(`.ln-card[data-i="${i}"]`, view);
     anchorCard(card);
-    $('[data-f=qty]', card).value = nq; $('[data-tot]', card).textContent = fmt(nq * num(l.price)); $('[data-old]', card).textContent = lineOld(l); totals();
+    $('[data-f=qty]', card).value = nq; $('[data-tot]', card).textContent = fmt(nq * num(l.price)); lineOld(l, card); totals();
   };
   onAct(view, {
     cam: () => scanBarcode(addByCode),
