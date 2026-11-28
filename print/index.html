@@ -138,6 +138,14 @@ function wrap(x, text, max) {
   while (out.length && !out[out.length - 1]) out.pop();
   return out;
 }
+// مجموع الأرقام اللي بعد كلمة «عدد» (مثلاً «بندورة عدد 5» أو «العدد: ٣»)
+const toEn = t => String(t).replace(/[٠-٩]/g, d => d.charCodeAt(0) - 0x660).replace(/[۰-۹]/g, d => d.charCodeAt(0) - 0x6f0);
+function countTotal(text) {
+  let sum = 0, n = 0;
+  const re = /عدد\s*[:：=\-–]?\s*([0-9٠-٩۰-۹]+(?:[.,٫][0-9٠-٩۰-۹]+)?)/g;
+  for (const m of String(text).matchAll(re)) { sum += parseFloat(toEn(m[1]).replace(/[,٫]/, '.')); n++; }
+  return n ? Math.round(sum * 1000) / 1000 : null;
+}
 function build() {
   const w = W(), P = 8, c = document.createElement('canvas'), x = c.getContext('2d');
   const sz = st.size * (w < 576 ? 0.8 : 1), lh = Math.round(sz * 1.45);
@@ -146,7 +154,8 @@ function build() {
   const lines = $('#txt').value.trim() ? wrap(x, $('#txt').value, w - 2 * P) : [];
   let ih = 0;
   if (st.img) ih = Math.round(st.img.naturalHeight * (w / st.img.naturalWidth));
-  const H = Math.max(40, P + lines.length * lh + (lines.length && ih ? 16 : 0) + ih + P);
+  const tot = countTotal($('#txt').value), tsz = Math.round(sz * 1.15), th = tot === null ? 0 : 18 + Math.round(tsz * 1.45);
+  const H = Math.max(40, P + lines.length * lh + (lines.length && ih ? 16 : 0) + ih + th + P);
   c.width = w; c.height = H;
   x.fillStyle = '#fff'; x.fillRect(0, 0, w, H);
   x.fillStyle = '#000'; x.font = font; x.direction = 'rtl'; x.textBaseline = 'top';
@@ -156,6 +165,13 @@ function build() {
     const y0 = P + lines.length * lh + (lines.length ? 16 : 0);
     x.drawImage(st.img, 0, y0, w, ih);
     toBW(x, 0, y0, w, ih);
+  }
+  if (tot !== null) {
+    // خط فاصل وبعده المجموع، آخر الورقة
+    const y1 = H - P - th + 6;
+    x.fillRect(P, y1, w - 2 * P, 3);
+    x.font = `bold ${tsz}px ${FONT}`; x.textAlign = 'center';
+    x.fillText('المجموع: ' + tot, w / 2, y1 + 12);
   }
   return c;
 }
