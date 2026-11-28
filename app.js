@@ -615,7 +615,38 @@ let booted = false;
 // الفاتورة المفتوحة: ما منطلع منها إلا إذا انحفظت أو انحذفت
 let leaveGuard = null, curHash = location.hash;
 window.addEventListener('beforeunload', e => { if (leaveGuard && leaveGuard.dirty()) { e.preventDefault(); e.returnValue = ''; } });
-function go(h) { if (location.hash === h) route(); else location.hash = h; }
+/* زر الرجوع بالموبايل: من أي صفحة بيرجع للرئيسية، ومن الرئيسية بيطلع من البرنامج.
+   السجل دايماً: [الرئيسية، الصفحة الحالية] — التنقل بين الصفحات بيستبدل الصفحة الحالية بدل ما يكدّسها */
+const isHomeHash = h => {
+  const name = String(h || '').replace(/^#\/?/, '').split(/[/?]/)[0];
+  return !V[name] || name === 'home' || (name === 'pos' && posDevice());
+};
+let homeBelow = false;
+function go(h) {
+  // فاتورة لسا ما انحفظت: منسأل قبل ما نطلع (بلا ما نلمس السجل)
+  if (leaveGuard && h !== location.hash && leaveGuard.dirty()) return leaveGuard.ask(h);
+  if (location.hash === h || (!location.hash && isHomeHash(h) && isHomeHash(location.hash))) return route();
+  const fromHome = isHomeHash(location.hash), toHome = isHomeHash(h);
+  if (toHome && !fromHome && homeBelow) return history.back(); // الرئيسية تحت ← منرجعلها بدل ما نزيد صفحة
+  if (fromHome && !toHome) { homeBelow = true; location.hash = h; return; }
+  location.replace(h.startsWith('#') ? h : '#' + h);
+}
+// أول ما يفتح البرنامج على صفحة غير الرئيسية: منحط الرئيسية تحتها (مرة وحدة بكل جلسة — مش بعد كل إعادة تحميل)
+function histInit() {
+  let done = false; try { done = sessionStorage.getItem('daftar_hist') === '1'; sessionStorage.setItem('daftar_hist', '1'); } catch (e) { /* */ }
+  if (isHomeHash(location.hash)) { homeBelow = false; return; }
+  homeBelow = true;
+  if (done) return;
+  const cur = location.hash; history.replaceState(null, '', '#/'); history.pushState(null, '', cur);
+}
+// روابط الصفحات (<a href="#/…">) بتمشي بنفس القاعدة
+document.addEventListener('click', e => {
+  const a = e.target.closest && e.target.closest('a[href^="#"]');
+  if (!a || a.target || e.ctrlKey || e.metaKey || e.shiftKey || e.defaultPrevented) return;
+  e.preventDefault(); go(a.getAttribute('href'));
+});
+// رجعنا للرئيسية بزر الرجوع ← ما عاد في شي تحتها
+window.addEventListener('popstate', () => { if (isHomeHash(location.hash)) homeBelow = false; });
 function route() {
   if (leaveGuard && location.hash !== curHash && leaveGuard.dirty()) {
     const target = location.hash; history.pushState(null, '', curHash); leaveGuard.ask(target); return;
@@ -3536,6 +3567,7 @@ $('#menuBtn').onclick = () => document.body.classList.toggle('menu-open');
 $('#backdrop').onclick = () => document.body.classList.remove('menu-open');
 window.addEventListener('hashchange', route);
 applySellerUI();
+histInit();
 route();
 
 if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
