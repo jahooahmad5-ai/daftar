@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '7.24';
+const APP_VERSION = '7.25';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -1887,7 +1887,9 @@ function negItems() {
 V.items = (id, q, view) => {
   const st = engine().stock;
   const gf = q.g || '';
-  let list = [...db.items].sort(byCode);
+  // المواد المهملة: ما بتطلع بقائمة المواد (ولا بالبحث بالفاتورة) — بتنشاف من «🙈 المواد المهملة»
+  const showHid = q.h === '1', nHid = db.items.filter(i => i.hidden).length;
+  let list = [...db.items].sort(byCode).filter(i => !!i.hidden === showHid);
   if (gf === 'none') list = list.filter(i => !i.group || !grp(i.group));
   else if (gf) { const ids = new Set(grpDesc(gf)); list = list.filter(i => ids.has(i.group)); }
   let tv = 0;
@@ -1895,17 +1897,30 @@ V.items = (id, q, view) => {
     const s = st[i.id] || { qty: num(i.openQty), avg: num(i.openCost) }, v = s.qty * s.avg; tv += v;
     const low = num(i.minQty) > 0 && s.qty <= num(i.minQty);
     const bcs = i.barcodes || [], gp = i.group && grp(i.group) ? grpPath(i.group) : '';
-    return `<tr data-name="${esc(normAr(itemCodes(i).join(' ') + ' ' + i.name + ' ' + gp))}"><td class="n">${esc(i.code)}</td><td>${esc(i.name)}${gp ? `<br><small class="muted">📂 ${esc(gp)}</small>` : ''}${bcs.length ? `<br><small class="muted">▮▯▮ ${bcs.length === 1 ? esc(bcs[0]) : bcs.length + ' باركود'}</small>` : ''}</td><td>${esc(i.unit || '')}</td>
+    return `<tr data-name="${esc(normAr(itemCodes(i).join(' ') + ' ' + i.name + ' ' + gp))}"><td class="n"><label class="sel-ck"><input type="checkbox" data-sel="${i.id}"><span>${esc(i.code)}</span></label></td><td>${esc(i.name)}${gp ? `<br><small class="muted">📂 ${esc(gp)}</small>` : ''}${bcs.length ? `<br><small class="muted">▮▯▮ ${bcs.length === 1 ? esc(bcs[0]) : bcs.length + ' باركود'}</small>` : ''}</td><td>${esc(i.unit || '')}</td>
       <td class="n">${low ? `<span class="badge low">${fmt(s.qty)}</span>` : fmt(s.qty)}</td><td class="n">${fmt(s.avg)}</td><td class="n">${fmt(v)}</td><td class="n">${fmt(i.sellPrice)}${oldOn() && i.sellPrice ? `<br><small class="muted">${oldAmt(i.sellPrice)} قديم</small>` : ''}</td><td class="n">${i.consumerPrice ? fmt(i.consumerPrice) + (oldOn() ? `<br><small class="muted">${oldAmt(i.consumerPrice)} قديم</small>` : '') : ''}</td>
-      <td class="ac"><a class="mini" href="#/report/itemcard?item=${i.id}">الحركة</a><button class="mini" data-act="edit" data-id="${i.id}">تعديل</button><button class="mini red" data-act="del" data-id="${i.id}">حذف</button></td></tr>`;
+      <td class="ac"><a class="mini" href="#/report/itemcard?item=${i.id}">الحركة</a><button class="mini" data-act="edit" data-id="${i.id}">تعديل</button>${showHid ? `<button class="mini" data-act="unhide" data-id="${i.id}">↩️ رجّعها</button>` : ''}<button class="mini red" data-act="del" data-id="${i.id}">حذف</button></td></tr>`;
   }).join('');
   const gOpts = [['', '📂 كل المجموعات'], ...grpOpts().slice(1), ['none', '— مواد بدون مجموعة —']];
-  view.innerHTML = head(gf && gf !== 'none' && grp(gf) ? `المواد: ${esc(grpPath(gf))}` : 'المواد والمستودع',
-    `${negItems().length ? `<a class="btn" href="#/invoice/new?type=purchase&neg=1">🛒 شراء المواد السالبة (${negItems().length})</a>` : ''}<a class="btn" href="#/groups">📂 المجموعات</a><button class="btn" data-act="import">📥 استيراد Excel</button><button class="btn" data-act="zeros">✂️ حذف صفرين</button><button class="btn pri" data-act="add">+ مادة جديدة</button>`) + `
+  view.innerHTML = head(showHid ? '🙈 المواد المهملة' : gf && gf !== 'none' && grp(gf) ? `المواد: ${esc(grpPath(gf))}` : 'المواد والمستودع',
+    showHid ? `<a class="btn" href="#/items">رجوع للمواد</a>` : `${nHid ? `<a class="btn" href="#/items?h=1">🙈 المواد المهملة (${nHid})</a>` : ''}${negItems().length ? `<a class="btn" href="#/invoice/new?type=purchase&neg=1">🛒 شراء المواد السالبة (${negItems().length})</a>` : ''}<a class="btn" href="#/groups">📂 المجموعات</a><button class="btn" data-act="import">📥 استيراد Excel</button><button class="btn" data-act="zeros">✂️ حذف صفرين</button><button class="btn pri" data-act="add">+ مادة جديدة</button>`) + `
     <div class="card"><div class="filters" style="margin-bottom:10px"><select id="gf" style="flex:1;min-width:160px">${optsHtml(gOpts, gf)}</select>
     <input class="search" id="q" placeholder="🔎 بحث بالاسم أو الرمز أو الباركود" style="flex:2;min-width:180px"></div>
-    ${table(['الرمز', 'المادة', 'الوحدة', 'الكمية', 'متوسط الكلفة', 'قيمة المخزون', 'سعر المبيع', 'سعر المستهلك', ''], rows,
-      `<tr><td colspan="5">إجمالي قيمة المخزون (${list.length} مادة)</td><td class="n">${fmt(tv)}</td><td colspan="3"></td></tr>`)}</div>`;
+    ${showHid ? '<p class="muted" style="margin-top:0">هالمواد ما بتطلع بقائمة المواد ولا بالبحث بالفاتورة (بس بالباركود)، وحساباتها القديمة متل ما هي.</p>' : ''}
+    ${table([`<label class="sel-ck"><input type="checkbox" id="selAll"><span>الرمز</span></label>`, 'المادة', 'الوحدة', 'الكمية', 'متوسط الكلفة', 'قيمة المخزون', 'سعر المبيع', 'سعر المستهلك', ''], rows,
+      `<tr><td colspan="5">إجمالي قيمة المخزون (${list.length} مادة)</td><td class="n">${fmt(tv)}</td><td colspan="3"></td></tr>`)}</div>
+    <div class="sel-bar" id="selBar" hidden><b id="selN"></b>
+      ${showHid ? '<button class="btn" data-act="selUnhide">↩️ رجّعهن</button>' : '<button class="btn" data-act="selHide">🙈 إهمال</button>'}
+      <button class="btn red" data-act="selDel">🗑 حذف</button><button class="btn" data-act="selNone">✕</button></div>`;
+  // التحديد: كل مادة إلها مربّع، و«الكل» بيحدد المواد الظاهرة بس (بعد البحث)
+  const picked = () => $$('[data-sel]:checked', view).map(c => c.dataset.sel);
+  const selUpd = () => { const n = picked().length; $('#selBar', view).hidden = !n; $('#selN', view).textContent = `${n} مادة محددة`; };
+  view.addEventListener('change', e => { if (e.target.dataset && e.target.dataset.sel) selUpd(); });
+  $('#selAll', view).onchange = e => { $$('tbody tr[data-name]', view).forEach(tr => { if (tr.style.display !== 'none') $('[data-sel]', tr).checked = e.target.checked; }); selUpd(); };
+  const setHidden = (ids, h) => {
+    db.items.forEach(i => { if (ids.includes(i.id)) { if (h) i.hidden = true; else delete i.hidden; } });
+    save(); toast(h ? `🙈 انحطّ ${ids.length} مادة بالمهملة` : `↩️ رجعت ${ids.length} مادة لقائمة المواد`); route();
+  };
   $('#q', view).oninput = e => { const s = normAr(e.target.value); $$('tbody tr[data-name]', view).forEach(tr => (tr.style.display = tr.dataset.name.includes(s) ? '' : 'none')); };
   $('#gf', view).onchange = e => go('#/items' + (e.target.value ? '?g=' + e.target.value : ''));
   onAct(view, {
@@ -1914,9 +1929,24 @@ V.items = (id, q, view) => {
     zeros: () => zerosForm(gf),
     edit: id => itemForm(db.items.find(i => i.id === id)),
     del: id => {
-      if (db.invoices.some(inv => inv.lines.some(l => l.item === id))) return toast('لا يمكن حذف مادة مستخدمة في فواتير', 1);
+      if (db.invoices.some(inv => inv.lines.some(l => l.item === id))) return toast('لا يمكن حذف مادة مستخدمة في فواتير — فيك تحطها بالمهملة 🙈', 1);
       if (!confirm('حذف المادة؟')) return;
       db.items = db.items.filter(i => i.id !== id); save(); route();
+    },
+    unhide: id => setHidden([id], false),
+    selNone: () => { $$('[data-sel]', view).forEach(c => (c.checked = false)); $('#selAll', view).checked = false; selUpd(); },
+    selHide: () => setHidden(picked(), true),
+    selUnhide: () => setHidden(picked(), false),
+    selDel: () => {
+      const ids = picked(); if (!ids.length) return;
+      // المواد اللي إلها فواتير ما بتنحذف (بتخرب الحسابات) — بنعرض نحطها بالمهملة بدالها
+      const used = new Set(); db.invoices.forEach(inv => inv.lines.forEach(l => used.add(l.item)));
+      const free = ids.filter(id => !used.has(id)), busy = ids.filter(id => used.has(id));
+      if (free.length && !confirm(`حذف ${free.length} مادة نهائياً؟${busy.length ? `\n(${busy.length} مادة إلها فواتير ما بتنحذف)` : ''}`)) return;
+      if (free.length) { db.items = db.items.filter(i => !free.includes(i.id)); save(); toast(`🗑 انحذف ${free.length} مادة`); }
+      if (busy.length && !showHid && confirm(`${busy.length} مادة إلها فواتير وما بتنحذف (بتخرب الحسابات).\nبدك نحطهن بالمهملة؟ (ما بيعودوا يطلعوا بقائمة المواد)`)) return setHidden(busy, true);
+      if (busy.length && (showHid || !free.length)) toast(`${busy.length} مادة إلها فواتير ما انحذفت`, 1);
+      route();
     },
   });
 };
@@ -2367,6 +2397,7 @@ V.invoice = (id, q, view) => {
       let sc = -1;
       if (code && itemCodes(it).some(c => c.startsWith(code))) sc = itemCodes(it).includes(code) ? 1000 : 500;
       else sc = rate(nm);
+      if (it.hidden && sc < 1000) continue; // المادة المهملة: بس بالباركود الكامل
       if (sc >= 1000 && codeVariant(it, code)) { out.push([sc, nm.length, it, codeVariant(it, code)]); continue; }
       if (sc >= 0) out.push([sc, nm.length, it, '']);
       // الأنواع تحت البند (الاسم الحقيقي): بتنلقى باسمها أو باسم البند، وبتنضاف عالبند نفسه مع اسمها
@@ -2444,7 +2475,7 @@ V.invoice = (id, q, view) => {
     if (!line || line.kind === 'pay') return null;
     OrderPaste.reset();
     const ln = OrderPaste.asItem(line);
-    return { ln, qty: line.qty || 1, m: OrderPaste.best(ln, items) };
+    return { ln, qty: line.qty || 1, m: OrderPaste.best(ln, items.filter(it => !it.hidden)) };
   };
   const smartHtml = () => {
     smartRes = smart(scanIn.value);
@@ -2831,7 +2862,7 @@ V.invoice = (id, q, view) => {
       const line = OrderPaste.parseLine(t);
       if (!line || line.kind === 'pay') return toast('ما فهمت: ' + raw, 1);
       const ln = OrderPaste.asItem(line);
-      const m = OrderPaste.best(ln, items);
+      const m = OrderPaste.best(ln, items.filter(it => !it.hidden));
       const add = it => { fromPaste({ party: '', lines: [{ item: it.id, qty: line.qty || 1 }], pay: payNow }); toast(`🎤 ${it.name} × ${fmt(line.qty || 1)}${m.it && !m.sure ? ' (تأكد منها)' : ''}`); };
       if (m.it && !m.weak) return add(m.it);
       Voice.askItem(ln, raw.replace(/\s*عدد.*$/, '')).then(it => it && add(it));
