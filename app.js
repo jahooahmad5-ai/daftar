@@ -1574,7 +1574,20 @@ V.debts = (id, q, view) => {
 /* ------------------------- المواد والمستودع ------------------------- */
 /* ---------- الباركود ---------- */
 const parseCodes = txt => [...new Set(String(txt || '').split(/[\n,،;\s]+/).map(x => x.trim()).filter(Boolean))];
-const itemCodes = i => [i.code, ...(i.barcodes || [])].filter(Boolean);
+const itemCodes = i => [i.code, ...(i.barcodes || []), ...Object.keys(i.vcodes || {})].filter(Boolean);
+// باركود خاص بنوع تحت البند (vcodes: {باركود: اسم النوع}) ← اسم النوع، وإلا ''
+const codeVariant = (it, c) => (it && it.vcodes && Object.prototype.hasOwnProperty.call(it.vcodes, c) ? it.vcodes[c] : '');
+// خانة «الأنواع»: كل سطر «اسم النوع» أو «اسم النوع = باركود» (أو أكتر من باركود)
+const variantsText = it => (it.variants || []).map(v => { const cs = Object.keys(it.vcodes || {}).filter(c => it.vcodes[c] === v); return cs.length ? `${v} = ${cs.join(' ')}` : v; }).join('\n');
+const parseVariants = txt => {
+  const variants = [], vcodes = {};
+  String(txt || '').split(/\n+/).forEach(ln => {
+    const [nm, ...rest] = ln.split('='); const v = nm.trim(); if (!v) return;
+    if (!variants.includes(v)) variants.push(v);
+    parseCodes(rest.join('=')).forEach(c => { vcodes[c] = v; });
+  });
+  return { variants, vcodes };
+};
 // اسم المادة بالفاتورة: اسم البند + النوع الحقيقي إذا مختار — «بسكوت 1000 (ويفر شوكولا)»
 const lineName = (l, it) => ((it && it.name) || '') + (l && l.vn ? ` (${l.vn})` : '');
 const findByCode = c => { c = String(c || '').trim(); return c ? db.items.find(i => itemCodes(i).includes(c)) : null; };
@@ -1775,7 +1788,7 @@ function itemForm(it, defGroup, after) {
   const fl = [
     { k: 'code', l: 'رمز المادة' }, { k: 'name', l: 'اسم المادة', req: 1 },
     { k: 'barcodes', l: 'الباركودات (كل باركود بسطر — يمكن إضافة أكثر من باركود)', t: 'textarea', full: 1 },
-    { k: 'variants', l: 'الأنواع تحت هالبند (الاسم الحقيقي يلي بيطلع بالفاتورة — كل نوع بسطر، مثلاً: ويفر شوكولا)', t: 'textarea', full: 1 },
+    { k: 'variants', l: 'الأنواع تحت هالبند (الاسم الحقيقي يلي بيطلع بالفاتورة — كل نوع بسطر، ولباركود النوع: ويفر شوكولا = 6291234567890)', t: 'textarea', full: 1 },
     { k: 'group', l: 'المجموعة', t: 'select', opts: grpOpts(), full: 1 },
     { k: 'unit', l: 'الوحدة', ph: 'قطعة، كيلو، علبة…' }, { k: 'minQty', l: 'الحد الأدنى للتنبيه', t: 'number' },
     { k: 'buyPrice', l: 'سعر الشراء', t: 'number' }, { k: 'sellPrice', l: 'سعر المبيع', t: 'number' },
@@ -1783,22 +1796,23 @@ function itemForm(it, defGroup, after) {
     { k: 'openQty', l: 'كمية أول المدة', t: 'number' }, { k: 'openCost', l: 'كلفة الوحدة أول المدة', t: 'number' },
     { k: 'aliases', l: 'أسماء تانية (متل ما بتنكتب بطلبيات الواتس — كل اسم بسطر)', t: 'textarea', full: 1 },
   ];
-  const vals = it ? { ...it, barcodes: (it.barcodes || []).join('\n'), aliases: (it.aliases || []).join('\n'), variants: (it.variants || []).join('\n') } : { code: nextItemCode(), unit: 'قطعة', group: defGroup && defGroup !== 'none' ? defGroup : '' };
+  const vals = it ? { ...it, barcodes: (it.barcodes || []).join('\n'), aliases: (it.aliases || []).join('\n'), variants: variantsText(it) } : { code: nextItemCode(), unit: 'قطعة', group: defGroup && defGroup !== 'none' ? defGroup : '' };
   const f = modal(it ? 'تعديل مادة' : 'مادة جديدة', fields(fl, vals) +
     (canScan() ? `<button type="button" class="btn" id="bcScan" style="margin-top:8px">📷 إضافة باركود بالكاميرا</button>` : '') +
     `<p class="muted" style="font-size:13px;margin:8px 0 0">بقارئ الباركود: اضغط داخل خانة الباركودات وامسح، كل مسحة بسطر جديد.</p>`, {
     onSave: d => {
       const code = (d.code || '').trim();
       const barcodes = parseCodes(d.barcodes).filter(b => b !== code);
-      for (const c of [code, ...barcodes]) {
+      const { variants, vcodes } = parseVariants(d.variants);
+      for (const c of [code, ...barcodes, ...Object.keys(vcodes)]) {
         if (!c) continue;
         const other = db.items.find(x => x !== it && itemCodes(x).includes(c));
-        if (other) { toast(`الرمز/الباركود ${c} مستخدم للمادة: ${other.name}`, 1); return false; }
+        if (other) { toast(`الرمز/الباركود ${c} مستخدم للمادة: ${other.name}${codeVariant(other, c) ? ` (${codeVariant(other, c)})` : ''}`, 1); return false; }
+        if ((c === code || barcodes.includes(c)) && vcodes[c]) { toast(`الباركود ${c} محطوط للمادة وللنوع «${vcodes[c]}» سوا — خلّيه بمحل واحد`, 1); return false; }
       }
       const aliases = String(d.aliases || '').split(/\n+/).map(x => x.trim()).filter(Boolean);
       const aliasKeys = window.OrderPaste ? [...new Set(aliases.map(OrderPaste.keyOfText).filter(Boolean))] : [];
-      const variants = [...new Set(String(d.variants || '').split(/\n+/).map(x => x.trim()).filter(Boolean))];
-      const o = { code, barcodes, aliases, aliasKeys, variants, group: d.group || null, name: d.name.trim(), unit: d.unit.trim(), minQty: num(d.minQty), buyPrice: num(d.buyPrice), sellPrice: num(d.sellPrice), consumerPrice: num(d.consumerPrice), openQty: num(d.openQty), openCost: num(d.openCost) };
+      const o = { code, barcodes, aliases, aliasKeys, variants, vcodes, group: d.group || null, name: d.name.trim(), unit: d.unit.trim(), minQty: num(d.minQty), buyPrice: num(d.buyPrice), sellPrice: num(d.sellPrice), consumerPrice: num(d.consumerPrice), openQty: num(d.openQty), openCost: num(d.openCost) };
       fillPrices(o);
       if (priceBad(o.sellPrice, o.buyPrice)) { toast(priceBadMsg('', o.sellPrice, o.buyPrice), 1); return false; }
       if (it) Object.assign(it, o); else db.items.push({ id: uid(), ...o });
@@ -1818,6 +1832,26 @@ function itemForm(it, defGroup, after) {
   const sb = $('#bcScan', f);
   if (sb) { sb.style.gridColumn = '1 / -1'; sb.style.marginTop = '0'; ta.closest('.fld').after(sb); } // زر الكاميرا تحت خانة الباركود (فوق، تحت الاسم)
   if (sb) sb.onclick = () => scanBarcode(c => { const cur = parseCodes(ta.value); if (!cur.includes(c)) ta.value = [...cur, c].join('\n'); toast('تمت إضافة الباركود ' + c); });
+  // 📷 باركود لنوع: بتكبس على سطر النوع بخانة «الأنواع» وبعدين على هالزر
+  const vt = $('[name=variants]', f);
+  if (vt && canScan()) {
+    const vb = document.createElement('button'); vb.type = 'button'; vb.className = 'btn'; vb.id = 'vcScan'; vb.style.gridColumn = '1 / -1';
+    vb.textContent = '📷 باركود للنوع (كبّس على سطر النوع أول)'; vt.closest('.fld').after(vb);
+    let caret = 0; const keep = () => { caret = vt.selectionStart || 0; };
+    vt.addEventListener('keyup', keep); vt.addEventListener('click', keep); vt.addEventListener('blur', keep);
+    vb.onclick = () => {
+      const lines = vt.value.split('\n'); let pos = 0, li = lines.length - 1;
+      for (let i = 0; i < lines.length; i++) { if (caret <= pos + lines[i].length) { li = i; break; } pos += lines[i].length + 1; }
+      const nm = (lines[li] || '').split('=')[0].trim();
+      if (!nm) return toast('اكتب اسم النوع وكبّس على سطره، وبعدين امسح باركوده', 1);
+      scanBarcode(c => {
+        const L = vt.value.split('\n'), [a, ...r] = L[li].split('='), cs = parseCodes(r.join('='));
+        if (!cs.includes(c)) cs.push(c);
+        L[li] = `${a.trim()} = ${cs.join(' ')}`; vt.value = L.join('\n');
+        toast(`تمت إضافة الباركود ${c} للنوع: ${a.trim()}`);
+      });
+    };
+  }
 }
 V.items = (id, q, view) => {
   const st = engine().stock;
@@ -2255,7 +2289,7 @@ V.invoice = (id, q, view) => {
     payNow = r.pay || 0; showPay(); draw(hl); toNew();
     if (r.lines.length > 1 || r.skipped) toast(`انضاف ${r.lines.length} مادة${r.skipped ? ` — ${r.skipped} سطر ما انضاف` : ''}`);
   };
-  const addByCode = code => { const it = findByCode(code); if (it) addItem(it); else toast('لا توجد مادة بهذا الباركود: ' + code, 1); };
+  const addByCode = code => { const it = findByCode(code); if (it) addItem(it, codeVariant(it, String(code).trim())); else toast('لا توجد مادة بهذا الباركود: ' + code, 1); };
 
   /* ---- البحث مع الاقتراحات ---- */
   const scanIn = $('#scanIn', view), sugg = $('#sugg', view);
@@ -2282,6 +2316,7 @@ V.invoice = (id, q, view) => {
       let sc = -1;
       if (code && itemCodes(it).some(c => c.startsWith(code))) sc = itemCodes(it).includes(code) ? 1000 : 500;
       else sc = rate(nm);
+      if (sc >= 1000 && codeVariant(it, code)) { out.push([sc, nm.length, it, codeVariant(it, code)]); continue; }
       if (sc >= 0) out.push([sc, nm.length, it, '']);
       // الأنواع تحت البند (الاسم الحقيقي): بتنلقى باسمها أو باسم البند، وبتنضاف عالبند نفسه مع اسمها
       if (sc < 500) (it.variants || []).forEach(v => { const vs = rate(normAr(v + ' ' + it.name)); if (vs >= 0) out.push([vs - 1, normAr(v).length, it, v]); });
@@ -2328,7 +2363,7 @@ V.invoice = (id, q, view) => {
         const nm = d.name.trim(); if (!nm) return false;
         if (db.items.some(x => normAr(x.name) === normAr(nm))) { toast('في مادة بنفس الاسم', 1); return false; }
         const barcodes = parseCodes(d.barcode);
-        for (const c of barcodes) { const other = findByCode(c); if (other) { toast(`الباركود ${c} مستخدم للمادة: ${other.name}`, 1); return false; } }
+        for (const c of barcodes) { const other = findByCode(c); if (other) { toast(`الباركود ${c} مستخدم للمادة: ${other.name}${codeVariant(other, c) ? ` (${codeVariant(other, c)})` : ''}`, 1); return false; } }
         const R = inv.cur === 'fx' && rate() ? rate() : 1;
         const it = { id: uid(), code: nextItemCode(), barcodes, aliases: [], aliasKeys: [], group: null, name: nm, unit: (d.unit || '').trim(), minQty: 0,
           buyPrice: 0, sellPrice: 0, consumerPrice: r2(num(d.consumerPrice) * R), openQty: 0, openCost: 0 };
@@ -2461,7 +2496,7 @@ V.invoice = (id, q, view) => {
       scanIn.value = ''; sugg.hidden = true; scanIn.focus(); return;
     }
     const exact = findByCode(c);
-    if (exact) pick(exact);
+    if (exact) pick(exact, codeVariant(exact, c));
     else if (matches.length === 1) pick(matches[0], matchVn[0]);
     else if (matches.length > 1) { sugg.hidden = false; toast(`في ${matches.length} مواد بهالاسم — اختار وحدة من القائمة`, 1); }
     else if (!matches.length) {
