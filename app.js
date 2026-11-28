@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '7.15';
+const APP_VERSION = '7.16';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -1451,11 +1451,13 @@ function addDebt(preAcc) {
     },
   });
   const sel = $('[name=acc]', f); enhancePartySelect(sel);
+  // المبلغ بالعملة القديمة: دغري تحت خانة المبلغ
+  const hOld = document.createElement('div'); hOld.className = 'amt-old'; hOld.id = 'dOld'; $('[name=amount]', f).closest('.fld').appendChild(hOld);
   const upd = () => {
     const old = $('[name=kind]', f).value === 'old', a = acc(sel.value), amt = num($('[name=amount]', f).value);
     $('[name=cashAcc]', f).closest('.fld').style.display = old ? 'none' : '';
+    hOld.textContent = amt && oldOn() ? `بالقديم: ${oldAmt(amt)}` : '';
     $('#dEq', f).textContent = [
-      amt && oldOn() ? `المبلغ بالقديم: ${oldAmt(amt)}` : '',
       a ? `رصيده هلق: ${fmt(partyBal(a))} ← بعد الإضافة: ${fmt(r2(partyBal(a) + amt))} ${cur()}${oldOn() ? ` (بالقديم ${oldAmt(r2(partyBal(a) + amt))})` : ''}` : '',
     ].filter(Boolean).join('\n');
   };
