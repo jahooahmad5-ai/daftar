@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '7.00';
+const APP_VERSION = '7.15';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -3620,6 +3620,12 @@ window.addEventListener('hashchange', route);
 applySellerUI();
 histInit();
 route();
+// بعد التحديث: رسالة إنه البرنامج تحدّث ولأي إصدار
+try {
+  const pv = localStorage.getItem('daftar_ver');
+  if (pv && pv !== APP_VERSION) setTimeout(() => toast(`✅ تحدّث البرنامج للإصدار ${APP_VERSION}`), 800);
+  localStorage.setItem('daftar_ver', APP_VERSION);
+} catch (e) { /* */ }
 
 if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
   navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(r => r.update()).catch(() => {});

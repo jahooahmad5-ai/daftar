@@ -143,4 +143,13 @@ module.exports = [
       assert.deepStrictEqual(errs, [], JSON.stringify(errs));
     },
   },
+  {
+    name: 'رقم الإصدار يلي بيطلع بالبرنامج = رقم النسخة بـ index.html (لما يتحدث البرنامج بيبيّن الرقم الجديد)',
+    fn: async () => {
+      const fs = require('fs'), path = require('path'), root = path.join(__dirname, '..');
+      const ver = fs.readFileSync(path.join(root, 'app.js'), 'utf8').match(/const APP_VERSION = '([\d.]+)'/)[1];
+      const vs = [...new Set([...fs.readFileSync(path.join(root, 'index.html'), 'utf8').matchAll(/\?v=([\d.]+)/g)].map(m => m[1]))];
+      assert.deepStrictEqual(vs, [ver], `APP_VERSION (${ver}) لازم يساوي ?v= بـ index.html (${vs})`);
+    },
+  },
 ];
