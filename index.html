@@ -9,7 +9,7 @@
 <link rel="manifest" href="manifest.json">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon-192.png">
-<link rel="stylesheet" href="styles.css?v=7.19">
+<link rel="stylesheet" href="styles.css?v=7.20">
 </head>
 <body>
 <div class="app">
@@ -53,8 +53,8 @@
 <div id="toast"></div>
 <div id="print"></div>
 <script src="config.js"></script>
-<script src="store.js?v=7.19"></script>
-<script>Store.start(['lib/qrcode.js', 'app.js?v=7.19', 'cloud.js?v=7.19', 'printer.js?v=7.19', 'import.js?v=7.19', 'order.js?v=7.19', 'voice.js?v=7.19', 'calc.js?v=7.19'], function () {
+<script src="store.js?v=7.20"></script>
+<script>Store.start(['lib/qrcode.js', 'app.js?v=7.20', 'cloud.js?v=7.20', 'printer.js?v=7.20', 'import.js?v=7.20', 'order.js?v=7.20', 'voice.js?v=7.20', 'calc.js?v=7.20'], function () {
   if (window.Voice && Voice.supported) { ['voiceBtn', 'voiceSide'].forEach(function (id) { var b = document.getElementById(id); b.hidden = false; b.onclick = function () { document.body.classList.remove('menu-open'); Voice.listen(); }; }); }
 });</script>
 </body>
