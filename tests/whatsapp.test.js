@@ -349,4 +349,26 @@ module.exports = [
       assert.strictEqual(await p.inputValue('[name=waMode]'), 'text', 'بالإعدادات لازم يكون «نص» مختار');
     },
   },
+  {
+    name: '💵 دفعة من زبون: «حفظ وإرسال عالواتساب» بيحفظ الدفعة وبيبعتها دغري، والدفعة المحفوظة فيها زر «إرسال عالواتساب»',
+    fn: async base => {
+      const p = await page(base, { cloud: OWNER });
+      await setup(p);
+      const goWa = async () => { await p.waitForTimeout(250); if (await p.evaluate(() => document.getElementById('dlg').open && !!document.getElementById('waGo'))) { await p.click('#waGo'); await p.waitForTimeout(200); } };
+      await p.go('#/voucher/new?type=receipt&mode=cust&acc=c1');
+      await p.fill('[name=amount]', '2500'); await p.dispatchEvent('[name=amount]', 'input');
+      await p.click('[data-act=saveWa]'); await goWa();
+      const v = await p.evaluate(() => db.vouchers.filter(x => x.acc === 'c1' && x.amount === 2500).map(x => x.id));
+      assert.strictEqual(v.length, 1, 'الدفعة لازم تنحفظ');
+      let o = await opened(p);
+      assert.strictEqual(o.length, 1); assert.match(o[0], /^https:\/\/wa\.me\/963933123456\?text=/); assert.match(o[0], /2,500/);
+      assert.match(await p.evaluate(() => location.hash), new RegExp('#/voucher/' + v[0]));
+      // من الدفعة المحفوظة
+      assert.strictEqual(await p.locator('[data-act=saveWa]').count(), 0);
+      await p.click('[data-act=wa]'); await goWa();
+      o = await opened(p);
+      assert.strictEqual(o.length, 2); assert.match(o[1], /2,500/);
+      assert.deepStrictEqual(p.errors, []);
+    },
+  },
 ];

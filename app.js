@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '7.15';
+const APP_VERSION = '7.17';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -1451,11 +1451,13 @@ function addDebt(preAcc) {
     },
   });
   const sel = $('[name=acc]', f); enhancePartySelect(sel);
+  // المبلغ بالعملة القديمة: دغري تحت خانة المبلغ
+  const hOld = document.createElement('div'); hOld.className = 'amt-old'; hOld.id = 'dOld'; $('[name=amount]', f).closest('.fld').appendChild(hOld);
   const upd = () => {
     const old = $('[name=kind]', f).value === 'old', a = acc(sel.value), amt = num($('[name=amount]', f).value);
     $('[name=cashAcc]', f).closest('.fld').style.display = old ? 'none' : '';
+    hOld.textContent = amt && oldOn() ? `بالقديم: ${oldAmt(amt)}` : '';
     $('#dEq', f).textContent = [
-      amt && oldOn() ? `المبلغ بالقديم: ${oldAmt(amt)}` : '',
       a ? `رصيده هلق: ${fmt(partyBal(a))} ← بعد الإضافة: ${fmt(r2(partyBal(a) + amt))} ${cur()}${oldOn() ? ` (بالقديم ${oldAmt(r2(partyBal(a) + amt))})` : ''}` : '',
     ].filter(Boolean).join('\n');
   };
@@ -2865,8 +2867,9 @@ V.voucher = (id, q, view) => {
       <input name="note" class="vp-in" placeholder="📝 ملاحظات (اختياري)" value="${esc(v.note || '')}">
       ${boxes.length > 1 ? `<select name="cashAcc" class="vp-in">${boxes.map(bx => `<option value="${bx.id}"${v.cashAcc === bx.id ? ' selected' : ''}>💰 ${isR ? 'إلى' : 'من'}: ${esc(bx.name)}</option>`).join('')}</select>` : ''}
       <button type="button" class="vp-save" data-act="save">💾 ${orig ? 'حفظ التعديلات' : custMode ? 'حفظ الدفعة' : 'حفظ السند'}</button>
+      ${orig ? '' : '<button type="button" class="vp-save wa" data-act="saveWa">💾 حفظ وإرسال عالواتساب 🟢</button>'}
       <div class="vp-acts">
-        ${orig ? `<button type="button" data-act="share">📤 مشاركة وطباعة</button><button type="button" data-act="another">🆕 ${custMode ? 'دفعة جديدة' : 'سند جديد'}</button>` : ''}
+        ${orig ? `<button type="button" class="wa" data-act="wa">🟢 إرسال عالواتساب</button><button type="button" data-act="share">📤 مشاركة وطباعة</button><button type="button" data-act="another">🆕 ${custMode ? 'دفعة جديدة' : 'سند جديد'}</button>` : ''}
         ${orig ? '<button type="button" class="red" data-act="del">🗑 حذف</button>' : ''}
       </div>
     </div>
@@ -2896,7 +2899,9 @@ V.voucher = (id, q, view) => {
     $('#ppList', d).onclick = e => { const b = e.target.closest('.pp-item'); if (!b) return; accId = b.dataset.id; d.close(); draw(); };
     setTimeout(() => qq.focus(), 100);
   };
-  const doSave = () => {
+  // 🟢 إرسال السند للزبون عالواتساب (المندوب: بيطلب من المدير يبعته متل الفاتورة)
+  const sendWa = d => (isSeller() ? repWaAsk('vouchers', d) : waSendDoc('vouchers', d));
+  const doSave = andWa => {
     const amount = r2(num(v.amount)), R = num(v.rate);
     if (!accId) { toast('اختار الحساب', 1); return pick(); }
     if (amount <= 0) return toast('أدخل مبلغاً صحيحاً', 1);
@@ -2908,11 +2913,13 @@ V.voucher = (id, q, view) => {
     else db.vouchers.push(sv = { id: uid(), type, ...newNo(type), created: Date.now(), ...o });
     save(); toast(`✅ انحفظ ${type === 'receipt' ? 'سند القبض' : 'سند الدفع'} رقم ${sv.no}`);
     go('#/voucher/' + sv.id + (custMode ? '?mode=cust' : ''));
+    if (andWa) sendWa(sv);
   };
   onAct(view, {
     type: t => { if (orig && orig.type !== t && !confirm('تغيير نوع السند؟')) return; type = t; if (!orig) reserveNo(t); draw(); },
     reset: () => go('#/voucher/new?type=' + type + mq + (accId ? '&acc=' + accId : '')),
-    pick, save: doSave,
+    pick, save: () => doSave(false), saveWa: () => doSave(true),
+    wa: () => (orig ? sendWa(orig) : toast('احفظ السند أول', 1)),
     stmt: () => (accId ? go('#/report/statement?acc=' + accId) : pick()),
     more: () => {
       const a = acc(accId); if (!a) return pick();

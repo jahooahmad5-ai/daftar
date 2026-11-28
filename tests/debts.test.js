@@ -124,8 +124,10 @@ module.exports = [
       const old0 = await p.evaluate(() => db.settings.showOld);
       await refresh('');
       assert.doesNotMatch(await p.text('#dEq'), /بالقديم/, 'العملة القديمة مطفية ← ما بتطلع');
+      assert.strictEqual(await p.text('#dOld'), '');
       await refresh('1');
-      assert.match(await p.text('#dEq'), /المبلغ بالقديم: 500,000/);
+      assert.strictEqual(await p.text('#dOld'), 'بالقديم: 500,000', 'المبلغ بالقديم تحت خانة المبلغ');
+      assert.strictEqual(await p.evaluate(() => document.getElementById('dOld').previousElementSibling.name), 'amount', 'لازم يكون تحت خانة المبلغ دغري');
       assert.match(await p.text('#dEq'), /بعد الإضافة: 5,000 .*\(بالقديم 500,000\)/);
       await refresh(old0);
       const cash0 = await p.evaluate(() => partyBal(acc('cash')));
