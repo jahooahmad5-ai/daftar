@@ -583,8 +583,9 @@ body.sheet-open .inv-bar{position:fixed;left:8px;right:8px;bottom:8px;z-index:61
 body.sheet-open #invMore.sheet{padding-bottom:130px}
 body.sheet-open .inv-bar .bar-edit{display:none}
 /* فاتورة المبيع: نقدي/آجل والدفعة فوق «مراجعة» */
-.pay-top{display:flex;gap:8px;align-items:flex-end;margin-bottom:8px}
+.pay-top{display:flex;gap:8px;align-items:flex-start;margin-bottom:8px}
 .pay-top .fld{flex:1;margin:0}
 .pay-top #payRow{flex:1;display:flex;flex-direction:column;gap:2px}
 .pay-top #payRow span{font-size:13px;color:var(--muted,#64748b)}
 .pay-top #payRow input{width:100%}
+.tot-box #payOld{display:none}

@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '7.21';
+const APP_VERSION = '7.22';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -2037,7 +2037,7 @@ V.invoice = (id, q, view) => {
   // فاتورة المبيع: «نقدي/آجل» و«الدفعة» فوق، جنب «مراجعة» (مش جوّا «تعديل»)
   const payTop = inv.type === 'sale';
   const payFld = field({ k: 'pay', l: 'طريقة الدفع', t: 'select', opts: [['cash', 'نقدي'], ['credit', 'آجل (على الحساب)']] }, inv.pay);
-  const payRowH = '<div id="payRow"><span>💵 دفعة</span><input name="payment" type="number" step="any" inputmode="decimal" placeholder="0" value=""></div>';
+  const payRowH = '<div id="payRow"><span>💵 دفعة</span><input name="payment" type="number" step="any" inputmode="decimal" placeholder="0" value=""><small id="payOld" class="old-eq"></small></div>';
   view.innerHTML = head(INV_TYPES[inv.type] + (orig ? ` رقم ${esc(orig.no)}${repTagH(orig)}` : ' جديدة' + (isSeller() ? ` — مندوب: ${esc(myRep())}` : '')),
     `${orig ? `<button class="btn wa" data-act="wa">واتساب</button><button class="btn" data-act="receipt">🧾 إيصال</button><button class="btn" data-act="print">🖨 طباعة</button><button class="btn red" data-act="del">حذف</button><a class="btn" href="#/invoices">رجوع</a>` : ''}`) + `
   ${orig && q.saved ? `<div class="saved-ok">✅ الفاتورة رقم ${esc(orig.no)} محفوظة — ${orig.lines.length} مادة، ${fmt(orig.lines.reduce((s, l) => s + num(l.qty), 0))} قطعة</div>` : ''}
@@ -2120,6 +2120,7 @@ V.invoice = (id, q, view) => {
     $('#tOld', view).textContent = oldOn() && nb ? `الصافي بالعملة القديمة: ${oldAmt(nb)} ${cur()}` : '';
     $('#barOld', view).textContent = oldTxt(nb);
     const pv = num(val('payment')), tr = $('#tRest', view);
+    { const po = $('#payOld', view); if (po) po.textContent = oldOn() && pv ? `بالقديم: ${oldAmt(toBase(pv))}` : ''; }
     if (tr) tr.textContent = pv ? `الباقي على الحساب: ${fmt(n - pv)} ${sym}${oldOn() ? ` — الدفعة بالقديم: ${oldAmt(toBase(pv))}` : ''}` : '';
     // رصيد الزبون الحالي وبعد الفاتورة (بالجديد والقديم)
     const tb = $('#tBal', view), pa = acc(val('party')), lw = $('#limWarn', view);
