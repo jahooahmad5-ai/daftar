@@ -42,6 +42,8 @@ const fxNote = d => (d && d.cur === 'fx' ? ` (${fmt(d.amount ?? invTotals(d).net
 
 function toast(msg, bad) {
   const t = $('#toast'); t.textContent = msg; t.className = 'show' + (bad ? ' bad' : '');
+  // فوق أي نافذة مفتوحة (النوافذ بتغطّي كل شي تحتها — كانت الرسالة تنخفى وراها)
+  if (t.showPopover) { try { if (!t.popover) t.popover = 'manual'; if (t.matches(':popover-open')) t.hidePopover(); t.showPopover(); } catch (e) { /* */ } }
   clearTimeout(t._t); t._t = setTimeout(() => (t.className = ''), 2800);
 }
 
@@ -1589,7 +1591,15 @@ async function scanBarcode(onCode) {
   let stream = null, timer = null, done = false;
   const stop = () => { done = true; clearTimeout(timer); stream?.getTracks().forEach(t => t.stop()); if (d.open) d.close(); };
   d.onclose = stop; $('#scanX', d).onclick = stop;
+  if (d.open) d.close();
   d.showModal();
+  // إذا الكاميرا ما فتحت: منكتب السبب جوّا نافذة المسح نفسها (مش رسالة بتنخفى ورا النوافذ)
+  const fail = (why, how) => {
+    done = true; clearTimeout(timer); stream?.getTracks().forEach(t => t.stop());
+    $('.dlg-body', d).outerHTML = `<div class="dlg-body" style="text-align:center;padding:18px"><p style="font-size:17px;margin:0 0 8px">⚠️ ${esc(why)}</p><p class="muted" style="margin:0;white-space:pre-line">${esc(how)}</p></div>`;
+    $('footer', d).innerHTML = '<button type="button" class="btn" id="scanOk">تمام</button>';
+    $('#scanOk', d).onclick = () => d.close();
+  };
   try {
     stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
     const v = $('#scanV', d); v.srcObject = stream; await v.play();
@@ -1604,7 +1614,13 @@ async function scanBarcode(onCode) {
       timer = setTimeout(tick, 250);
     };
     tick();
-  } catch (e) { stop(); toast('تعذّر فتح الكاميرا — اسمح للمتصفح باستخدامها', 1); }
+  } catch (e) {
+    const n = e && e.name;
+    if (n === 'NotAllowedError' || n === 'SecurityError') fail('البرنامج مش مسموحله يستعمل الكاميرا', 'اسمح بالكاميرا: كبّس على 🔒 أو ⓘ جنب العنوان فوق (أو من إعدادات الموبايل ← التطبيقات ← Chrome ← الأذونات ← الكاميرا)، وبعدين جرّب مرة تانية.\nأو امسح الباركود بقارئ الباركود، أو اكتبه بإيدك.');
+    else if (n === 'NotReadableError' || n === 'AbortError') fail('الكاميرا مشغولة', 'سكّر أي برنامج تاني عم يستعمل الكاميرا وجرّب مرة تانية.');
+    else if (n === 'NotFoundError' || n === 'OverconstrainedError') fail('ما لقيت كاميرا عالجهاز', 'اكتب الباركود بإيدك أو استعمل قارئ الباركود.');
+    else fail('ما قدرت افتح الكاميرا', String((e && e.message) || n || ''));
+  }
 }
 
 function nextItemCode() { const m = db.items.reduce((x, i) => Math.max(x, parseInt(i.code, 10) || 0), 0); return String(m + 1).padStart(3, '0'); }

@@ -515,4 +515,35 @@ module.exports = [
       assert.deepStrictEqual(p.errors, []);
     },
   },
+  {
+    name: '📷 باركود بالكاميرا من «تعديل مادة» جوّا الفاتورة: بتفتح الكاميرا وبينضاف الباركود، وإذا الكاميرا ممنوعة بيبيّن السبب',
+    fn: async base => {
+      const p = await page(base, { cloud: OWNER });
+      await p.evaluate(() => {
+        window.__code = '6291234567890';
+        window.BarcodeDetector = class { static async getSupportedFormats() { return ['ean_13']; } async detect() { return window.__code ? [{ rawValue: window.__code }] : []; } };
+        window.__deny = false;
+        navigator.mediaDevices.getUserMedia = async () => { if (window.__deny) { const e = new Error('denied'); e.name = 'NotAllowedError'; throw e; } const c = document.createElement('canvas'); c.width = 8; c.height = 8; return c.captureStream(); };
+        HTMLMediaElement.prototype.play = async function () {};
+        db.items.push({ id: 'b1', code: '1', name: 'باميلو', sellPrice: 1000, openQty: 100 }); ensureWalkin(); save();
+      });
+      await p.go('#/invoice/new?type=sale'); await p.click('.pp-item.wk'); await p.waitForTimeout(150);
+      await p.fill('#scanIn', 'باميلو'); await p.keyboard.press('Enter'); await p.waitForTimeout(250);
+      await p.evaluate(() => document.querySelector('[data-act=editItem]').click()); await p.waitForTimeout(250);
+      await p.click('#bcScan'); await p.waitForTimeout(600);
+      assert.strictEqual(await p.inputValue('#dlg [name=barcodes]'), '6291234567890', 'الباركود لازم ينضاف للخانة');
+      assert.strictEqual(await p.evaluate(() => document.getElementById('dlg').open), true, 'نافذة التعديل لازم تضل مفتوحة');
+      assert.strictEqual(await p.evaluate(() => document.getElementById('toast').matches(':popover-open')), true, 'الرسالة لازم تطلع فوق النافذة');
+      // الكاميرا ممنوعة ← السبب جوّا نافذة المسح
+      await p.evaluate(() => { window.__deny = true; });
+      await p.click('#bcScan'); await p.waitForTimeout(400);
+      assert.strictEqual(await p.evaluate(() => document.getElementById('scanDlg').open), true);
+      assert.match(await p.text('#scanDlg'), /مش مسموحله يستعمل الكاميرا/);
+      await p.click('#scanOk'); await p.waitForTimeout(150);
+      assert.strictEqual(await p.evaluate(() => document.getElementById('scanDlg').open), false);
+      await p.click('#dlg footer .btn.pri'); await p.waitForTimeout(300);
+      assert.deepStrictEqual(await p.evaluate(() => db.items.find(x => x.id === 'b1').barcodes), ['6291234567890']);
+      assert.deepStrictEqual(p.errors, []);
+    },
+  },
 ];
