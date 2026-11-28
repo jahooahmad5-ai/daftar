@@ -183,9 +183,10 @@ const customers = () => postable().filter(a => isUnder(a.id, 'customers'));
 const suppliers = () => postable().filter(a => isUnder(a.id, 'suppliers'));
 // «زبون عام»: زبون ثابت للبيع المباشر — دايماً نقدي وما بيصير عليه حساب (ما بيكون آجل أبداً)
 const WALKIN_NAME = 'زبون عام';
-const MAX_UP = 0.10; // أعلى زيادة مسموحة على سعر المبيع ببطاقة المادة
-const MAX_DOWN = 0.10; // أكبر نزلة مسموحة تحت سعر المبيع ببطاقة المادة (وما منبيع تحت سعر الشراء أبداً)
+const MAX_UP = 0.15; // أعلى زيادة مسموحة على سعر المبيع ببطاقة المادة
+const MAX_DOWN = 0.15; // أكبر نزلة مسموحة تحت سعر المبيع ببطاقة المادة (تحت سعر الشراء مسموح إذا ضمنها)
 const minSell = it => r2(num(it.sellPrice) * (1 - MAX_DOWN));
+const maxSell = it => r2(num(it.sellPrice) * (1 + MAX_UP));
 const AUTO_BUY = 0.80; // إذا نسيت سعر الشراء: سعر الشراء = سعر المبيع ناقص 20٪
 // تكميل أسعار البطاقة الناقصة: سعر المبيع من سعر فاتورة الزبون، وسعر الشراء من سعر المبيع
 // الفرق بين سعر الشراء وسعر المبيع ما بيزيد عن 20٪ من سعر المبيع (بالاتجاهين)
@@ -451,11 +452,11 @@ const head = (title, actions = '') => `<div class="ph"><h1>${title}</h1><div cla
 const kpi = (l, v, c = '') => `<div class="kpi ${c}"><span>${l}</span><b>${v}</b></div>`;
 const table = (heads, rows, foot = '', cls = '') => `<div class="tbl"><table class="${cls}"><thead><tr>${heads.map(h => `<th>${h}</th>`).join('')}</tr></thead><tbody>${rows || `<tr><td colspan="${heads.length}" class="empty">لا توجد بيانات</td></tr>`}</tbody>${foot ? `<tfoot>${foot}</tfoot>` : ''}</table></div>`;
 
-function modal(title, body, { onSave, saveText = 'حفظ', extra = '' } = {}) {
+function modal(title, body, { onSave, saveText = 'حفظ', closeText = 'إغلاق', extra = '' } = {}) {
   const d = $('#dlg');
   d.innerHTML = `<form class="dlg-form" novalidate><header><h3>${esc(title)}</h3><button type="button" class="x" data-close>✕</button></header>
     <div class="dlg-body">${body}</div>
-    <footer>${onSave ? `<button class="btn pri">${saveText}</button>` : ''}${extra}<button type="button" class="btn" data-close>إغلاق</button></footer></form>`;
+    <footer>${onSave ? `<button class="btn pri">${saveText}</button>` : ''}${extra}<button type="button" class="btn" data-close>${closeText}</button></footer></form>`;
   const f = $('form', d);
   f.onsubmit = e => {
     e.preventDefault();
@@ -1399,7 +1400,7 @@ function addDebt(preAcc) {
     { k: 'date', l: 'التاريخ', t: 'date', req: 1 },
     { k: 'cashAcc', l: 'من الصندوق', t: 'select', opts: accOpts(cashAccounts()) },
     { k: 'note', l: 'البيان', ph: 'مثلاً: سلفة', full: 1 },
-  ], { acc: preAcc || '', kind: 'cash', date: today(), cashAcc: cashAccounts()[0]?.id }) + '<p class="muted" id="dEq" style="font-size:13px;margin:4px 0 0"></p>', {
+  ], { acc: preAcc || '', kind: 'cash', date: today(), cashAcc: cashAccounts()[0]?.id }) + '<p class="muted" id="dEq" style="font-size:13px;margin:4px 0 0;white-space:pre-line"></p>', {
     saveText: '➕ أضف الدين',
     onSave: d => {
       const a = acc(d.acc), amount = r2(num(d.amount));
@@ -1420,7 +1421,10 @@ function addDebt(preAcc) {
   const upd = () => {
     const old = $('[name=kind]', f).value === 'old', a = acc(sel.value), amt = num($('[name=amount]', f).value);
     $('[name=cashAcc]', f).closest('.fld').style.display = old ? 'none' : '';
-    $('#dEq', f).textContent = a ? `رصيده هلق: ${fmt(partyBal(a))} ← بعد الإضافة: ${fmt(r2(partyBal(a) + amt))} ${cur()}` : '';
+    $('#dEq', f).textContent = [
+      amt && oldOn() ? `المبلغ بالقديم: ${oldAmt(amt)}` : '',
+      a ? `رصيده هلق: ${fmt(partyBal(a))} ← بعد الإضافة: ${fmt(r2(partyBal(a) + amt))} ${cur()}${oldOn() ? ` (بالقديم ${oldAmt(r2(partyBal(a) + amt))})` : ''}` : '',
+    ].filter(Boolean).join('\n');
   };
   f.oninput = f.onchange = upd; upd();
 }
@@ -1721,12 +1725,12 @@ function zerosForm(gf) {
 function itemForm(it, defGroup, after) {
   const fl = [
     { k: 'code', l: 'رمز المادة' }, { k: 'name', l: 'اسم المادة', req: 1 },
+    { k: 'barcodes', l: 'الباركودات (كل باركود بسطر — يمكن إضافة أكثر من باركود)', t: 'textarea', full: 1 },
     { k: 'group', l: 'المجموعة', t: 'select', opts: grpOpts(), full: 1 },
     { k: 'unit', l: 'الوحدة', ph: 'قطعة، كيلو، علبة…' }, { k: 'minQty', l: 'الحد الأدنى للتنبيه', t: 'number' },
     { k: 'buyPrice', l: 'سعر الشراء', t: 'number' }, { k: 'sellPrice', l: 'سعر المبيع', t: 'number' },
     { k: 'consumerPrice', l: 'سعر المستهلك', t: 'number', full: 1 },
     { k: 'openQty', l: 'كمية أول المدة', t: 'number' }, { k: 'openCost', l: 'كلفة الوحدة أول المدة', t: 'number' },
-    { k: 'barcodes', l: 'الباركودات (كل باركود بسطر — يمكن إضافة أكثر من باركود)', t: 'textarea', full: 1 },
     { k: 'aliases', l: 'أسماء تانية (متل ما بتنكتب بطلبيات الواتس — كل اسم بسطر)', t: 'textarea', full: 1 },
   ];
   const vals = it ? { ...it, barcodes: (it.barcodes || []).join('\n'), aliases: (it.aliases || []).join('\n') } : { code: nextItemCode(), unit: 'قطعة', group: defGroup && defGroup !== 'none' ? defGroup : '' };
@@ -1761,6 +1765,7 @@ function itemForm(it, defGroup, after) {
   const ta = $('[name=barcodes]', f);
   ta.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); ta.value = ta.value.replace(/\s*$/, '') + '\n'; } });
   const sb = $('#bcScan', f);
+  if (sb) { sb.style.gridColumn = '1 / -1'; sb.style.marginTop = '0'; ta.closest('.fld').after(sb); } // زر الكاميرا تحت خانة الباركود (فوق، تحت الاسم)
   if (sb) sb.onclick = () => scanBarcode(c => { const cur = parseCodes(ta.value); if (!cur.includes(c)) ta.value = [...cur, c].join('\n'); toast('تمت إضافة الباركود ' + c); });
 }
 V.items = (id, q, view) => {
@@ -2101,8 +2106,8 @@ V.invoice = (id, q, view) => {
     const b = lfMap.get(itemId);
     return b ? r2(b.p) : 0;
   };
-  // آخر سعر للزبون بينفع بس إذا ضمن المسموح (مش أقل من سعر البطاقة ناقص 10٪) — إذا السعر غلي كتير ما منضل عالقديم
-  const custPrice = it => { const lp = lastFor(val('party'), it.id); return lp && lp >= minSell(it) - 0.001 ? lp : 0; };
+  // آخر سعر للزبون بينفع بس إذا ضمن المسموح (±15٪ عن سعر البطاقة) — غير هيك (السعر غلي أو غلطة) منرجع لسعر البطاقة
+  const custPrice = it => { const lp = lastFor(val('party'), it.id); return lp && lp >= minSell(it) - 0.001 && (!num(it.sellPrice) || lp <= maxSell(it) + 0.001) ? lp : 0; };
   const basePrice = it => (sideSale ? (custPrice(it) || num(it.sellPrice)) : (num(it.buyPrice) || r2(st[it.id]?.avg || 0)));
   // إضافة مادة: إذا كانت موجودة بالفاتورة تزيد الكمية
   // lastBase: كم كان عدد المادة قبل آخر إضافة — حتى «عدد 2» بعد تكرار الصنف تنضاف على القديم وما تمسحه
@@ -2172,7 +2177,7 @@ V.invoice = (id, q, view) => {
     const ex = inv.lines.find(l => l.item === it.id);
     lastBase = 0;
     inv.lines.push({ item: it.id, qty: 1, price: toDoc(basePrice(it)), cp: it.consumerPrice ? toDoc(num(it.consumerPrice)) : '' });
-    draw(inv.lines.length - 1);
+    draw(inv.lines.length - 1); toNew(); // المادة الجديدة بتطلع فوق — منطلع لعندها حتى لو كنا نازلين لآخر القائمة
     navigator.vibrate?.(ex ? [40, 60, 40] : 40);
     noteAdd(it, ex ? inv.lines.indexOf(ex) + 1 : 0, 1); toast((ex ? '⚠️ ' : '✓ ') + it.name + (ex ? ' — مكررة بسطر جديد' : ''), !!ex);
   };
@@ -2195,7 +2200,7 @@ V.invoice = (id, q, view) => {
       inv.lines.push({ item, qty, price: toDoc(basePrice(it)), cp: it.consumerPrice ? toDoc(num(it.consumerPrice)) : '' });
       if (r.lines.length === 1) { hl = inv.lines.length - 1; noteAdd(it, ex ? inv.lines.indexOf(ex) + 1 : 0, qty); }
     });
-    payNow = r.pay || 0; showPay(); draw(hl);
+    payNow = r.pay || 0; showPay(); draw(hl); toNew();
     if (r.lines.length > 1 || r.skipped) toast(`انضاف ${r.lines.length} مادة${r.skipped ? ` — ${r.skipped} سطر ما انضاف` : ''}`);
   };
   const addByCode = code => { const it = findByCode(code); if (it) addItem(it); else toast('لا توجد مادة بهذا الباركود: ' + code, 1); };
@@ -2242,26 +2247,32 @@ V.invoice = (id, q, view) => {
   const newSplit = t => { const m = String(t).trim().match(/^(.*?)\s*عدد\s*(\d+(?:\.\d+)?)\s*$/); return m ? { name: m[1].trim(), qty: +m[2] } : { name: String(t).trim(), qty: 1 }; };
   const newBtn = () => {
     const { name } = newSplit(scanIn.value);
+    if (/^\d{4,}$/.test(name) && !findByCode(name)) return `<button type="button" class="sg sg-new" data-new="1"><b>➕ مادة جديدة بهالباركود: «${esc(name)}»</b><small class="muted">بتكتب اسمها وسعرها وبتنضاف عالفاتورة</small></button>`;
     if (!name || /^\d+$/.test(name) || db.items.some(x => normAr(x.name) === normAr(name))) return '';
     return `<button type="button" class="sg sg-new" data-new="1"><b>➕ مادة جديدة: «${esc(name)}»</b><small class="muted">بتنضاف عالمواد وعالفاتورة فوراً</small></button>`;
   };
   const quickNew = () => {
     if (isSeller()) { sugg.hidden = true; return toast('🔒 إضافة مواد جديدة مسكّرة بوضع البيّاع — خلّي المدير يضيفها', 1); }
-    const { name, qty } = newSplit(scanIn.value); sugg.hidden = true;
+    const sp = newSplit(scanIn.value), qty = sp.qty; sugg.hidden = true;
+    // إذا المكتوب رقم (باركود ما إله مادة) ← بيروح لخانة الباركود والاسم فاضي
+    const isCode = /^\d{4,}$/.test(sp.name), name = isCode ? '' : sp.name;
     const pk = sideSale ? 'sellPrice' : 'buyPrice';
-    modal('➕ مادة جديدة', fields([
+    const f = modal('➕ مادة جديدة', fields([
       { k: 'name', l: 'اسم المادة', req: 1, full: 1 },
+      { k: 'barcode', l: 'الباركود (اختياري — أكتر من واحد: كل واحد بسطر)', t: 'textarea', full: 1 },
       { k: 'price', l: sideSale ? 'سعر المبيع' : 'سعر الشراء', t: 'number' },
       { k: 'other', l: sideSale ? 'سعر الشراء' : 'سعر المبيع', t: 'number' },
       { k: 'consumerPrice', l: 'سعر المستهلك', t: 'number' },
       { k: 'unit', l: 'الوحدة' }, { k: 'qty', l: 'العدد بالفاتورة', t: 'number' },
-    ], { name, unit: 'قطعة', qty }), {
+    ], { name, barcode: isCode ? sp.name : '', unit: 'قطعة', qty }) + (canScan() ? `<button type="button" class="btn" id="qnScan" style="margin-top:8px">📷 إضافة باركود بالكاميرا</button>` : ''), {
       saveText: '➕ إضافة',
       onSave: d => {
         const nm = d.name.trim(); if (!nm) return false;
         if (db.items.some(x => normAr(x.name) === normAr(nm))) { toast('في مادة بنفس الاسم', 1); return false; }
+        const barcodes = parseCodes(d.barcode);
+        for (const c of barcodes) { const other = findByCode(c); if (other) { toast(`الباركود ${c} مستخدم للمادة: ${other.name}`, 1); return false; } }
         const R = inv.cur === 'fx' && rate() ? rate() : 1;
-        const it = { id: uid(), code: nextItemCode(), barcodes: [], aliases: [], aliasKeys: [], group: null, name: nm, unit: (d.unit || '').trim(), minQty: 0,
+        const it = { id: uid(), code: nextItemCode(), barcodes, aliases: [], aliasKeys: [], group: null, name: nm, unit: (d.unit || '').trim(), minQty: 0,
           buyPrice: 0, sellPrice: 0, consumerPrice: r2(num(d.consumerPrice) * R), openQty: 0, openCost: 0 };
         it[pk] = r2(num(d.price) * R);
         it[sideSale ? 'buyPrice' : 'sellPrice'] = r2(num(d.other) * R);
@@ -2274,7 +2285,12 @@ V.invoice = (id, q, view) => {
         setTimeout(() => scanIn.focus(), 300);
       },
     });
-    setTimeout(() => { const pi = $('#dlg [name=price]'); if (pi) pi.focus(); }, 80);
+    const ta = $('[name=barcode]', f);
+    ta.rows = 1;
+    ta.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); ta.value = ta.value.replace(/\s*$/, '') + '\n'; } });
+    const qs = $('#qnScan', f);
+    if (qs) qs.onclick = () => scanBarcode(c => { const cur = parseCodes(ta.value); if (!cur.includes(c)) ta.value = [...cur, c].join('\n'); toast('تمت إضافة الباركود ' + c); });
+    setTimeout(() => { const pi = $(name ? '#dlg [name=price]' : '#dlg [name=name]'); if (pi) pi.focus(); }, 80);
   };
   // بحث ذكي: «بسكوت الالف 12 قطعه عدد 3» ← يفهم الأرقام والتعبئة والتسميات المحفوظة
   let smartRes = null;
@@ -2349,6 +2365,13 @@ V.invoice = (id, q, view) => {
     window.scrollTo({ top: Math.max(0, $('.search-wrap', view).getBoundingClientRect().top + window.scrollY - off - 6) });
     fitSugg();
   };
+  // بعد إضافة مادة: الأحدث بتطلع أول القائمة — منطلع لعندها (تحت خانة البحث الثابتة) حتى لو كنا نازلين لآخر القائمة
+  const toNew = () => {
+    const ln = $('#ln', view), sw = $('.search-wrap', view); if (!ln || !sw) return;
+    const tb = $('.top'), off = tb && getComputedStyle(tb).display !== 'none' ? tb.offsetHeight : 0;
+    const y = ln.getBoundingClientRect().top + window.scrollY - off - sw.offsetHeight - 8;
+    if (window.scrollY > y) window.scrollTo({ top: Math.max(0, y) });
+  };
   // وقت الكتابة منخبّي شريط المجموع تحت حتى ما يغطّي الاقتراحات
   // (بس طول ما قائمة الاقتراحات ظاهرة — أول ما تختفي برجع الشريط وزر الحفظ)
   new MutationObserver(() => view.classList.toggle('typing', !sugg.hidden)).observe(sugg, { attributes: true, attributeFilter: ['hidden'] });
@@ -2388,6 +2411,7 @@ V.invoice = (id, q, view) => {
       if (smartRes && smartRes.m.it && smartRes.m.sure) addSmart(smartRes.m.it);
       else if (smartRes && smartRes.m.it && !smartRes.m.weak) showSugg();
       else if (smartRes && !/^\d+$/.test(c)) teach();
+      else if (/^\d{4,}$/.test(c) && !isSeller()) { toast('باركود جديد: ' + c + ' — اكتب اسم المادة وسعرها', 1); return quickNew(); }
       else { toast('لا توجد مادة بهذا الاسم أو الباركود: ' + c, 1); scanIn.value = ''; sugg.hidden = true; }
     }
     scanIn.focus(); // لقارئ الباركود: يبقى المؤشر جاهزاً للمسحة التالية
@@ -2464,23 +2488,20 @@ V.invoice = (id, q, view) => {
     if (pay === 'cash' && !cashAcc) return toast('اختر الصندوق', 1);
     if (!val('date')) return toast('أدخل التاريخ', 1);
     if (inv.cur === 'fx' && rate() <= 0) return toast('أدخل سعر الصرف للفاتورة', 1);
-    // سعر المبيع ما بيزيد أكتر من 10٪ عن سعر المبيع ببطاقة المادة
+    // سعر المبيع ما بيزيد أكتر من 15٪ عن سعر المبيع ببطاقة المادة — ولا حتى إذا آخر سعر للزبون كان أعلى
     if (inv.type === 'sale') {
       const bad = inv.lines.findIndex(l => {
         const it = l.item && num(l.qty) > 0 && db.items.find(x => x.id === l.item), sp = it ? num(it.sellPrice) : 0;
-        // آخر سعر بعناه لهالزبون مقبول دايماً (سياسة التسعير حسب الزبون)
-        const lp = it ? lastFor(party, it.id) : 0;
-        if (lp && toBase(l.price) <= lp + 0.001) return false;
-        return sp > 0 && toBase(l.price) > r2(sp * (1 + MAX_UP)) + 0.001;
+        return sp > 0 && toBase(l.price) > maxSell(it) + 0.001;
       });
       if (bad >= 0) {
         const l = inv.lines[bad], it = db.items.find(x => x.id === l.item);
         const card = $(`.ln-card[data-i="${bad}"]`, view);
         if (card) { card.scrollIntoView({ block: 'center' }); card.classList.add('ln-bad'); setTimeout(() => card.classList.remove('ln-bad'), 4000); }
-        return toast(`يجب تعديل سعر مبيع المادة أولاً: ${it.name} — سعرها بالبطاقة ${fmt(num(it.sellPrice))}، وأعلى سعر مسموح ${fmt(r2(num(it.sellPrice) * (1 + MAX_UP)))}`, 1);
+        return toast(`يجب تعديل سعر مبيع المادة أولاً: ${it.name} — سعرها بالبطاقة ${fmt(num(it.sellPrice))}، وأعلى سعر مسموح ${fmt(maxSell(it))} (${MAX_UP * 100}٪ زيادة)`, 1);
       }
     }
-    // الحد الأدنى للسعر (بعد حسم الفاتورة): سعر المبيع بالبطاقة ناقص 10٪، وما بيكون تحت سعر الشراء —
+    // الحد الأدنى للسعر (بعد حسم الفاتورة): سعر المبيع بالبطاقة ناقص 15٪ (حتى لو طلع تحت سعر الشراء ما في مشكلة) —
     // المندوب ممنوع ينزل تحته، والمدير بيطلعله تأكيد
     if (inv.type === 'sale') {
       const gross = inv.lines.reduce((t, l) => t + (l.item ? num(l.qty) * num(l.price) : 0), 0);
@@ -2488,16 +2509,14 @@ V.invoice = (id, q, view) => {
       const lows = [];
       inv.lines.forEach((l, i) => {
         const it = l.item && num(l.qty) > 0 && db.items.find(x => x.id === l.item); if (!it) return;
-        const eff = r2(toBase(num(l.price)) * f), sp = num(it.sellPrice), cost = num(it.buyPrice) || r2(st[it.id]?.avg || 0);
-        // الحد = الأعلى بين (سعر المبيع ناقص 10٪) وسعر الشراء
-        const ms = sp > 0 ? minSell(it) : 0, min = Math.max(ms, cost);
-        if (min > 0 && eff < min - 0.001) lows.push({ i, it, eff, min, why: cost >= ms ? 'سعر الشراء' : `سعر المبيع ناقص ${MAX_DOWN * 100}٪` });
+        const eff = r2(toBase(num(l.price)) * f), min = num(it.sellPrice) > 0 ? minSell(it) : 0;
+        if (min > 0 && eff < min - 0.001) lows.push({ i, it, eff, min, why: `سعر المبيع ناقص ${MAX_DOWN * 100}٪` });
       });
       if (lows.length) {
         const b = lows[0], card = $(`.ln-card[data-i="${b.i}"]`, view);
         if (card) { card.scrollIntoView({ block: 'center' }); card.classList.add('ln-bad'); setTimeout(() => card.classList.remove('ln-bad'), 4000); }
         const msg = lows.map(x => `• ${x.it.name}: ${fmt(x.eff)} — أقل من ${x.why} (${fmt(x.min)})`).join('\n');
-        if (isSeller()) return toast(`🚫 ما بينفع تبيع أقل من ${fmt(b.min)}: ${b.it.name} — بعتها بـ ${fmt(b.eff)}${f < 1 ? ' (مع الحسم)' : ''}، وسعرها بالبطاقة ${fmt(num(b.it.sellPrice))} (أكبر نزلة ${MAX_DOWN * 100}٪${b.why === 'سعر الشراء' ? '، وما بينفع تحت سعر الشراء' : ''})`, 1);
+        if (isSeller()) return toast(`🚫 ما بينفع تبيع أقل من ${fmt(b.min)}: ${b.it.name} — بعتها بـ ${fmt(b.eff)}${f < 1 ? ' (مع الحسم)' : ''}، وسعرها بالبطاقة ${fmt(num(b.it.sellPrice))} (أكبر نزلة ${MAX_DOWN * 100}٪)`, 1);
         if (!confirm(`⚠️ في مواد عم تنباع بأقل من سعرها:\n${msg}\n\nبدك تحفظ هيك؟`)) return;
       }
     }
@@ -2590,7 +2609,14 @@ V.invoice = (id, q, view) => {
     },
     inc: i => step(i, 1),
     dec: i => step(i, -1),
-    rmLine: i => { inv.lines.splice(+i, 1); draw(); },
+    rmLine: i => {
+      const l = inv.lines[+i]; if (!l) return;
+      const nm = db.items.find(x => x.id === l.item)?.name || 'هالمادة';
+      modal('🗑 حذف المادة', `<p style="margin:4px 0;font-size:16px">هل تريد حذف المادة <b>${esc(nm)}</b> من الفاتورة؟</p>`, {
+        saveText: 'نعم', closeText: 'لا',
+        onSave: () => { if (inv.lines[+i] === l) inv.lines.splice(+i, 1); draw(); },
+      });
+    },
     // ✏️ تعديل بطاقة المادة من جوّا الفاتورة — بلا ما نطلع منها ولا تضيع المواد
     editItem: i => {
       if (isSeller()) return toast('🔒 تعديل بطاقة المادة (والأسعار) مسكّر بوضع البيّاع — خلّي المدير يعدّلها', 1);

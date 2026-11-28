@@ -154,23 +154,24 @@ module.exports = [
     },
   },
   {
-    name: 'شرط الـ 10%: آخر سعر للزبون مقبول، وسعر عالي لزبون جديد ممنوع',
+    name: 'شرط الـ 15%: فوق سعر البطاقة بأكتر من 15٪ ممنوع — حتى لو آخر سعر للزبون كان أعلى',
     fn: async base => {
       const p = await page(base, { cloud: OWNER });
       await p.evaluate(() => {
         db.items.push({ id: 'it1', code: '1', name: 'سكر', sellPrice: 1000, buyPrice: 900, openQty: 100 });
         db.accounts.push({ id: 'c1', code: '112001', name: 'أحمد', type: 'asset', parent: 'customers', group: false }, { id: 'c2', code: '112002', name: 'سامر', type: 'asset', parent: 'customers', group: false });
-        db.invoices.push({ id: 'old', type: 'sale', no: 1, date: '2026-01-01', pay: 'credit', party: 'c1', cur: 'base', rate: '', lines: [{ item: 'it1', qty: 1, price: 1150 }], discount: 0, created: 1 }); save();
+        db.invoices.push({ id: 'old', type: 'sale', no: 1, date: '2026-01-01', pay: 'credit', party: 'c1', cur: 'base', rate: '', lines: [{ item: 'it1', qty: 1, price: 1600 }], discount: 0, created: 1 }); save();
       });
-      const trySave = async party => {
-        await p.evaluate(pt => localStorage.setItem('daftar_draft_sale', JSON.stringify({ lines: [{ item: 'it1', qty: 1, price: 1150 }], payment: '', inv: { date: today(), pay: 'credit', cashAcc: 'cash', party: pt }, at: Date.now() })), party);
+      const trySave = async (party, price) => {
+        await p.evaluate(x => { leaveGuard = null; const g = document.getElementById('dlg'); if (g.open) g.close(); localStorage.setItem('daftar_draft_sale', JSON.stringify({ lines: [{ item: 'it1', qty: 1, price: x.price }], payment: '', inv: { date: today(), pay: 'credit', cashAcc: 'cash', party: x.party }, at: Date.now() })); }, { party, price });
         await p.go('#/invoices'); await p.asReload(); await p.go('#/invoice/new?type=sale'); await p.closeDlg();
         const n0 = await p.evaluate(() => db.invoices.length);
         await p.click('[data-act=save]'); await p.waitForTimeout(500);
         return (await p.evaluate(() => db.invoices.length)) - n0;
       };
-      assert.strictEqual(await trySave('c1'), 1, 'آخر سعر لأحمد (1150) لازم ينقبل');
-      assert.strictEqual(await trySave('c2'), 0, 'سامر ما اشترى قبل — 1150 أعلى من البطاقة بـ 15٪ لازم ينرفض');
+      assert.strictEqual(await trySave('c1', 1600), 0, 'أحمد اشترى قبل بـ 1600 — بس هلق أعلى من البطاقة بأكتر من 15٪ ← مرفوض');
+      assert.strictEqual(await trySave('c2', 1160), 0, '1160 أعلى من البطاقة بأكتر من 15٪ ← مرفوض');
+      assert.strictEqual(await trySave('c2', 1150), 1, 'زيادة 15٪ بالضبط مسموحة');
     },
   },
   {
@@ -402,6 +403,77 @@ module.exports = [
       assert.match(await p.text('.vp'), /دفعة من زبون/, 'بعد الحفظ بيضل بنفس الشكل');
       await p.click('[data-act=another]'); await p.waitForTimeout(200);
       assert.match(await p.evaluate(() => location.hash), /mode=cust/);
+      assert.deepStrictEqual(p.errors, []);
+    },
+  },
+  {
+    name: 'مادة جديدة وإنت نازل لآخر القائمة: الصفحة بتطلع لفوق لعند المادة الجديدة',
+    fn: async base => {
+      const p = await page(base, { cloud: OWNER, device: { viewport: { width: 390, height: 700 } } });
+      await p.evaluate(() => { for (let i = 1; i <= 15; i++) db.items.push({ id: 'it' + i, code: String(i), name: 'مادة ' + i, sellPrice: 1000, openQty: 50 }); db.items.push({ id: 'pep', code: '99', name: 'بيبسي', sellPrice: 400, openQty: 50 }); ensureWalkin(); save(); });
+      await p.go('#/invoice/new?type=sale'); await p.click('.pp-item.wk'); await p.waitForTimeout(150);
+      for (let i = 1; i <= 15; i++) { await p.fill('#scanIn', String(i)); await p.keyboard.press('Enter'); await p.waitForTimeout(60); }
+      await p.evaluate(() => { document.activeElement.blur(); window.scrollTo(0, document.body.scrollHeight); });
+      await p.waitForTimeout(1700);
+      assert.ok(await p.evaluate(() => window.scrollY) > 300, 'لازم نكون نازلين تحت');
+      await p.fill('#scanIn', 'بيبسي'); await p.keyboard.press('Enter'); await p.waitForTimeout(300);
+      const top = await p.evaluate(() => { const r = document.querySelector('.ln-card').getBoundingClientRect(); return { top: r.top, sw: document.querySelector('.search-wrap').getBoundingClientRect().bottom, h: innerHeight, name: document.querySelector('.ln-card').textContent }; });
+      assert.match(top.name, /بيبسي/, 'الأحدث أول وحدة');
+      assert.ok(top.top >= top.sw - 1 && top.top < top.h, 'المادة الجديدة لازم تكون ظاهرة تحت خانة البحث: ' + JSON.stringify(top));
+      assert.deepStrictEqual(p.errors, []);
+    },
+  },
+  {
+    name: 'حذف مادة من الفاتورة بالـ ✕: بيسأل «هل تريد حذف المادة» — لا ما بيحذف، نعم بيحذف',
+    fn: async base => {
+      const p = await page(base, { cloud: OWNER });
+      await p.evaluate(() => { db.items.push({ id: 'it1', code: '1', name: 'سكر', sellPrice: 1000, openQty: 50 }, { id: 'it2', code: '2', name: 'رز', sellPrice: 2000, openQty: 50 }); ensureWalkin(); save(); });
+      await p.go('#/invoice/new?type=sale'); await p.click('.pp-item.wk'); await p.waitForTimeout(150);
+      await p.fill('#scanIn', 'سكر'); await p.keyboard.press('Enter'); await p.waitForTimeout(150);
+      await p.fill('#scanIn', 'رز'); await p.keyboard.press('Enter'); await p.waitForTimeout(150);
+      const n = () => p.locator('.ln-card').count();
+      assert.strictEqual(await n(), 2);
+      await p.click('.ln-card [data-act=rmLine]'); await p.waitForTimeout(150);
+      assert.match(await p.text('#dlg'), /هل تريد حذف المادة رز/);
+      assert.match(await p.text('#dlg footer'), /نعم/); assert.match(await p.text('#dlg footer'), /لا/);
+      await p.click('#dlg footer [data-close]'); await p.waitForTimeout(150);
+      assert.strictEqual(await n(), 2, '«لا» ما بيحذف');
+      await p.click('.ln-card [data-act=rmLine]'); await p.waitForTimeout(150);
+      await p.click('#dlg footer .btn.pri'); await p.waitForTimeout(150);
+      assert.strictEqual(await n(), 1, '«نعم» بيحذف');
+      assert.match(await p.text('.ln-card'), /سكر/);
+      assert.deepStrictEqual(p.errors, []);
+    },
+  },
+  {
+    name: 'باركود من جوّا فاتورة المبيع: مادة جديدة بباركود، وباركود ما إله مادة بيفتح «مادة جديدة» معبّى، والتعديل فيه خانة باركود',
+    fn: async base => {
+      const p = await page(base, { cloud: OWNER });
+      await p.evaluate(() => { db.items.push({ id: 'it1', code: '1', name: 'سكر', sellPrice: 1000, openQty: 50, barcodes: ['5550001'] }); ensureWalkin(); save(); });
+      await p.go('#/invoice/new?type=sale'); await p.click('.pp-item.wk'); await p.waitForTimeout(150);
+      // 1) مادة جديدة بالاسم + باركود
+      await p.fill('#scanIn', 'بيبسي'); await p.dispatchEvent('#scanIn', 'input'); await p.waitForTimeout(150);
+      await p.click('.sg-new'); await p.waitForTimeout(150);
+      assert.ok(await p.locator('#dlg [name=barcode]').count(), 'لازم يكون في خانة باركود');
+      await p.fill('#dlg [name=price]', '400'); await p.fill('#dlg [name=barcode]', '5550001');
+      await p.click('#dlg footer .btn.pri'); await p.waitForTimeout(150);
+      assert.match(await p.text('#toast'), /الباركود 5550001 مستخدم للمادة: سكر/);
+      await p.fill('#dlg [name=barcode]', '6290000000123');
+      await p.click('#dlg footer .btn.pri'); await p.waitForTimeout(300);
+      assert.deepStrictEqual(await p.evaluate(() => db.items.find(x => x.name === 'بيبسي').barcodes), ['6290000000123']);
+      // بالمسح بعدين بتنلقى
+      await p.fill('#scanIn', '6290000000123'); await p.keyboard.press('Enter'); await p.waitForTimeout(200);
+      assert.strictEqual(await p.evaluate(() => [...document.querySelectorAll('.ln-card')].filter(c => /بيبسي/.test(c.textContent)).length), 2);
+      // 2) باركود ما إله مادة ← «مادة جديدة» والباركود معبّى
+      await p.fill('#scanIn', '7771234567'); await p.keyboard.press('Enter'); await p.waitForTimeout(250);
+      assert.strictEqual(await p.inputValue('#dlg [name=barcode]'), '7771234567');
+      assert.strictEqual(await p.inputValue('#dlg [name=name]'), '');
+      await p.fill('#dlg [name=name]', 'شيبس'); await p.fill('#dlg [name=price]', '500');
+      await p.click('#dlg footer .btn.pri'); await p.waitForTimeout(300);
+      assert.deepStrictEqual(await p.evaluate(() => db.items.find(x => x.name === 'شيبس').barcodes), ['7771234567']);
+      // 3) تعديل المادة من الفاتورة (✏️) فيه خانة الباركودات
+      await p.evaluate(() => document.querySelector('[data-act=editItem]').click()); await p.waitForTimeout(200);
+      assert.ok(await p.locator('#dlg [name=barcodes]').count(), 'التعديل لازم يكون فيه باركود');
       assert.deepStrictEqual(p.errors, []);
     },
   },
