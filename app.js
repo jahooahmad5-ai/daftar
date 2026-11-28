@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '7.20';
+const APP_VERSION = '7.21';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -2034,6 +2034,10 @@ V.invoice = (id, q, view) => {
   const itemById = id => items.find(x => x.id === id);
   const stockOf = it => (st[it.id] ? st[it.id].qty : num(it.openQty));
 
+  // فاتورة المبيع: «نقدي/آجل» و«الدفعة» فوق، جنب «مراجعة» (مش جوّا «تعديل»)
+  const payTop = inv.type === 'sale';
+  const payFld = field({ k: 'pay', l: 'طريقة الدفع', t: 'select', opts: [['cash', 'نقدي'], ['credit', 'آجل (على الحساب)']] }, inv.pay);
+  const payRowH = '<div id="payRow"><span>💵 دفعة</span><input name="payment" type="number" step="any" inputmode="decimal" placeholder="0" value=""></div>';
   view.innerHTML = head(INV_TYPES[inv.type] + (orig ? ` رقم ${esc(orig.no)}${repTagH(orig)}` : ' جديدة' + (isSeller() ? ` — مندوب: ${esc(myRep())}` : '')),
     `${orig ? `<button class="btn wa" data-act="wa">واتساب</button><button class="btn" data-act="receipt">🧾 إيصال</button><button class="btn" data-act="print">🖨 طباعة</button><button class="btn red" data-act="del">حذف</button><a class="btn" href="#/invoices">رجوع</a>` : ''}`) + `
   ${orig && q.saved ? `<div class="saved-ok">✅ الفاتورة رقم ${esc(orig.no)} محفوظة — ${orig.lines.length} مادة، ${fmt(orig.lines.reduce((s, l) => s + num(l.qty), 0))} قطعة</div>` : ''}
@@ -2043,6 +2047,7 @@ V.invoice = (id, q, view) => {
   ${restored ? (orig ? '<div class="draft-note">↩️ رجّعتلك التعديلات اللي ما كانت محفوظة على هالفاتورة. <button class="btn" data-act="discard">تراجع عنها</button></div>'
     : '<div class="draft-note">↩️ رجّعتلك الفاتورة اللي ما كانت محفوظة. <button class="btn red" data-act="clearAll">🗑 بلّش من جديد</button></div>') : ''}
   <div class="search-wrap">
+    ${payTop ? `<div class="pay-top">${payFld}${payRowH}</div>` : ''}
     <div class="scan-row">
       ${canScan() ? '<button class="sq-btn" data-act="cam" title="مسح بالكاميرا">▮▯▮</button>' : ''}
       <input id="scanIn" type="search" enterkeyhint="search" autocomplete="off" placeholder="ادخل اسم المادة أو الباركود لإضافتها للفاتورة">
@@ -2058,7 +2063,7 @@ V.invoice = (id, q, view) => {
   <div class="card">
     <div class="grid4">
       ${field({ k: 'date', l: 'التاريخ', t: 'date', req: 1 }, inv.date)}
-      ${field({ k: 'pay', l: 'طريقة الدفع', t: 'select', opts: [['cash', 'نقدي'], ['credit', 'آجل (على الحساب)']] }, inv.pay)}
+      ${payTop ? '' : payFld}
       <div id="cashWrap">${field({ k: 'cashAcc', l: 'الصندوق', t: 'select', opts: accOpts(isSeller() ? [myBox()].filter(Boolean) : cashAccounts()) }, inv.cashAcc)}</div>
       <div class="party-wrap">${field({ k: 'party', l: sideSale ? 'العميل' : 'المورد', t: 'select', opts: accOpts(parties, sideSale ? '— اختر العميل —' : '— بدون —') }, inv.party)}
         <button type="button" class="mini new-party" data-act="newParty">➕ ${sideSale ? 'زبون' : 'مورد'} جديد</button></div>
@@ -2079,7 +2084,7 @@ V.invoice = (id, q, view) => {
         <div id="tEq" class="muted" style="font-size:14px"></div>
         <div id="tOld" class="old-eq"></div>
         <small class="muted" id="tWords"></small>
-        <div id="payRow"><span>💵 دفعة</span><input name="payment" type="number" step="any" inputmode="decimal" placeholder="0" value=""></div>
+        ${payTop ? '' : payRowH}
         <div id="tRest" class="old-eq"></div>
         <div id="tBal" class="old-eq"></div>
       </div>
