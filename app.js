@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '7.23';
+const APP_VERSION = '7.24';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -256,6 +256,10 @@ function engine() {
   });
   if (r2(openVal)) E.push({ id: 'open-stock', no: '—', date: sd, desc: 'بضاعة أول المدة', src: 'stock', lines: [{ acc: 'inventory', dr: r2(openVal), cr: 0 }, { acc: 'capital', dr: 0, cr: r2(openVal) }] });
 
+  // كلفة المادة إذا انباعت وما في كلفة بالمستودع (انباعت قبل ما تنشرى): سعر الشراء بالبطاقة،
+  // وإذا ما في: سعر المبيع − 20٪ — بدل ما تنحسب صفر ويطلع كل المبيع ربح
+  const IT = new Map(db.items.map(it => [it.id, it]));
+  const estCost = (id, unitVal) => { const it = IT.get(id) || {}; return num(it.buyPrice) || r2(num(it.sellPrice) * AUTO_BUY) || unitVal * AUTO_BUY; };
   const invs = [...db.invoices].sort((a, b) => a.date.localeCompare(b.date) || (b.early ? 1 : 0) - (a.early ? 1 : 0) || (a.created || 0) - (b.created || 0));
   for (const inv of invs) {
     const { gross, net: netDoc } = invTotals(inv);
@@ -269,8 +273,12 @@ function engine() {
     for (const l of inv.lines) {
       const s = S(l.item), q = num(l.qty), val = q * num(l.price) * f * k;
       const mv = { item: l.item, date: inv.date, kind: inv.type, label, ref: inv.id, party: inv.party, in: 0, out: 0, price: num(l.price) * k, val, cost: 0 };
-      if (inv.type === 'sale') { mv.cost = q * s.avg; s.qty -= q; mv.out = q; }
-      else if (inv.type === 'saleReturn') { mv.cost = q * s.avg; s.qty += q; mv.in = q; }
+      if (inv.type === 'sale' || inv.type === 'saleReturn') {
+        let c = s.avg;
+        if (!(c > 0) && q) { c = estCost(l.item, val / q); mv.est = true; }
+        mv.cost = q * c;
+        if (inv.type === 'sale') { s.qty -= q; mv.out = q; } else { s.qty += q; mv.in = q; }
+      }
       else if (inv.type === 'purchaseReturn') { mv.cost = q * s.avg; s.qty -= q; mv.out = q; }
       else if (inv.type === 'purchase') {
         const nq = s.qty + q;
@@ -3362,13 +3370,13 @@ V.report = (type, q, view) => {
     filters = [F.from, F.to];
     const agg = {};
     engine().moves.filter(m => (m.kind === 'sale' || m.kind === 'saleReturn') && m.date >= from && m.date <= to).forEach(m => {
-      const a = agg[m.item] || (agg[m.item] = { qty: 0, val: 0, cost: 0 }), s = m.kind === 'sale' ? 1 : -1;
-      a.qty += s * (m.out || m.in); a.val += s * m.val; a.cost += s * m.cost;
+      const a = agg[m.item] || (agg[m.item] = { qty: 0, val: 0, cost: 0, est: 0 }), s = m.kind === 'sale' ? 1 : -1;
+      a.qty += s * (m.out || m.in); a.val += s * m.val; a.cost += s * m.cost; if (m.est) a.est += s * (m.out || m.in);
     });
     let T = { val: 0, cost: 0 };
     const rows = Object.entries(agg).sort((a, b) => (b[1].val - b[1].cost) - (a[1].val - a[1].cost)).map(([id, a]) => {
       const it = db.items.find(i => i.id === id) || {}, p = a.val - a.cost; T.val += a.val; T.cost += a.cost;
-      return `<tr><td>${esc(it.name)}</td><td class="n">${fmt(a.qty)}</td><td class="n">${fmt(a.val)}</td><td class="n">${fmt(a.cost)}</td><td class="n ${p < 0 ? 'neg' : 'pos'}">${fmt(p)}</td><td class="n">${a.val ? fmt(p / a.val * 100) + '%' : ''}</td></tr>`;
+      return `<tr><td>${esc(it.name)}${a.est > 0 ? `<br><small class="muted" title="انباعت قبل ما تنشرى — كلفتها من سعر الشراء بالبطاقة">⚠️ ${fmt(a.est)} منها كلفتها تقديرية</small>` : ''}</td><td class="n">${fmt(a.qty)}</td><td class="n">${fmt(a.val)}</td><td class="n">${fmt(a.cost)}</td><td class="n ${p < 0 ? 'neg' : 'pos'}">${fmt(p)}</td><td class="n">${a.val ? fmt(p / a.val * 100) + '%' : ''}</td></tr>`;
     }).join('');
     body = table(['المادة', 'الكمية المباعة', 'المبيعات', 'الكلفة', 'الربح', 'نسبة الربح'], rows,
       `<tr><td colspan="2">الإجمالي</td><td class="n">${fmt(T.val)}</td><td class="n">${fmt(T.cost)}</td><td class="n">${fmt(T.val - T.cost)}</td><td></td></tr>`);
