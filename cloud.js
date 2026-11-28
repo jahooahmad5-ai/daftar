@@ -145,7 +145,7 @@ const Cloud = (() => {
     if (kind === 'invoices') {
       if (!['sale', 'purchase', 'saleReturn', 'purchaseReturn'].includes(d.type) || !['cash', 'credit'].includes(d.pay) || !Array.isArray(d.lines)) return null;
       if (d.lines.some(l => !l || typeof l !== 'object' || !RX_ID.test(String(l.item || '')))) return null;
-      o.lines = d.lines.map(l => ({ ...l, qty: nOr(l.qty), price: nOr(l.price), cp: l.cp === '' || l.cp == null ? '' : nOr(l.cp) }));
+      o.lines = d.lines.map(l => { const x = { ...l, qty: nOr(l.qty), price: nOr(l.price), cp: l.cp === '' || l.cp == null ? '' : nOr(l.cp) }; if ('vn' in l) { if (l.vn) x.vn = txt(l.vn, 80); else delete x.vn; } return x; });
       o.discount = nOr(d.discount); o.addition = nOr(d.addition);
       if ('addNote' in d) o.addNote = txt(d.addNote, 200);
     } else {

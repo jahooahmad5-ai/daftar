@@ -67,7 +67,7 @@ const Receipt = (() => {
       : [{ h: 'اسم المادة', w: 0.42 }, { h: 'العدد', w: 0.12 }, { h: 'الإفرادي', w: 0.22 }, { h: 'الإجمالي', w: 0.24 }];
     const rows = inv.lines.map(l => {
       const it = db.items.find(x => x.id === l.item) || {};
-      const r = [it.name || '', fmt(l.qty), fmt(l.price)];
+      const r = [(it.name || '') + (l.vn ? ` (${l.vn})` : ''), fmt(l.qty), fmt(l.price)];
       if (hasCp) r.push(cpOf(l) ? fmt(cpOf(l)) : '');
       r.push(fmt(num(l.qty) * num(l.price)));
       return r;

@@ -477,4 +477,42 @@ module.exports = [
       assert.deepStrictEqual(p.errors, []);
     },
   },
+  {
+    name: 'الأنواع تحت البند: «بسكوت 1000» فيه أنواع — البحث بالنوع بيضيف البند واسم النوع بيطلع بالفاتورة والطباعة والواتساب',
+    fn: async base => {
+      const p = await page(base, { cloud: OWNER });
+      await p.evaluate(() => { db.settings.waMode = 'text'; window.open = u => { (window.__opened = window.__opened || []).push(decodeURIComponent(u)); }; db.items.push({ id: 'b1', code: '1', name: 'بسكوت 1000', sellPrice: 1000, openQty: 100 }); ensureWalkin(); save(); });
+      // الأنواع من بطاقة المادة
+      await p.go('#/items'); await p.click('[data-act=edit][data-id=b1]'); await p.waitForTimeout(150);
+      await p.fill('#dlg [name=variants]', 'ويفر شوكولا\nكيك فانيلا\nويفر شوكولا');
+      await p.click('#dlg footer .btn.pri'); await p.waitForTimeout(200);
+      assert.deepStrictEqual(await p.evaluate(() => db.items.find(x => x.id === 'b1').variants), ['ويفر شوكولا', 'كيك فانيلا']);
+      await p.go('#/invoice/new?type=sale'); await p.click('.pp-item.wk'); await p.waitForTimeout(150);
+      // البحث باسم النوع
+      await p.fill('#scanIn', 'ويفر'); await p.dispatchEvent('#scanIn', 'input'); await p.waitForTimeout(150);
+      assert.match(await p.text('#sugg'), /ويفر شوكولا ← بسكوت 1000/);
+      await p.keyboard.press('Enter'); await p.waitForTimeout(250);
+      assert.match(await p.text('.ln-card .ln-name'), /بسكوت 1000 \(ويفر شوكولا\)/);
+      // البحث باسم البند بيطلّع البند وأنواعه
+      await p.fill('#scanIn', 'بسكوت'); await p.dispatchEvent('#scanIn', 'input'); await p.waitForTimeout(150);
+      assert.strictEqual(await p.locator('#sugg .sg[data-i]').count(), 3);
+      await p.click('#sugg .sg[data-i="0"]'); await p.waitForTimeout(200);
+      // تغيير النوع من السطر نفسه
+      assert.strictEqual(await p.locator('.ln-card').first().locator('[data-f=vn]').count(), 1);
+      await p.locator('.ln-card').first().locator('[data-f=vn]').selectOption('كيك فانيلا'); await p.waitForTimeout(200);
+      assert.match(await p.locator('.ln-card .ln-name').first().innerText(), /بسكوت 1000 \(كيك فانيلا\)/);
+      await p.click('[data-act=save]'); await p.waitForTimeout(500);
+      const inv = await p.evaluate(() => db.invoices[db.invoices.length - 1]);
+      assert.deepStrictEqual(inv.lines.map(l => [l.item, l.vn]).sort(), [['b1', 'كيك فانيلا'], ['b1', 'ويفر شوكولا']].sort());
+      // المخزون على بند واحد
+      assert.strictEqual(await p.evaluate(() => engine().stock.b1.qty), 98);
+      // الطباعة والإيصال والواتساب
+      const html = await p.evaluate(id => invoiceHtml(db.invoices.find(x => x.id === id)), inv.id);
+      assert.match(html, /بسكوت 1000 \(ويفر شوكولا\)/); assert.match(html, /بسكوت 1000 \(كيك فانيلا\)/);
+      assert.match(await p.evaluate(id => waInvoiceText(db.invoices.find(x => x.id === id)), inv.id), /• بسكوت 1000 \(ويفر شوكولا\): 1 × 1,000/);
+      const drawn = await p.evaluate(id => { const T = []; const f = CanvasRenderingContext2D.prototype.fillText; CanvasRenderingContext2D.prototype.fillText = function (t, ...a) { T.push(String(t)); return f.call(this, t, ...a); }; try { Receipt.build(db.invoices.find(x => x.id === id)); } finally { CanvasRenderingContext2D.prototype.fillText = f; } return T.join('|'); }, inv.id);
+      assert.match(drawn, /ويفر/, 'الإيصال لازم يبيّن النوع'); assert.match(drawn, /فانيلا/);
+      assert.deepStrictEqual(p.errors, []);
+    },
+  },
 ];

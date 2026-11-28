@@ -112,4 +112,35 @@ module.exports = [
       assert.deepStrictEqual(p.errors, []);
     },
   },
+  {
+    name: 'زر الرجوع: من أي صفحة بيرجع للرئيسية، ومن الرئيسية بيطلع من البرنامج',
+    fn: async base => {
+      const p = await page(base, { cloud: OWNER });
+      const h = () => p.evaluate(() => location.hash);
+      const nav = async r => { await p.evaluate(r => { document.body.classList.add('menu-open'); document.querySelector(`#nav a[data-r=${r}]`).click(); }, r); await p.waitForTimeout(300); };
+      // الرئيسية ← الفواتير ← الديون ← المواد (من القائمة وبـ go)
+      await nav('invoices'); await nav('debts');
+      await p.evaluate(() => go('#/items')); await p.waitForTimeout(300);
+      assert.strictEqual(await h(), '#/items');
+      await p.goBack(); await p.waitForTimeout(300);
+      assert.match(await h(), /^(#\/?)?$/, 'الرجوع لازم يوصل للرئيسية دغري');
+      assert.match(await p.text('#view'), /./);
+      // من الرئيسية: الرجوع بيطلع من البرنامج
+      await p.goBack(); await p.waitForTimeout(300);
+      assert.ok(!p.url().startsWith(base), 'لازم يطلع من البرنامج: ' + p.url());
+      const errs = p.errors.filter(m => !/sessionStorage/.test(m)); // سكربت الفحص نفسه على about:blank بعد ما طلعنا
+      // البرنامج انفتح على صفحة داخلية: الرجوع بيوصل للرئيسية
+      const q = await page(base, { cloud: OWNER, hash: '#/debts' });
+      await q.goBack(); await q.waitForTimeout(300);
+      assert.match(await q.evaluate(() => location.hash), /^(#\/?)?$/);
+      assert.ok(q.url().startsWith(base));
+      // ورجوع من الرئيسية لصفحة عن طريق go('#/') ما بيكدّس
+      await q.evaluate(() => go('#/invoices')); await q.waitForTimeout(250);
+      await q.evaluate(() => go('#/')); await q.waitForTimeout(250);
+      assert.match(await q.evaluate(() => location.hash), /^(#\/?)?$/);
+      await q.goBack(); await q.waitForTimeout(300);
+      assert.ok(!q.url().startsWith(base), 'من الرئيسية الرجوع بيطلع: ' + q.url());
+      assert.deepStrictEqual(errs, [], JSON.stringify(errs));
+    },
+  },
 ];
