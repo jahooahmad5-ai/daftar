@@ -184,7 +184,7 @@ const suppliers = () => postable().filter(a => isUnder(a.id, 'suppliers'));
 // «زبون عام»: زبون ثابت للبيع المباشر — دايماً نقدي وما بيصير عليه حساب (ما بيكون آجل أبداً)
 const WALKIN_NAME = 'زبون عام';
 const MAX_UP = 0.15; // أعلى زيادة مسموحة على سعر المبيع ببطاقة المادة
-const MAX_DOWN = 0.15; // أكبر نزلة مسموحة تحت سعر المبيع ببطاقة المادة (وما منبيع تحت سعر الشراء أبداً)
+const MAX_DOWN = 0.15; // أكبر نزلة مسموحة تحت سعر المبيع ببطاقة المادة (تحت سعر الشراء مسموح إذا ضمنها)
 const minSell = it => r2(num(it.sellPrice) * (1 - MAX_DOWN));
 const maxSell = it => r2(num(it.sellPrice) * (1 + MAX_UP));
 const AUTO_BUY = 0.80; // إذا نسيت سعر الشراء: سعر الشراء = سعر المبيع ناقص 20٪
@@ -2481,7 +2481,7 @@ V.invoice = (id, q, view) => {
         return toast(`يجب تعديل سعر مبيع المادة أولاً: ${it.name} — سعرها بالبطاقة ${fmt(num(it.sellPrice))}، وأعلى سعر مسموح ${fmt(maxSell(it))} (${MAX_UP * 100}٪ زيادة)`, 1);
       }
     }
-    // الحد الأدنى للسعر (بعد حسم الفاتورة): سعر المبيع بالبطاقة ناقص 15٪، وما بيكون تحت سعر الشراء —
+    // الحد الأدنى للسعر (بعد حسم الفاتورة): سعر المبيع بالبطاقة ناقص 15٪ (حتى لو طلع تحت سعر الشراء ما في مشكلة) —
     // المندوب ممنوع ينزل تحته، والمدير بيطلعله تأكيد
     if (inv.type === 'sale') {
       const gross = inv.lines.reduce((t, l) => t + (l.item ? num(l.qty) * num(l.price) : 0), 0);
@@ -2489,16 +2489,14 @@ V.invoice = (id, q, view) => {
       const lows = [];
       inv.lines.forEach((l, i) => {
         const it = l.item && num(l.qty) > 0 && db.items.find(x => x.id === l.item); if (!it) return;
-        const eff = r2(toBase(num(l.price)) * f), sp = num(it.sellPrice), cost = num(it.buyPrice) || r2(st[it.id]?.avg || 0);
-        // الحد = الأعلى بين (سعر المبيع ناقص 15٪) وسعر الشراء
-        const ms = sp > 0 ? minSell(it) : 0, min = Math.max(ms, cost);
-        if (min > 0 && eff < min - 0.001) lows.push({ i, it, eff, min, why: cost >= ms ? 'سعر الشراء' : `سعر المبيع ناقص ${MAX_DOWN * 100}٪` });
+        const eff = r2(toBase(num(l.price)) * f), min = num(it.sellPrice) > 0 ? minSell(it) : 0;
+        if (min > 0 && eff < min - 0.001) lows.push({ i, it, eff, min, why: `سعر المبيع ناقص ${MAX_DOWN * 100}٪` });
       });
       if (lows.length) {
         const b = lows[0], card = $(`.ln-card[data-i="${b.i}"]`, view);
         if (card) { card.scrollIntoView({ block: 'center' }); card.classList.add('ln-bad'); setTimeout(() => card.classList.remove('ln-bad'), 4000); }
         const msg = lows.map(x => `• ${x.it.name}: ${fmt(x.eff)} — أقل من ${x.why} (${fmt(x.min)})`).join('\n');
-        if (isSeller()) return toast(`🚫 ما بينفع تبيع أقل من ${fmt(b.min)}: ${b.it.name} — بعتها بـ ${fmt(b.eff)}${f < 1 ? ' (مع الحسم)' : ''}، وسعرها بالبطاقة ${fmt(num(b.it.sellPrice))} (أكبر نزلة ${MAX_DOWN * 100}٪${b.why === 'سعر الشراء' ? '، وما بينفع تحت سعر الشراء' : ''})`, 1);
+        if (isSeller()) return toast(`🚫 ما بينفع تبيع أقل من ${fmt(b.min)}: ${b.it.name} — بعتها بـ ${fmt(b.eff)}${f < 1 ? ' (مع الحسم)' : ''}، وسعرها بالبطاقة ${fmt(num(b.it.sellPrice))} (أكبر نزلة ${MAX_DOWN * 100}٪)`, 1);
         if (!confirm(`⚠️ في مواد عم تنباع بأقل من سعرها:\n${msg}\n\nبدك تحفظ هيك؟`)) return;
       }
     }

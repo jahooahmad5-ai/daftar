@@ -19,11 +19,11 @@ const trySave = async (p, d) => {
 
 module.exports = [
   {
-    name: 'المندوب ما بينزل أكتر من 15٪ تحت سعر المبيع (ولا بالحسم) ولا تحت سعر الشراء، وما بيطلع أكتر من 15٪ فوقه',
+    name: 'المندوب ما بينزل أكتر من 15٪ تحت سعر المبيع (ولا بالحسم)، وما بيطلع أكتر من 15٪ فوقه — وتحت سعر الشراء ضمن الـ 15٪ مسموح',
     fn: async base => {
       const p = await page(base, { cloud: REP, ls: { daftar_rep_name: 'محمد' } });
       await setupItem(p, true);
-      assert.strictEqual(await trySave(p, draft({ price: 790, box: 'repbox_1' })), 0, 'تحت الكلفة ممنوع');
+      assert.strictEqual(await trySave(p, draft({ price: 790, box: 'repbox_1' })), 0, 'أكتر من 15٪ تحت سعر المبيع ممنوع');
       assert.match(await p.text('#toast'), /ما بينفع تبيع أقل من 850/);
       assert.strictEqual(await trySave(p, draft({ price: 840, box: 'repbox_1' })), 0, 'أكتر من 15٪ تحت سعر المبيع ممنوع للمندوب');
       assert.strictEqual(await trySave(p, draft({ price: 1000, box: 'repbox_1', discount: 200 })), 0, 'الحسم بينزّل السعر أكتر من 15٪ — ممنوع');
@@ -32,6 +32,9 @@ module.exports = [
       assert.strictEqual(await trySave(p, draft({ price: 1160, box: 'repbox_1' })), 0, 'أكتر من 15٪ فوق سعر المبيع ممنوع');
       assert.match(await p.text('#toast'), /أعلى سعر مسموح 1,150/);
       assert.strictEqual(await trySave(p, draft({ price: 1150, box: 'repbox_1' })), 1, 'زيادة 15٪ بالضبط مسموحة');
+      // تحت سعر الشراء بس ضمن الـ 15٪ ← مسموح (سعر الشراء 950 والبيع 900)
+      await p.evaluate(() => { db.items.find(x => x.id === 'it1').buyPrice = 950; save(); });
+      assert.strictEqual(await trySave(p, draft({ price: 900, box: 'repbox_1' })), 1, 'تحت سعر الشراء ضمن الـ 15٪ لازم ينحفظ');
     },
   },
   {
