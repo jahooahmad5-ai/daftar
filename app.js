@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '7.22';
+const APP_VERSION = '7.23';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -199,9 +199,16 @@ function fillPrices(it, salePrice) {
   let ch = false;
   if (isSeller()) return ch; // المندوب ما بيعدّل بطاقات المواد
   if (!num(it.sellPrice) && num(salePrice) > 0) { it.sellPrice = r2(num(salePrice)); ch = true; }
-  if (!num(it.buyPrice) && num(it.sellPrice) > 0) { it.buyPrice = r2(num(it.sellPrice) * AUTO_BUY); ch = true; }
+  if (!num(it.buyPrice) && num(it.sellPrice) > 0) { it.buyPrice = r2(num(it.sellPrice) * AUTO_BUY); it.autoBuy = it.buyPrice; ch = true; }
   return ch;
 }
+// سعر شراء مو حقيقي: انعبّى لحاله (المبيع − 20٪) وما حدا عدّله، أو ما في سعر شراء أبداً
+const buyAuto = it => {
+  const b = num(it.buyPrice), sp = num(it.sellPrice);
+  if (!b) return 'none';
+  if ((num(it.autoBuy) && num(it.autoBuy) === b) || (sp > 0 && b === r2(sp * AUTO_BUY))) return 'auto';
+  return '';
+};
 const isWalkin = id => { const a = acc(id); return !!a && (a.walkin || a.id === 'walkin'); };
 function ensureWalkin() {
   let a = customers().find(x => x.walkin || x.id === 'walkin')
@@ -3228,6 +3235,7 @@ const REPORTS = {
   balance: { t: 'الميزانية العمومية', d: 'الأصول والخصوم وحقوق الملكية بتاريخ معيّن' },
   stock: { t: 'جرد المستودع', d: 'الكميات الحالية وقيمتها بالكلفة وبسعر المبيع' },
   itemcard: { t: 'بطاقة مادة', d: 'كل حركات مادة معيّنة دخولاً وخروجاً' },
+  autobuy: { t: 'مواد سعر شرائها مو حقيقي', d: 'المواد اللي سعر شرائها انعبّى لحاله (المبيع − 20٪) أو ما إلها سعر شراء — صلّحها من هون حتى يطلع الربح صح' },
   itemprofit: { t: 'أرباح المواد', d: 'المبيعات والكلفة والربح لكل مادة خلال فترة' },
   daysales: { t: 'مبيعات المواد باليوم', d: 'قديش انباع من كل مادة بيوم معيّن — للكل أو لمندوب لحاله' },
   custprofit: { t: 'أرباح الزباين', d: 'مين الأكثر ربحاً ومين الأكثر سحب بضاعة — ومين بيسحب كتير بربح قليل' },
@@ -3302,7 +3310,11 @@ V.report = (type, q, view) => {
     filters = [F.from, F.to];
     const RU = rollup(sums(from, to));
     const rv = section('revenue', RU, 'الإيرادات'), ex = section('expenses', RU, 'المصاريف'), net = rv.tot - ex.tot;
-    body = table(['البند', 'المبلغ'], rv.html + ex.html, `<tr><td>${net >= 0 ? 'صافي الربح' : 'صافي الخسارة'}</td><td class="n ${net < 0 ? 'neg' : 'pos'}">${fmt(Math.abs(net))}</td></tr>`);
+    // تنبيه: شو ممكن يكبّر الربح على الفاضي
+    const nAuto = db.items.filter(it => buyAuto(it)).length, nNeg = negItems().length;
+    const warn = (nAuto ? `<a class="pw-warn" href="#/report/autobuy?from=${esc(from)}&to=${esc(to)}">⚠️ ${nAuto} مادة سعر شرائها مو حقيقي (انعبّى لحاله أو ناقص) — الربح ممكن يكون أكبر من الحقيقي ← <u>صلّحها</u></a>` : '')
+      + (nNeg ? `<a class="pw-warn" href="#/items">⚠️ ${nNeg} مادة كميتها بالسالب (انباعت بلا شراء، كلفتها ناقصة) ← <u>🛒 شراء المواد السالبة</u></a>` : '');
+    body = warn + table(['البند', 'المبلغ'], rv.html + ex.html, `<tr><td>${net >= 0 ? 'صافي الربح' : 'صافي الخسارة'}</td><td class="n ${net < 0 ? 'neg' : 'pos'}">${fmt(Math.abs(net))}</td></tr>`);
   }
 
   if (type === 'balance') {
@@ -3360,6 +3372,27 @@ V.report = (type, q, view) => {
     }).join('');
     body = table(['المادة', 'الكمية المباعة', 'المبيعات', 'الكلفة', 'الربح', 'نسبة الربح'], rows,
       `<tr><td colspan="2">الإجمالي</td><td class="n">${fmt(T.val)}</td><td class="n">${fmt(T.cost)}</td><td class="n">${fmt(T.val - T.cost)}</td><td></td></tr>`);
+  }
+
+  if (type === 'autobuy') {
+    filters = [F.from, F.to];
+    const agg = {};
+    engine().moves.filter(m => (m.kind === 'sale' || m.kind === 'saleReturn') && m.date >= from && m.date <= to).forEach(m => {
+      const a = agg[m.item] || (agg[m.item] = { qty: 0, val: 0, cost: 0 }), sg = m.kind === 'sale' ? 1 : -1;
+      a.qty += sg * (m.out || m.in); a.val += sg * m.val; a.cost += sg * m.cost;
+    });
+    const list = db.items.filter(it => buyAuto(it)).map(it => ({ it, k: buyAuto(it), a: agg[it.id] || { qty: 0, val: 0, cost: 0 } }))
+      .sort((x, y) => (y.a.val - y.a.cost) - (x.a.val - x.a.cost) || byCode(x.it, y.it));
+    let T = { val: 0, cost: 0 };
+    const rows = list.map(({ it, k, a }) => {
+      const p = a.val - a.cost; T.val += a.val; T.cost += a.cost;
+      return `<tr><td><b>${esc(it.name)}</b><br><small class="${k === 'none' ? 'bad' : 'muted'}">${k === 'none' ? '❌ ما إلها سعر شراء' : '🤖 انعبّى لحاله'}</small>${a.qty ? `<br><small class="muted">انباع ${fmt(a.qty)} بـ ${fmt(a.val)} — الربح المحسوب <b class="${p < 0 ? 'neg' : 'pos'}">${fmt(p)}</b></small>` : ''}</td>
+        <td class="n">${fmt(it.sellPrice)}</td>
+        <td class="ab-fix"><input type="number" step="any" inputmode="decimal" data-buy="${esc(it.id)}" value="${num(it.buyPrice) || ''}" placeholder="0"><button class="mini" data-act="fixbuy" data-id="${esc(it.id)}">💾</button></td></tr>`;
+    }).join('');
+    body = (list.length ? `<p class="muted" style="margin-top:0">${list.length} مادة. اكتب سعر الشراء الحقيقي وكبّس 💾 — بيتعدّل ببطاقة المادة وبفواتير «شراء المواد السالبة»، والربح بيتصلّح لحاله.</p>` : '<p>✅ كل المواد إلها سعر شراء حقيقي.</p>') +
+      (list.length ? table(['المادة', 'سعر المبيع', 'سعر الشراء الحقيقي'], rows,
+        `<tr><td colspan="3">مبيعات هالمواد بالفترة ${fmt(T.val)} — ربحها المحسوب ${fmt(T.val - T.cost)}</td></tr>`) : '');
   }
 
   if (type === 'daysales') {
@@ -3462,6 +3495,18 @@ V.report = (type, q, view) => {
     inv: id => go('#/invoice/' + id),
     st: id => go('#/report/statement?acc=' + id),
     wa: () => waSend(waAcc, waMsg),
+    fixbuy: id => {
+      const it = db.items.find(x => x.id === id), inp = $(`[data-buy="${id}"]`, view); if (!it || !inp) return;
+      const b = r2(num(inp.value));
+      if (b <= 0) return toast('اكتب سعر الشراء', 1);
+      if (priceBad(it.sellPrice, b)) return toast(priceBadMsg(it.name, it.sellPrice, b), 1);
+      const old = num(it.buyPrice);
+      it.buyPrice = b; delete it.autoBuy;
+      // فواتير «شراء المواد السالبة» انعملت بالسعر القديم ← منعدّلها كمان
+      let n = 0;
+      db.invoices.filter(i => i.early && i.type === 'purchase' && (i.cur || 'base') === 'base').forEach(i => i.lines.forEach(l => { if (l.item === id && num(l.price) === old) { l.price = b; n++; } }));
+      save(); toast(`✅ ${it.name}: سعر الشراء ${fmt(b)}${n ? ' — وتعدّل بفاتورة شراء المواد السالبة' : ''}`); route();
+    },
   });
 };
 
