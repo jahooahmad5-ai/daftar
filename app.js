@@ -183,9 +183,10 @@ const customers = () => postable().filter(a => isUnder(a.id, 'customers'));
 const suppliers = () => postable().filter(a => isUnder(a.id, 'suppliers'));
 // «زبون عام»: زبون ثابت للبيع المباشر — دايماً نقدي وما بيصير عليه حساب (ما بيكون آجل أبداً)
 const WALKIN_NAME = 'زبون عام';
-const MAX_UP = 0.10; // أعلى زيادة مسموحة على سعر المبيع ببطاقة المادة
-const MAX_DOWN = 0.10; // أكبر نزلة مسموحة تحت سعر المبيع ببطاقة المادة (وما منبيع تحت سعر الشراء أبداً)
+const MAX_UP = 0.15; // أعلى زيادة مسموحة على سعر المبيع ببطاقة المادة
+const MAX_DOWN = 0.15; // أكبر نزلة مسموحة تحت سعر المبيع ببطاقة المادة (وما منبيع تحت سعر الشراء أبداً)
 const minSell = it => r2(num(it.sellPrice) * (1 - MAX_DOWN));
+const maxSell = it => r2(num(it.sellPrice) * (1 + MAX_UP));
 const AUTO_BUY = 0.80; // إذا نسيت سعر الشراء: سعر الشراء = سعر المبيع ناقص 20٪
 // تكميل أسعار البطاقة الناقصة: سعر المبيع من سعر فاتورة الزبون، وسعر الشراء من سعر المبيع
 // الفرق بين سعر الشراء وسعر المبيع ما بيزيد عن 20٪ من سعر المبيع (بالاتجاهين)
@@ -2104,8 +2105,8 @@ V.invoice = (id, q, view) => {
     const b = lfMap.get(itemId);
     return b ? r2(b.p) : 0;
   };
-  // آخر سعر للزبون بينفع بس إذا ضمن المسموح (مش أقل من سعر البطاقة ناقص 10٪) — إذا السعر غلي كتير ما منضل عالقديم
-  const custPrice = it => { const lp = lastFor(val('party'), it.id); return lp && lp >= minSell(it) - 0.001 ? lp : 0; };
+  // آخر سعر للزبون بينفع بس إذا ضمن المسموح (±15٪ عن سعر البطاقة) — غير هيك (السعر غلي أو غلطة) منرجع لسعر البطاقة
+  const custPrice = it => { const lp = lastFor(val('party'), it.id); return lp && lp >= minSell(it) - 0.001 && (!num(it.sellPrice) || lp <= maxSell(it) + 0.001) ? lp : 0; };
   const basePrice = it => (sideSale ? (custPrice(it) || num(it.sellPrice)) : (num(it.buyPrice) || r2(st[it.id]?.avg || 0)));
   // إضافة مادة: إذا كانت موجودة بالفاتورة تزيد الكمية
   // lastBase: كم كان عدد المادة قبل آخر إضافة — حتى «عدد 2» بعد تكرار الصنف تنضاف على القديم وما تمسحه
@@ -2467,23 +2468,20 @@ V.invoice = (id, q, view) => {
     if (pay === 'cash' && !cashAcc) return toast('اختر الصندوق', 1);
     if (!val('date')) return toast('أدخل التاريخ', 1);
     if (inv.cur === 'fx' && rate() <= 0) return toast('أدخل سعر الصرف للفاتورة', 1);
-    // سعر المبيع ما بيزيد أكتر من 10٪ عن سعر المبيع ببطاقة المادة
+    // سعر المبيع ما بيزيد أكتر من 15٪ عن سعر المبيع ببطاقة المادة — ولا حتى إذا آخر سعر للزبون كان أعلى
     if (inv.type === 'sale') {
       const bad = inv.lines.findIndex(l => {
         const it = l.item && num(l.qty) > 0 && db.items.find(x => x.id === l.item), sp = it ? num(it.sellPrice) : 0;
-        // آخر سعر بعناه لهالزبون مقبول دايماً (سياسة التسعير حسب الزبون)
-        const lp = it ? lastFor(party, it.id) : 0;
-        if (lp && toBase(l.price) <= lp + 0.001) return false;
-        return sp > 0 && toBase(l.price) > r2(sp * (1 + MAX_UP)) + 0.001;
+        return sp > 0 && toBase(l.price) > maxSell(it) + 0.001;
       });
       if (bad >= 0) {
         const l = inv.lines[bad], it = db.items.find(x => x.id === l.item);
         const card = $(`.ln-card[data-i="${bad}"]`, view);
         if (card) { card.scrollIntoView({ block: 'center' }); card.classList.add('ln-bad'); setTimeout(() => card.classList.remove('ln-bad'), 4000); }
-        return toast(`يجب تعديل سعر مبيع المادة أولاً: ${it.name} — سعرها بالبطاقة ${fmt(num(it.sellPrice))}، وأعلى سعر مسموح ${fmt(r2(num(it.sellPrice) * (1 + MAX_UP)))}`, 1);
+        return toast(`يجب تعديل سعر مبيع المادة أولاً: ${it.name} — سعرها بالبطاقة ${fmt(num(it.sellPrice))}، وأعلى سعر مسموح ${fmt(maxSell(it))} (${MAX_UP * 100}٪ زيادة)`, 1);
       }
     }
-    // الحد الأدنى للسعر (بعد حسم الفاتورة): سعر المبيع بالبطاقة ناقص 10٪، وما بيكون تحت سعر الشراء —
+    // الحد الأدنى للسعر (بعد حسم الفاتورة): سعر المبيع بالبطاقة ناقص 15٪، وما بيكون تحت سعر الشراء —
     // المندوب ممنوع ينزل تحته، والمدير بيطلعله تأكيد
     if (inv.type === 'sale') {
       const gross = inv.lines.reduce((t, l) => t + (l.item ? num(l.qty) * num(l.price) : 0), 0);
@@ -2492,7 +2490,7 @@ V.invoice = (id, q, view) => {
       inv.lines.forEach((l, i) => {
         const it = l.item && num(l.qty) > 0 && db.items.find(x => x.id === l.item); if (!it) return;
         const eff = r2(toBase(num(l.price)) * f), sp = num(it.sellPrice), cost = num(it.buyPrice) || r2(st[it.id]?.avg || 0);
-        // الحد = الأعلى بين (سعر المبيع ناقص 10٪) وسعر الشراء
+        // الحد = الأعلى بين (سعر المبيع ناقص 15٪) وسعر الشراء
         const ms = sp > 0 ? minSell(it) : 0, min = Math.max(ms, cost);
         if (min > 0 && eff < min - 0.001) lows.push({ i, it, eff, min, why: cost >= ms ? 'سعر الشراء' : `سعر المبيع ناقص ${MAX_DOWN * 100}٪` });
       });
