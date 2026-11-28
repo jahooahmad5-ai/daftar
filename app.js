@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '7.19';
+const APP_VERSION = '7.21';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -249,7 +249,7 @@ function engine() {
   });
   if (r2(openVal)) E.push({ id: 'open-stock', no: '—', date: sd, desc: 'بضاعة أول المدة', src: 'stock', lines: [{ acc: 'inventory', dr: r2(openVal), cr: 0 }, { acc: 'capital', dr: 0, cr: r2(openVal) }] });
 
-  const invs = [...db.invoices].sort((a, b) => a.date.localeCompare(b.date) || (a.created || 0) - (b.created || 0));
+  const invs = [...db.invoices].sort((a, b) => a.date.localeCompare(b.date) || (b.early ? 1 : 0) - (a.early ? 1 : 0) || (a.created || 0) - (b.created || 0));
   for (const inv of invs) {
     const { gross, net: netDoc } = invTotals(inv);
     const f = gross ? netDoc / gross : 1;
@@ -1859,6 +1859,16 @@ function itemForm(it, defGroup, after) {
     };
   }
 }
+// المواد اللي كميتها تحت الصفر (انباعت أكتر من اللي انشرى): الكمية الناقصة، سعر الشراء، وتاريخ أول مبيع
+function negItems() {
+  const st = engine().stock, first = {};
+  db.invoices.forEach(i => { if (i.type === 'sale') i.lines.forEach(l => { if (!first[l.item] || i.date < first[l.item]) first[l.item] = i.date; }); });
+  return [...db.items].sort(byCode).map(it => {
+    const s = st[it.id], qty = r2(-(s ? s.qty : num(it.openQty)));
+    const price = num(it.buyPrice) || r2(s?.avg || 0) || r2(num(it.sellPrice) * AUTO_BUY);
+    return { it, qty, price, first: first[it.id] || '' };
+  }).filter(x => x.qty > 0);
+}
 V.items = (id, q, view) => {
   const st = engine().stock;
   const gf = q.g || '';
@@ -1876,7 +1886,7 @@ V.items = (id, q, view) => {
   }).join('');
   const gOpts = [['', '📂 كل المجموعات'], ...grpOpts().slice(1), ['none', '— مواد بدون مجموعة —']];
   view.innerHTML = head(gf && gf !== 'none' && grp(gf) ? `المواد: ${esc(grpPath(gf))}` : 'المواد والمستودع',
-    `<a class="btn" href="#/groups">📂 المجموعات</a><button class="btn" data-act="import">📥 استيراد Excel</button><button class="btn" data-act="zeros">✂️ حذف صفرين</button><button class="btn pri" data-act="add">+ مادة جديدة</button>`) + `
+    `${negItems().length ? `<a class="btn" href="#/invoice/new?type=purchase&neg=1">🛒 شراء المواد السالبة (${negItems().length})</a>` : ''}<a class="btn" href="#/groups">📂 المجموعات</a><button class="btn" data-act="import">📥 استيراد Excel</button><button class="btn" data-act="zeros">✂️ حذف صفرين</button><button class="btn pri" data-act="add">+ مادة جديدة</button>`) + `
     <div class="card"><div class="filters" style="margin-bottom:10px"><select id="gf" style="flex:1;min-width:160px">${optsHtml(gOpts, gf)}</select>
     <input class="search" id="q" placeholder="🔎 بحث بالاسم أو الرمز أو الباركود" style="flex:2;min-width:180px"></div>
     ${table(['الرمز', 'المادة', 'الوحدة', 'الكمية', 'متوسط الكلفة', 'قيمة المخزون', 'سعر المبيع', 'سعر المستهلك', ''], rows,
@@ -1995,6 +2005,17 @@ V.invoice = (id, q, view) => {
     } catch (e) { /* */ }
   }
   const dropDraft = () => { try { localStorage.removeItem(DRAFT); } catch (e) { /* */ } };
+  // «🛒 شراء المواد السالبة»: فاتورة شراء جاهزة بكل مادة كميتها تحت الصفر (بسعر الشراء)،
+  // بتاريخ أول مبيع إلها وقبل كل فواتير هداك اليوم — هيك كلفة المبيعات بتنحسب صح وبيطلع الربح الحقيقي
+  let negN = 0;
+  if (!orig && q.neg && inv.type === 'purchase') {
+    const ng = negItems();
+    if (ng.length) {
+      inv.lines = ng.map(x => ({ item: x.it.id, qty: x.qty, price: x.price, cp: x.it.consumerPrice ? num(x.it.consumerPrice) : '' }));
+      inv.date = ng.reduce((m, x) => (x.first && x.first < m ? x.first : m), inv.date);
+      inv.early = true; inv.note = 'شراء المواد السالبة'; negN = ng.length; restored = false;
+    }
+  }
   // منحجز رقم الفاتورة (ورقم سند الدفعة) من السيرفر من هلق، حتى الحفظ يكون فوري
   if (!orig) { const sfx = isSeller() ? '@' + myRep() : ''; reserveNo(inv.type + sfx); reserveNo((['sale', 'purchaseReturn'].includes(inv.type) ? 'receipt' : 'payment') + sfx); }
   // لمعرفة إذا في تغييرات على الفاتورة المحفوظة لسا ما انحفظت
@@ -2013,14 +2034,20 @@ V.invoice = (id, q, view) => {
   const itemById = id => items.find(x => x.id === id);
   const stockOf = it => (st[it.id] ? st[it.id].qty : num(it.openQty));
 
+  // فاتورة المبيع: «نقدي/آجل» و«الدفعة» فوق، جنب «مراجعة» (مش جوّا «تعديل»)
+  const payTop = inv.type === 'sale';
+  const payFld = field({ k: 'pay', l: 'طريقة الدفع', t: 'select', opts: [['cash', 'نقدي'], ['credit', 'آجل (على الحساب)']] }, inv.pay);
+  const payRowH = '<div id="payRow"><span>💵 دفعة</span><input name="payment" type="number" step="any" inputmode="decimal" placeholder="0" value=""></div>';
   view.innerHTML = head(INV_TYPES[inv.type] + (orig ? ` رقم ${esc(orig.no)}${repTagH(orig)}` : ' جديدة' + (isSeller() ? ` — مندوب: ${esc(myRep())}` : '')),
     `${orig ? `<button class="btn wa" data-act="wa">واتساب</button><button class="btn" data-act="receipt">🧾 إيصال</button><button class="btn" data-act="print">🖨 طباعة</button><button class="btn red" data-act="del">حذف</button><a class="btn" href="#/invoices">رجوع</a>` : ''}`) + `
   ${orig && q.saved ? `<div class="saved-ok">✅ الفاتورة رقم ${esc(orig.no)} محفوظة — ${orig.lines.length} مادة، ${fmt(orig.lines.reduce((s, l) => s + num(l.qty), 0))} قطعة</div>` : ''}
+  ${negN ? `<div class="draft-note">🛒 حطّيتلك ${negN} مادة كميتها بالسالب، كل وحدة بالكمية الناقصة وبسعر الشراء، والتاريخ ${esc(inv.date)} (قبل أول مبيع إلها) حتى يطلع الربح صح. اختار المورد وطريقة الدفع وكبّس حفظ.</div>` : ''}
   <div class="inv-count-d">القطع: <b id="cntPcs">0</b></div>
   <div id="dirtyNote" class="dirty-note" hidden>⚠️ في تغييرات على هالفاتورة <b>لسا ما انحفظت</b> — كبّس «💾 حفظ التعديلات» تحت</div>
   ${restored ? (orig ? '<div class="draft-note">↩️ رجّعتلك التعديلات اللي ما كانت محفوظة على هالفاتورة. <button class="btn" data-act="discard">تراجع عنها</button></div>'
     : '<div class="draft-note">↩️ رجّعتلك الفاتورة اللي ما كانت محفوظة. <button class="btn red" data-act="clearAll">🗑 بلّش من جديد</button></div>') : ''}
   <div class="search-wrap">
+    ${payTop ? `<div class="pay-top">${payFld}${payRowH}</div>` : ''}
     <div class="scan-row">
       ${canScan() ? '<button class="sq-btn" data-act="cam" title="مسح بالكاميرا">▮▯▮</button>' : ''}
       <input id="scanIn" type="search" enterkeyhint="search" autocomplete="off" placeholder="ادخل اسم المادة أو الباركود لإضافتها للفاتورة">
@@ -2036,7 +2063,7 @@ V.invoice = (id, q, view) => {
   <div class="card">
     <div class="grid4">
       ${field({ k: 'date', l: 'التاريخ', t: 'date', req: 1 }, inv.date)}
-      ${field({ k: 'pay', l: 'طريقة الدفع', t: 'select', opts: [['cash', 'نقدي'], ['credit', 'آجل (على الحساب)']] }, inv.pay)}
+      ${payTop ? '' : payFld}
       <div id="cashWrap">${field({ k: 'cashAcc', l: 'الصندوق', t: 'select', opts: accOpts(isSeller() ? [myBox()].filter(Boolean) : cashAccounts()) }, inv.cashAcc)}</div>
       <div class="party-wrap">${field({ k: 'party', l: sideSale ? 'العميل' : 'المورد', t: 'select', opts: accOpts(parties, sideSale ? '— اختر العميل —' : '— بدون —') }, inv.party)}
         <button type="button" class="mini new-party" data-act="newParty">➕ ${sideSale ? 'زبون' : 'مورد'} جديد</button></div>
@@ -2057,7 +2084,7 @@ V.invoice = (id, q, view) => {
         <div id="tEq" class="muted" style="font-size:14px"></div>
         <div id="tOld" class="old-eq"></div>
         <small class="muted" id="tWords"></small>
-        <div id="payRow"><span>💵 دفعة</span><input name="payment" type="number" step="any" inputmode="decimal" placeholder="0" value=""></div>
+        ${payTop ? '' : payRowH}
         <div id="tRest" class="old-eq"></div>
         <div id="tBal" class="old-eq"></div>
       </div>
