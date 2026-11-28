@@ -138,22 +138,70 @@ function wrap(x, text, max) {
   while (out.length && !out[out.length - 1]) out.pop();
   return out;
 }
+// مجموع الأرقام اللي بعد كلمة «عدد» (مثلاً «بندورة عدد 5» أو «العدد: ٣»)
+const toEn = t => String(t).replace(/[٠-٩]/g, d => d.charCodeAt(0) - 0x660).replace(/[۰-۹]/g, d => d.charCodeAt(0) - 0x6f0);
+function countTotal(text) {
+  let sum = 0, n = 0;
+  const re = /عدد\s*[:：=\-–]?\s*([0-9٠-٩۰-۹]+(?:[.,٫][0-9٠-٩۰-۹]+)?)/g;
+  for (const m of String(text).matchAll(re)) { sum += parseFloat(toEn(m[1]).replace(/[,٫]/, '.')); n++; }
+  return n ? Math.round(sum * 1000) / 1000 : null;
+}
+// تقسيم الكلام لرسائل: كل رسالة بتبلّش بسطر الواتس «[28/11، 11:51 ص] الاسم:» أو بعد سطر فاضي
+const WA_HEAD = /^\s*\[[^\]]*[0-9٠-٩]{1,2}\s*[:：]\s*[0-9٠-٩]{2}[^\]]*\]/;
+function groups(text) {
+  const out = []; let cur = [];
+  const end = () => { if (cur.length) out.push(cur.join('\n')); cur = []; };
+  String(text).replace(/\r/g, '').split('\n').forEach(l => {
+    if (!l.trim()) { end(); return; }
+    if (WA_HEAD.test(l)) end();
+    cur.push(l);
+  });
+  end();
+  return out;
+}
 function build() {
   const w = W(), P = 8, c = document.createElement('canvas'), x = c.getContext('2d');
   const sz = st.size * (w < 576 ? 0.8 : 1), lh = Math.round(sz * 1.45);
   const font = `${st.bold === '1' ? 'bold ' : ''}${sz}px ${FONT}`;
+  const tsz = Math.round(sz * 1.1), sh = 18 + Math.round(tsz * 1.45);
   x.font = font;
-  const lines = $('#txt').value.trim() ? wrap(x, $('#txt').value, w - 2 * P) : [];
+  // قائمة اللي رح ينرسم: سطور كلام، ومجموع بعد كل رسالة فيها «عدد»، ومجموع كلي إذا في أكتر من رسالة
+  const items = [], gs = groups($('#txt').value);
+  let all = 0, n = 0;
+  gs.forEach((g, i) => {
+    if (i) items.push({ t: 'gap' });
+    wrap(x, g, w - 2 * P).forEach(s => items.push({ t: 'line', s }));
+    const tot = countTotal(g);
+    if (tot !== null) { items.push({ t: 'sum', s: 'المجموع: ' + tot }); all += tot; n++; }
+  });
+  if (n > 1) items.push({ t: 'all', s: 'المجموع الكلي: ' + Math.round(all * 1000) / 1000 });
+  const hOf = it => it.t === 'line' ? lh : it.t === 'gap' ? Math.round(lh * 0.6) : it.t === 'all' ? sh + 10 : sh;
+  const th = items.reduce((s, it) => s + hOf(it), 0);
   let ih = 0;
   if (st.img) ih = Math.round(st.img.naturalHeight * (w / st.img.naturalWidth));
-  const H = Math.max(40, P + lines.length * lh + (lines.length && ih ? 16 : 0) + ih + P);
+  const H = Math.max(40, P + th + (th && ih ? 16 : 0) + ih + P);
   c.width = w; c.height = H;
   x.fillStyle = '#fff'; x.fillRect(0, 0, w, H);
-  x.fillStyle = '#000'; x.font = font; x.direction = 'rtl'; x.textBaseline = 'top';
-  x.textAlign = st.align === 'c' ? 'center' : 'right';
-  lines.forEach((s, i) => x.fillText(s, st.align === 'c' ? w / 2 : w - P, P + i * lh));
+  x.fillStyle = '#000'; x.direction = 'rtl'; x.textBaseline = 'top';
+  let y = P;
+  items.forEach(it => {
+    if (it.t === 'line') {
+      x.font = font; x.textAlign = st.align === 'c' ? 'center' : 'right';
+      x.fillText(it.s, st.align === 'c' ? w / 2 : w - P, y);
+    } else if (it.t === 'sum') {
+      // خط متقطع وتحته مجموع هالرسالة
+      for (let xx = P; xx < w - P; xx += 14) x.fillRect(xx, y + 6, 8, 2);
+      x.font = `bold ${tsz}px ${FONT}`; x.textAlign = 'center';
+      x.fillText(it.s, w / 2, y + 12);
+    } else if (it.t === 'all') {
+      x.fillRect(P, y + 6, w - 2 * P, 3); x.fillRect(P, y + 12, w - 2 * P, 3);
+      x.font = `bold ${Math.round(sz * 1.25)}px ${FONT}`; x.textAlign = 'center';
+      x.fillText(it.s, w / 2, y + 20);
+    }
+    y += hOf(it);
+  });
   if (st.img) {
-    const y0 = P + lines.length * lh + (lines.length ? 16 : 0);
+    const y0 = P + th + (th ? 16 : 0);
     x.drawImage(st.img, 0, y0, w, ih);
     toBW(x, 0, y0, w, ih);
   }
