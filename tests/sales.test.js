@@ -445,4 +445,36 @@ module.exports = [
       assert.deepStrictEqual(p.errors, []);
     },
   },
+  {
+    name: 'باركود من جوّا فاتورة المبيع: مادة جديدة بباركود، وباركود ما إله مادة بيفتح «مادة جديدة» معبّى، والتعديل فيه خانة باركود',
+    fn: async base => {
+      const p = await page(base, { cloud: OWNER });
+      await p.evaluate(() => { db.items.push({ id: 'it1', code: '1', name: 'سكر', sellPrice: 1000, openQty: 50, barcodes: ['5550001'] }); ensureWalkin(); save(); });
+      await p.go('#/invoice/new?type=sale'); await p.click('.pp-item.wk'); await p.waitForTimeout(150);
+      // 1) مادة جديدة بالاسم + باركود
+      await p.fill('#scanIn', 'بيبسي'); await p.dispatchEvent('#scanIn', 'input'); await p.waitForTimeout(150);
+      await p.click('.sg-new'); await p.waitForTimeout(150);
+      assert.ok(await p.locator('#dlg [name=barcode]').count(), 'لازم يكون في خانة باركود');
+      await p.fill('#dlg [name=price]', '400'); await p.fill('#dlg [name=barcode]', '5550001');
+      await p.click('#dlg footer .btn.pri'); await p.waitForTimeout(150);
+      assert.match(await p.text('#toast'), /الباركود 5550001 مستخدم للمادة: سكر/);
+      await p.fill('#dlg [name=barcode]', '6290000000123');
+      await p.click('#dlg footer .btn.pri'); await p.waitForTimeout(300);
+      assert.deepStrictEqual(await p.evaluate(() => db.items.find(x => x.name === 'بيبسي').barcodes), ['6290000000123']);
+      // بالمسح بعدين بتنلقى
+      await p.fill('#scanIn', '6290000000123'); await p.keyboard.press('Enter'); await p.waitForTimeout(200);
+      assert.strictEqual(await p.evaluate(() => [...document.querySelectorAll('.ln-card')].filter(c => /بيبسي/.test(c.textContent)).length), 2);
+      // 2) باركود ما إله مادة ← «مادة جديدة» والباركود معبّى
+      await p.fill('#scanIn', '7771234567'); await p.keyboard.press('Enter'); await p.waitForTimeout(250);
+      assert.strictEqual(await p.inputValue('#dlg [name=barcode]'), '7771234567');
+      assert.strictEqual(await p.inputValue('#dlg [name=name]'), '');
+      await p.fill('#dlg [name=name]', 'شيبس'); await p.fill('#dlg [name=price]', '500');
+      await p.click('#dlg footer .btn.pri'); await p.waitForTimeout(300);
+      assert.deepStrictEqual(await p.evaluate(() => db.items.find(x => x.name === 'شيبس').barcodes), ['7771234567']);
+      // 3) تعديل المادة من الفاتورة (✏️) فيه خانة الباركودات
+      await p.evaluate(() => document.querySelector('[data-act=editItem]').click()); await p.waitForTimeout(200);
+      assert.ok(await p.locator('#dlg [name=barcodes]').count(), 'التعديل لازم يكون فيه باركود');
+      assert.deepStrictEqual(p.errors, []);
+    },
+  },
 ];

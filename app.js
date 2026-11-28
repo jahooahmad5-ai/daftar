@@ -1725,12 +1725,12 @@ function zerosForm(gf) {
 function itemForm(it, defGroup, after) {
   const fl = [
     { k: 'code', l: 'رمز المادة' }, { k: 'name', l: 'اسم المادة', req: 1 },
+    { k: 'barcodes', l: 'الباركودات (كل باركود بسطر — يمكن إضافة أكثر من باركود)', t: 'textarea', full: 1 },
     { k: 'group', l: 'المجموعة', t: 'select', opts: grpOpts(), full: 1 },
     { k: 'unit', l: 'الوحدة', ph: 'قطعة، كيلو، علبة…' }, { k: 'minQty', l: 'الحد الأدنى للتنبيه', t: 'number' },
     { k: 'buyPrice', l: 'سعر الشراء', t: 'number' }, { k: 'sellPrice', l: 'سعر المبيع', t: 'number' },
     { k: 'consumerPrice', l: 'سعر المستهلك', t: 'number', full: 1 },
     { k: 'openQty', l: 'كمية أول المدة', t: 'number' }, { k: 'openCost', l: 'كلفة الوحدة أول المدة', t: 'number' },
-    { k: 'barcodes', l: 'الباركودات (كل باركود بسطر — يمكن إضافة أكثر من باركود)', t: 'textarea', full: 1 },
     { k: 'aliases', l: 'أسماء تانية (متل ما بتنكتب بطلبيات الواتس — كل اسم بسطر)', t: 'textarea', full: 1 },
   ];
   const vals = it ? { ...it, barcodes: (it.barcodes || []).join('\n'), aliases: (it.aliases || []).join('\n') } : { code: nextItemCode(), unit: 'قطعة', group: defGroup && defGroup !== 'none' ? defGroup : '' };
@@ -1765,6 +1765,7 @@ function itemForm(it, defGroup, after) {
   const ta = $('[name=barcodes]', f);
   ta.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); ta.value = ta.value.replace(/\s*$/, '') + '\n'; } });
   const sb = $('#bcScan', f);
+  if (sb) { sb.style.gridColumn = '1 / -1'; sb.style.marginTop = '0'; ta.closest('.fld').after(sb); } // زر الكاميرا تحت خانة الباركود (فوق، تحت الاسم)
   if (sb) sb.onclick = () => scanBarcode(c => { const cur = parseCodes(ta.value); if (!cur.includes(c)) ta.value = [...cur, c].join('\n'); toast('تمت إضافة الباركود ' + c); });
 }
 V.items = (id, q, view) => {
@@ -2246,26 +2247,32 @@ V.invoice = (id, q, view) => {
   const newSplit = t => { const m = String(t).trim().match(/^(.*?)\s*عدد\s*(\d+(?:\.\d+)?)\s*$/); return m ? { name: m[1].trim(), qty: +m[2] } : { name: String(t).trim(), qty: 1 }; };
   const newBtn = () => {
     const { name } = newSplit(scanIn.value);
+    if (/^\d{4,}$/.test(name) && !findByCode(name)) return `<button type="button" class="sg sg-new" data-new="1"><b>➕ مادة جديدة بهالباركود: «${esc(name)}»</b><small class="muted">بتكتب اسمها وسعرها وبتنضاف عالفاتورة</small></button>`;
     if (!name || /^\d+$/.test(name) || db.items.some(x => normAr(x.name) === normAr(name))) return '';
     return `<button type="button" class="sg sg-new" data-new="1"><b>➕ مادة جديدة: «${esc(name)}»</b><small class="muted">بتنضاف عالمواد وعالفاتورة فوراً</small></button>`;
   };
   const quickNew = () => {
     if (isSeller()) { sugg.hidden = true; return toast('🔒 إضافة مواد جديدة مسكّرة بوضع البيّاع — خلّي المدير يضيفها', 1); }
-    const { name, qty } = newSplit(scanIn.value); sugg.hidden = true;
+    const sp = newSplit(scanIn.value), qty = sp.qty; sugg.hidden = true;
+    // إذا المكتوب رقم (باركود ما إله مادة) ← بيروح لخانة الباركود والاسم فاضي
+    const isCode = /^\d{4,}$/.test(sp.name), name = isCode ? '' : sp.name;
     const pk = sideSale ? 'sellPrice' : 'buyPrice';
-    modal('➕ مادة جديدة', fields([
+    const f = modal('➕ مادة جديدة', fields([
       { k: 'name', l: 'اسم المادة', req: 1, full: 1 },
+      { k: 'barcode', l: 'الباركود (اختياري — أكتر من واحد: كل واحد بسطر)', t: 'textarea', full: 1 },
       { k: 'price', l: sideSale ? 'سعر المبيع' : 'سعر الشراء', t: 'number' },
       { k: 'other', l: sideSale ? 'سعر الشراء' : 'سعر المبيع', t: 'number' },
       { k: 'consumerPrice', l: 'سعر المستهلك', t: 'number' },
       { k: 'unit', l: 'الوحدة' }, { k: 'qty', l: 'العدد بالفاتورة', t: 'number' },
-    ], { name, unit: 'قطعة', qty }), {
+    ], { name, barcode: isCode ? sp.name : '', unit: 'قطعة', qty }) + (canScan() ? `<button type="button" class="btn" id="qnScan" style="margin-top:8px">📷 إضافة باركود بالكاميرا</button>` : ''), {
       saveText: '➕ إضافة',
       onSave: d => {
         const nm = d.name.trim(); if (!nm) return false;
         if (db.items.some(x => normAr(x.name) === normAr(nm))) { toast('في مادة بنفس الاسم', 1); return false; }
+        const barcodes = parseCodes(d.barcode);
+        for (const c of barcodes) { const other = findByCode(c); if (other) { toast(`الباركود ${c} مستخدم للمادة: ${other.name}`, 1); return false; } }
         const R = inv.cur === 'fx' && rate() ? rate() : 1;
-        const it = { id: uid(), code: nextItemCode(), barcodes: [], aliases: [], aliasKeys: [], group: null, name: nm, unit: (d.unit || '').trim(), minQty: 0,
+        const it = { id: uid(), code: nextItemCode(), barcodes, aliases: [], aliasKeys: [], group: null, name: nm, unit: (d.unit || '').trim(), minQty: 0,
           buyPrice: 0, sellPrice: 0, consumerPrice: r2(num(d.consumerPrice) * R), openQty: 0, openCost: 0 };
         it[pk] = r2(num(d.price) * R);
         it[sideSale ? 'buyPrice' : 'sellPrice'] = r2(num(d.other) * R);
@@ -2278,7 +2285,12 @@ V.invoice = (id, q, view) => {
         setTimeout(() => scanIn.focus(), 300);
       },
     });
-    setTimeout(() => { const pi = $('#dlg [name=price]'); if (pi) pi.focus(); }, 80);
+    const ta = $('[name=barcode]', f);
+    ta.rows = 1;
+    ta.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); ta.value = ta.value.replace(/\s*$/, '') + '\n'; } });
+    const qs = $('#qnScan', f);
+    if (qs) qs.onclick = () => scanBarcode(c => { const cur = parseCodes(ta.value); if (!cur.includes(c)) ta.value = [...cur, c].join('\n'); toast('تمت إضافة الباركود ' + c); });
+    setTimeout(() => { const pi = $(name ? '#dlg [name=price]' : '#dlg [name=name]'); if (pi) pi.focus(); }, 80);
   };
   // بحث ذكي: «بسكوت الالف 12 قطعه عدد 3» ← يفهم الأرقام والتعبئة والتسميات المحفوظة
   let smartRes = null;
@@ -2399,6 +2411,7 @@ V.invoice = (id, q, view) => {
       if (smartRes && smartRes.m.it && smartRes.m.sure) addSmart(smartRes.m.it);
       else if (smartRes && smartRes.m.it && !smartRes.m.weak) showSugg();
       else if (smartRes && !/^\d+$/.test(c)) teach();
+      else if (/^\d{4,}$/.test(c) && !isSeller()) { toast('باركود جديد: ' + c + ' — اكتب اسم المادة وسعرها', 1); return quickNew(); }
       else { toast('لا توجد مادة بهذا الاسم أو الباركود: ' + c, 1); scanIn.value = ''; sugg.hidden = true; }
     }
     scanIn.focus(); // لقارئ الباركود: يبقى المؤشر جاهزاً للمسحة التالية
