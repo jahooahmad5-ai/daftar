@@ -546,4 +546,48 @@ module.exports = [
       assert.deepStrictEqual(p.errors, []);
     },
   },
+  {
+    name: 'باركود لكل نوع: «ويفر شوكولا = باركود» بخانة الأنواع — المسح بيضيف «بسكوت 1000 (ويفر شوكولا)» دغري، والتكرار ممنوع، والكاميرا بتحطه عسطر النوع',
+    fn: async base => {
+      const p = await page(base, { cloud: OWNER });
+      await p.evaluate(() => {
+        window.__code = '';
+        window.BarcodeDetector = class { static async getSupportedFormats() { return ['ean_13']; } async detect() { return window.__code ? [{ rawValue: window.__code }] : []; } };
+        navigator.mediaDevices.getUserMedia = async () => { const c = document.createElement('canvas'); c.width = 8; c.height = 8; return c.captureStream(); };
+        HTMLMediaElement.prototype.play = async function () {};
+        db.items.push({ id: 'b1', code: '1', name: 'بسكوت 1000', sellPrice: 1000, openQty: 100, barcodes: ['5550000000001'] }, { id: 'o1', code: '2', name: 'سكر', sellPrice: 500, openQty: 10, barcodes: ['7770000000001'] }); ensureWalkin(); save();
+      });
+      await p.go('#/items'); await p.click('[data-act=edit][data-id=b1]'); await p.waitForTimeout(150);
+      // باركود مستخدم لمادة تانية ← ممنوع
+      await p.fill('#dlg [name=variants]', 'ويفر شوكولا = 7770000000001\nكيك فانيلا');
+      await p.click('#dlg footer .btn.pri'); await p.waitForTimeout(150);
+      assert.match(await p.text('#toast'), /7770000000001 مستخدم للمادة: سكر/);
+      // نفس الباركود للمادة وللنوع ← ممنوع
+      await p.fill('#dlg [name=variants]', 'ويفر شوكولا = 5550000000001\nكيك فانيلا');
+      await p.click('#dlg footer .btn.pri'); await p.waitForTimeout(150);
+      assert.match(await p.text('#toast'), /سوا/);
+      await p.fill('#dlg [name=variants]', 'ويفر شوكولا = 6291111111111\nكيك فانيلا');
+      // الكاميرا: كبسة على سطر «كيك فانيلا» وبعدين مسح
+      await p.click('#dlg [name=variants]');
+      await p.evaluate(() => { const t = document.querySelector('#dlg [name=variants]'); const i = t.value.indexOf('كيك') + 2; t.setSelectionRange(i, i); t.dispatchEvent(new Event('keyup')); window.__code = '6292222222222'; });
+      await p.click('#vcScan'); await p.waitForTimeout(600);
+      assert.strictEqual(await p.inputValue('#dlg [name=variants]'), 'ويفر شوكولا = 6291111111111\nكيك فانيلا = 6292222222222');
+      await p.click('#dlg footer .btn.pri'); await p.waitForTimeout(250);
+      assert.deepStrictEqual(await p.evaluate(() => { const i = db.items.find(x => x.id === 'b1'); return [i.variants, i.vcodes]; }), [['ويفر شوكولا', 'كيك فانيلا'], { 6291111111111: 'ويفر شوكولا', 6292222222222: 'كيك فانيلا' }]);
+      // بالتعديل مرة تانية بيرجع يبيّن الباركود جنب النوع
+      await p.click('[data-act=edit][data-id=b1]'); await p.waitForTimeout(150);
+      assert.strictEqual(await p.inputValue('#dlg [name=variants]'), 'ويفر شوكولا = 6291111111111\nكيك فانيلا = 6292222222222');
+      await p.evaluate(() => document.getElementById('dlg').close());
+      // بالفاتورة: مسح باركود النوع (قارئ الباركود) وبالكاميرا
+      await p.go('#/invoice/new?type=sale'); await p.click('.pp-item.wk'); await p.waitForTimeout(150);
+      await p.fill('#scanIn', '6291111111111'); await p.keyboard.press('Enter'); await p.waitForTimeout(250);
+      assert.match(await p.locator('.ln-card .ln-name').first().innerText(), /بسكوت 1000 \(ويفر شوكولا\)/);
+      await p.evaluate(() => { window.__code = '6292222222222'; }); await p.click('[data-act=cam]'); await p.waitForTimeout(600);
+      assert.match(await p.locator('.ln-card .ln-name').first().innerText(), /بسكوت 1000 \(كيك فانيلا\)/);
+      // باركود البند نفسه ← بلا نوع
+      await p.fill('#scanIn', '5550000000001'); await p.keyboard.press('Enter'); await p.waitForTimeout(250);
+      assert.strictEqual((await p.locator('.ln-card .ln-name').first().innerText()).trim(), 'بسكوت 1000');
+      assert.deepStrictEqual(p.errors, []);
+    },
+  },
 ];
