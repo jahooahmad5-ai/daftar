@@ -6,7 +6,7 @@
    - المخزون بطريقة الجرد المستمر وكلفة المتوسط المرجّح
    ===================================================================== */
 const APP_NAME = 'دفتر';
-const APP_VERSION = '7.18';
+const APP_VERSION = '7.19';
 
 /* ------------------------- أدوات عامة ------------------------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -400,8 +400,12 @@ function waVoucherText(v) {
   if (v.cur === 'fx') s += `(المعادل: ${fmt(base)} ${cur()})\n`;
   s += `(بالقديم: ${oldAmt(base)})\n${moneyWords(v.amount, v)}\n`;
   if (v.note) s += `البيان: ${v.note}\n`;
-  // رصيد الزبون: بس من موبايل المدير (المندوب ما بيشوف الأرصدة)
-  if (a && !isSeller()) s += `————————\nرصيد حسابكم الحالي:\n${balWords(a, partyBal(a))}\n`;
+  // رصيد الزبون: بس من موبايل المدير (المندوب ما بيشوف الأرصدة) — قديش باقي بعد هالدفعة
+  if (a && !isSeller()) {
+    const VB = window.Receipt && Receipt.vBalances ? Receipt.vBalances(v) : null;
+    s += VB ? `————————\nالحساب قبل الدفعة: ${fmt(Math.abs(VB.before))} ${cur()}\n*${Math.abs(VB.after) < 0.001 ? 'الحساب مسدّد' : (VB.after > 0) === (a.type === 'asset') ? 'الباقي عليكم' : 'الباقي لكم'}: ${fmt(Math.abs(VB.after))} ${cur()}*\n(بالقديم: ${oldAmt(Math.abs(VB.after))})\n`
+      : `————————\nرصيد حسابكم الحالي:\n${balWords(a, partyBal(a))}\n`;
+  }
   return s + 'شكراً لتعاملكم معنا 🌹';
 }
 function waBalanceText(a) {
